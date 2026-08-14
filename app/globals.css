@@ -159,7 +159,7 @@
     @apply h-8 rounded-md bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground;
   }
   .ctl-quiet-icon {
-    @apply ctl-quiet flex size-8 items-center justify-center;
+    @apply flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground;
   }
 }
 

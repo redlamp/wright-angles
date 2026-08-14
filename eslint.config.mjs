@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Claude session-history buffer, not project code.
+    ".remember/**",
   ]),
 ]);
 

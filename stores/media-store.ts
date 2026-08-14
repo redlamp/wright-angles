@@ -105,7 +105,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set((s) => {
       const url = s.objectUrls[id];
       if (url) URL.revokeObjectURL(url);
-      const { [id]: _dropped, ...objectUrls } = s.objectUrls;
+      const objectUrls = { ...s.objectUrls };
+      delete objectUrls[id];
       const items = s.items.filter((i) => i.id !== id);
       return {
         items,

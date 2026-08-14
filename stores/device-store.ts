@@ -22,10 +22,19 @@ const defaultThisDevice: Device = {
   visible: true,
 };
 
+const specFromPreset = (p: DevicePreset): Omit<Device, "id" | "color" | "visible"> => ({
+  label: p.label,
+  deviceName: p.deviceName,
+  category: p.category,
+  diagonalIn: p.diagonalIn,
+  distanceCm: p.distanceCm,
+  resolution: { ...p.resolution },
+  aspect: { ...p.aspect },
+});
+
 const seedDevice = (presetId: string, color: string): Device => {
   const p = DEVICE_PRESETS.find((x) => x.presetId === presetId)!;
-  const { presetId: _drop, ...spec } = p;
-  return { ...spec, id: newId(), color, visible: true };
+  return { ...specFromPreset(p), id: newId(), color, visible: true };
 };
 
 interface DeviceState {
@@ -55,21 +64,18 @@ export const useDeviceStore = create<DeviceState>()(
       updateThisDevice: (patch) =>
         set((s) => ({ thisDevice: { ...s.thisDevice, ...patch } })),
       addFromPreset: (preset) =>
-        set((s) => {
-          const { presetId: _drop, ...spec } = preset;
-          return {
-            devices: [
-              ...s.devices,
-              {
-                ...spec,
-                id: newId(),
-                color: DEVICE_COLORS[s.colorCursor % DEVICE_COLORS.length],
-                visible: true,
-              },
-            ],
-            colorCursor: s.colorCursor + 1,
-          };
-        }),
+        set((s) => ({
+          devices: [
+            ...s.devices,
+            {
+              ...specFromPreset(preset),
+              id: newId(),
+              color: DEVICE_COLORS[s.colorCursor % DEVICE_COLORS.length],
+              visible: true,
+            },
+          ],
+          colorCursor: s.colorCursor + 1,
+        })),
       updateDevice: (id, patch) =>
         set((s) => ({
           devices: s.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)),
