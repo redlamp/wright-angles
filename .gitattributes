@@ -1,0 +1,5 @@
+# Obsidian re-saves notes with CRLF on open, which turns every opened wiki
+# note into a phantom modified file. Normalize everything to LF in the repo.
+# Pair with `git config core.autocrlf false`.
+* text=auto eol=lf
+*.md text eol=lf
