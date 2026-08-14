@@ -21,7 +21,7 @@ export interface SetupFile {
   devices: Device[];
   settings: {
     unit: "in" | "cm";
-    theme: "dark" | "light";
+    theme: "system" | "dark" | "light";
     displayFill: "black" | "device-color";
     showLegibilityBands: boolean;
   };
@@ -98,7 +98,9 @@ export function applySetup(raw: unknown): string | null {
     const s = f.settings;
     useSettingsStore.setState({
       ...(s.unit === "in" || s.unit === "cm" ? { unit: s.unit } : {}),
-      ...(s.theme === "dark" || s.theme === "light" ? { theme: s.theme } : {}),
+      ...(s.theme === "system" || s.theme === "dark" || s.theme === "light"
+        ? { theme: s.theme }
+        : {}),
       ...(s.displayFill === "black" || s.displayFill === "device-color"
         ? { displayFill: s.displayFill }
         : {}),

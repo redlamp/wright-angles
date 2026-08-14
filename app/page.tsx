@@ -16,8 +16,8 @@ import { InfoPanel } from "@/components/panels/info-panel";
 import { SettingsPanel } from "@/components/panels/settings-panel";
 import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
+import { useResolvedTheme } from "@/lib/use-theme";
 
 const SceneView = dynamic(() => import("@/components/view3d/scene-view"), {
   ssr: false,
@@ -26,9 +26,23 @@ const SceneView = dynamic(() => import("@/components/view3d/scene-view"), {
 export default function Home() {
   const hydrate = useMediaStore((s) => s.hydrate);
   const addFiles = useMediaStore((s) => s.addFiles);
-  const theme = useSettingsStore((s) => s.theme);
+  const theme = useResolvedTheme();
   const viewMode = useUiStore((s) => s.viewMode);
   const [dropScrim, setDropScrim] = useState(false);
+  // 3D stays mounted through its exit animation so the camera can fly
+  // back to the head-on pose before the 2D overlay returns.
+  const [show3d, setShow3d] = useState(viewMode === "3d");
+  const [exiting3d, setExiting3d] = useState(false);
+  const [prevMode, setPrevMode] = useState(viewMode);
+  if (viewMode !== prevMode) {
+    setPrevMode(viewMode);
+    if (viewMode === "3d") {
+      setShow3d(true);
+      setExiting3d(false);
+    } else if (show3d) {
+      setExiting3d(true);
+    }
+  }
   // Everything below renders from persisted client state; skipping SSR
   // output entirely avoids hydration mismatches on the static export.
   const mounted = useSyncExternalStore(
@@ -76,12 +90,18 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
-      {!mounted ? null : viewMode === "2d" ? (
-        <DisplayArea />
-      ) : (
+      {!mounted ? null : show3d ? (
         <div className="absolute inset-0">
-          <SceneView />
+          <SceneView
+            exiting={exiting3d}
+            onExited={() => {
+              setShow3d(false);
+              setExiting3d(false);
+            }}
+          />
         </div>
+      ) : (
+        <DisplayArea />
       )}
 
       {mounted ? (

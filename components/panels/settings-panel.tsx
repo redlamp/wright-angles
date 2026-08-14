@@ -108,6 +108,8 @@ export function SettingsPanel() {
   const setUnit = useSettingsStore((s) => s.setUnit);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const sceneTheme = useSettingsStore((s) => s.sceneTheme);
+  const setSceneTheme = useSettingsStore((s) => s.setSceneTheme);
   const showBands = useSettingsStore((s) => s.showLegibilityBands);
   const setShowBands = useSettingsStore((s) => s.setShowLegibilityBands);
   const setOnboarded = useSettingsStore((s) => s.setOnboarded);
@@ -204,10 +206,23 @@ export function SettingsPanel() {
           <SegmentedToggle
             value={theme}
             options={[
+              { value: "system", label: "System" },
               { value: "dark", label: "Dark" },
               { value: "light", label: "Light" },
             ]}
             onChange={setTheme}
+          />
+        </Section>
+
+        <Section label="3D scene">
+          <SegmentedToggle
+            value={sceneTheme}
+            options={[
+              { value: "follow", label: "Match UI" },
+              { value: "dark", label: "Dark" },
+              { value: "light", label: "Light" },
+            ]}
+            onChange={setSceneTheme}
           />
         </Section>
 
