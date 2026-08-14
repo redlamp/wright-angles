@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DownloadIcon } from "lucide-react";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -21,6 +22,7 @@ export function DisplayArea() {
   const devices = useDeviceStore((s) => s.devices);
   const items = useMediaStore((s) => s.items);
   const objectUrls = useMediaStore((s) => s.objectUrls);
+  const videoUrls = useMediaStore((s) => s.videoUrls);
   const activeId = useMediaStore((s) => s.activeId);
   const displayFill = useSettingsStore((s) => s.displayFill);
 
@@ -49,6 +51,8 @@ export function DisplayArea() {
 
   const activeItem = items.find((i) => i.id === activeId) ?? null;
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
+  const activeVideoUrl =
+    activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
 
   const rects = useMemo(() => {
     if (!area.w || !area.h) return [];
@@ -86,6 +90,87 @@ export function DisplayArea() {
     return Math.round(k * dpr * 100);
   }, [area.w, area.h, dpr, thisDevice.resolution.w, thisDevice.resolution.h]);
 
+  // Snapshot the composition at This Device's native resolution — a
+  // shareable reference PNG of the comparison (poster frame for videos).
+  const exportView = useCallback(async () => {
+    const host = thisDevice;
+    const W = host.resolution.w;
+    const H = host.resolution.h;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#161616";
+    g.fillRect(0, 0, W, H);
+
+    const all: (Device & { isThis?: boolean })[] = [
+      ...(host.visible ? [{ ...host, isThis: true }] : []),
+      ...devices.filter((d) => d.visible),
+    ];
+    const rectList = all
+      .map((d) => {
+        const sim = d.isThis
+          ? { widthPx: W, heightPx: H }
+          : simulatedSizeOnHostPx(d, host);
+        return { d, w: sim.widthPx, h: sim.heightPx };
+      })
+      .sort((a, b) => b.w * b.h - a.w * a.h);
+
+    let img: HTMLImageElement | null = null;
+    if (activeUrl) {
+      img = new Image();
+      img.src = activeUrl;
+      await new Promise((res) => {
+        img!.onload = res;
+        img!.onerror = res;
+      });
+      if (!img.naturalWidth) img = null;
+    }
+
+    for (const { d, w, h } of rectList) {
+      const x = (W - w) / 2;
+      const y = (H - h) / 2;
+      if (img) {
+        g.fillStyle = "#000";
+        g.fillRect(x, y, w, h);
+        const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        const iw = img.naturalWidth * s;
+        const ih = img.naturalHeight * s;
+        g.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+      } else {
+        g.fillStyle =
+          displayFill === "device-color" ? d.color : "rgba(0,0,0,0.5)";
+        g.fillRect(x, y, w, h);
+      }
+      g.strokeStyle = d.color;
+      g.lineWidth = Math.max(2, W / 800);
+      g.strokeRect(x, y, w, h);
+      g.fillStyle = d.color;
+      g.font = `${Math.max(16, Math.round(W / 90))}px monospace`;
+      const label = `${d.label} · ${Math.round(d.distanceCm)} cm`;
+      g.fillText(label, x + 8, y > 30 ? y - 8 : y + 26);
+    }
+
+    g.fillStyle = "rgba(255,255,255,0.55)";
+    g.font = `${Math.max(13, Math.round(W / 110))}px monospace`;
+    g.fillText(
+      `Wright Angles — host: ${host.label} ${W}×${H} @ ${Math.round(host.distanceCm)} cm`,
+      16,
+      H - 16,
+    );
+
+    const blob = await new Promise<Blob | null>((r) =>
+      c.toBlob(r, "image/png"),
+    );
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [thisDevice, devices, activeUrl, displayFill]);
+
   return (
     <div
       ref={ref}
@@ -109,7 +194,16 @@ export function DisplayArea() {
                   : `${device.color}0d`,
             }}
           >
-            {activeUrl ? (
+            {activeVideoUrl ? (
+              <video
+                src={activeVideoUrl}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="size-full object-contain select-none"
+              />
+            ) : activeUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={activeUrl}
@@ -143,13 +237,23 @@ export function DisplayArea() {
         </div>
       ) : null}
 
-      {scalePct !== null ? (
-        <div className="absolute right-2 bottom-2 z-40 rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
-          {scalePct === 100
-            ? "1:1 physical scale"
-            : `${scalePct}% scale — fullscreen at native res for 1:1`}
-        </div>
-      ) : null}
+      <div className="absolute right-2 bottom-2 z-40 flex items-center gap-1.5">
+        <button
+          type="button"
+          title="Export this view as a PNG reference image"
+          className="flex h-6 items-center gap-1 rounded-md bg-black/50 px-2 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+          onClick={() => void exportView()}
+        >
+          <DownloadIcon className="size-3" /> export view
+        </button>
+        {scalePct !== null ? (
+          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
+            {scalePct === 100
+              ? "1:1 physical scale"
+              : `${scalePct}% scale — fullscreen at native res for 1:1`}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
