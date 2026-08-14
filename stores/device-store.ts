@@ -1,0 +1,94 @@
+"use client";
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Device, DevicePreset } from "@/lib/types";
+import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
+
+const newId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+
+const defaultThisDevice: Device = {
+  id: "this-device",
+  label: "My Monitor",
+  category: "monitor",
+  diagonalIn: 27,
+  distanceCm: 70,
+  resolution: { w: 2560, h: 1440 },
+  aspect: { w: 16, h: 9 },
+  color: "#46a758",
+  visible: true,
+};
+
+const seedDevice = (presetId: string, color: string): Device => {
+  const p = DEVICE_PRESETS.find((x) => x.presetId === presetId)!;
+  const { presetId: _drop, ...spec } = p;
+  return { ...spec, id: newId(), color, visible: true };
+};
+
+interface DeviceState {
+  thisDevice: Device;
+  devices: Device[];
+  colorCursor: number;
+  updateThisDevice: (patch: Partial<Device>) => void;
+  addFromPreset: (preset: DevicePreset) => void;
+  updateDevice: (id: string, patch: Partial<Device>) => void;
+  removeDevice: (id: string) => void;
+  toggleVisible: (id: string) => void;
+  resetAll: () => void;
+}
+
+export const useDeviceStore = create<DeviceState>()(
+  persist(
+    (set) => ({
+      thisDevice: defaultThisDevice,
+      // A small starter set so the first launch already demonstrates the
+      // idea; freely deletable.
+      devices: [
+        seedDevice("switch-oled", DEVICE_COLORS[1]),
+        seedDevice("switch-2", DEVICE_COLORS[0]),
+        seedDevice("tv-49-4k", DEVICE_COLORS[3]),
+      ],
+      colorCursor: 4,
+      updateThisDevice: (patch) =>
+        set((s) => ({ thisDevice: { ...s.thisDevice, ...patch } })),
+      addFromPreset: (preset) =>
+        set((s) => {
+          const { presetId: _drop, ...spec } = preset;
+          return {
+            devices: [
+              ...s.devices,
+              {
+                ...spec,
+                id: newId(),
+                color: DEVICE_COLORS[s.colorCursor % DEVICE_COLORS.length],
+                visible: true,
+              },
+            ],
+            colorCursor: s.colorCursor + 1,
+          };
+        }),
+      updateDevice: (id, patch) =>
+        set((s) => ({
+          devices: s.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)),
+        })),
+      removeDevice: (id) =>
+        set((s) => ({ devices: s.devices.filter((d) => d.id !== id) })),
+      toggleVisible: (id) =>
+        set((s) => ({
+          devices: s.devices.map((d) =>
+            d.id === id ? { ...d, visible: !d.visible } : d,
+          ),
+        })),
+      resetAll: () =>
+        set(() => ({
+          thisDevice: defaultThisDevice,
+          devices: [],
+          colorCursor: 0,
+        })),
+    }),
+    { name: "wright-angles:devices" },
+  ),
+);
