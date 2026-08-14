@@ -11,8 +11,10 @@ import { Sidebar } from "@/components/sidebar";
 import { DisplayArea } from "@/components/display-area";
 import { DeviceManagerPanel } from "@/components/panels/device-manager";
 import { MediaLibraryPanel } from "@/components/panels/media-library";
+import { PerceptionReportPanel } from "@/components/panels/perception-report";
 import { InfoPanel } from "@/components/panels/info-panel";
 import { SettingsPanel } from "@/components/panels/settings-panel";
+import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -87,8 +89,10 @@ export default function Home() {
           <Sidebar />
           <DeviceManagerPanel />
           <MediaLibraryPanel />
+          <PerceptionReportPanel />
           <InfoPanel />
           <SettingsPanel />
+          <Onboarding />
         </>
       ) : null}
 

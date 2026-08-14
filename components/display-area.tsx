@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { simulatedSizeOnHostPx } from "@/lib/display-math";
 import type { Device } from "@/lib/types";
 
@@ -21,6 +22,7 @@ export function DisplayArea() {
   const items = useMediaStore((s) => s.items);
   const objectUrls = useMediaStore((s) => s.objectUrls);
   const activeId = useMediaStore((s) => s.activeId);
+  const displayFill = useSettingsStore((s) => s.displayFill);
 
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ w: 0, h: 0 });
@@ -100,7 +102,11 @@ export function DisplayArea() {
             style={{
               outline: `2px solid ${device.color}`,
               outlineOffset: -1,
-              background: activeUrl ? "black" : `${device.color}0d`,
+              background: activeUrl
+                ? "black"
+                : displayFill === "device-color"
+                  ? device.color
+                  : `${device.color}0d`,
             }}
           >
             {activeUrl ? (
