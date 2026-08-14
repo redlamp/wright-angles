@@ -9,8 +9,10 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
 
 ## Active
 
-- First build: scaffold → math core → stores → UI → 2D overlay → 3D view
-- [[test-plan-2026-08-15-first-build]] — for Taylor's next session
+- First build **complete** on `dev` — awaiting Taylor's test pass and
+  the dev → main go-ahead for the first Pages deploy.
+- [[test-plan-2026-08-15-first-build]] — tick through on return
+- [[review-2026-08-15-open-questions]] — license, thresholds, promotion
 
 ## Recent dailies
 
