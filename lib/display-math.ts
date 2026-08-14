@@ -60,6 +60,29 @@ export function subtenseDeg(sizeCm: number, distanceCm: number): number {
 
 export const degToArcmin = (deg: number) => deg * 60;
 
+/**
+ * Horizontal subtense of a curved panel wrapping a cylinder of radius R,
+ * viewer on the panel's axis of symmetry. The physical width is the arc
+ * length; the edges sit at chord = R·sin(w/2R), pulled sagitta =
+ * R·(1−cos(w/2R)) closer to the viewer. For a 49″ 1000R panel at desk
+ * distance this is a real difference, not a rounding error.
+ */
+export function curvedSubtenseDeg(
+  arcWidthCm: number,
+  distanceCm: number,
+  curvatureRadiusCm?: number,
+): number {
+  if (!curvatureRadiusCm || curvatureRadiusCm <= 0) {
+    return subtenseDeg(arcWidthCm, distanceCm);
+  }
+  const R = curvatureRadiusCm;
+  const half = arcWidthCm / (2 * R);
+  const chordHalf = R * Math.sin(half);
+  const sagitta = R * (1 - Math.cos(half));
+  const z = Math.max(1e-6, distanceCm - sagitta);
+  return 2 * Math.atan(chordHalf / z) * DEG_PER_RAD;
+}
+
 export const subtenseArcmin = (sizeCm: number, distanceCm: number) =>
   degToArcmin(subtenseDeg(sizeCm, distanceCm));
 
@@ -71,7 +94,11 @@ export function sizeForArcmin(arcmin: number, distanceCm: number): number {
 /** Full angular description of a device as seen by its viewer. */
 export function deviceAngles(device: Device) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
-  const hDeg = subtenseDeg(widthCm, device.distanceCm);
+  const hDeg = curvedSubtenseDeg(
+    widthCm,
+    device.distanceCm,
+    device.curvatureR ? device.curvatureR / 10 : undefined,
+  );
   const vDeg = subtenseDeg(heightCm, device.distanceCm);
   const diagDeg = subtenseDeg(inToCm(device.diagonalIn), device.distanceCm);
   return {
@@ -131,14 +158,19 @@ export function simulatedSizeOnHostPx(target: Device, host: Device) {
   const t = physicalSizeCm(target.diagonalIn, target.aspect);
   const h = physicalSizeCm(host.diagonalIn, host.aspect);
 
-  const solve = (targetSizeCm: number) => {
-    const thetaRad =
-      2 * Math.atan(targetSizeCm / (2 * target.distanceCm));
-    return 2 * host.distanceCm * Math.tan(thetaRad / 2);
-  };
+  const solve = (thetaDeg: number) =>
+    2 * host.distanceCm * Math.tan((thetaDeg / DEG_PER_RAD) / 2);
 
-  const widthCmOnHost = solve(t.widthCm);
-  const heightCmOnHost = solve(t.heightCm);
+  // Width honors the target's curvature; height treats the panel as flat
+  // (vertical curvature is negligible on real displays).
+  const widthCmOnHost = solve(
+    curvedSubtenseDeg(
+      t.widthCm,
+      target.distanceCm,
+      target.curvatureR ? target.curvatureR / 10 : undefined,
+    ),
+  );
+  const heightCmOnHost = solve(subtenseDeg(t.heightCm, target.distanceCm));
   const pitchW = h.widthCm / host.resolution.w;
   const pitchH = h.heightCm / host.resolution.h;
 

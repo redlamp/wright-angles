@@ -114,6 +114,49 @@ describe("device angles", () => {
   });
 });
 
+describe("curved panels", () => {
+  const g9flat = dev({
+    diagonalIn: 49,
+    distanceCm: 70,
+    resolution: { w: 5120, h: 1440 },
+    aspect: { w: 32, h: 9 },
+  });
+  const g9curved = { ...g9flat, curvatureR: 1000 };
+
+  test("no curvature → identical to flat subtense", () => {
+    expect(deviceAngles({ ...g9flat, curvatureR: 0 }).horizontalDeg).toBeCloseTo(
+      deviceAngles(g9flat).horizontalDeg,
+      10,
+    );
+  });
+
+  test("a 1000R 49\" super-ultrawide at 70cm looks wider than flat", () => {
+    const flat = deviceAngles(g9flat).horizontalDeg;
+    const curved = deviceAngles(g9curved).horizontalDeg;
+    expect(curved).toBeGreaterThan(flat);
+    // The wrap effect is substantial at this size/distance, not noise.
+    expect(curved - flat).toBeGreaterThan(5);
+  });
+
+  test("vertical subtense is unaffected by curvature", () => {
+    expect(deviceAngles(g9curved).verticalDeg).toBeCloseTo(
+      deviceAngles(g9flat).verticalDeg,
+      10,
+    );
+  });
+
+  test("curvature carries into the host simulation width", () => {
+    const host = monitor1440;
+    expect(simulatedSizeOnHostPx(g9curved, host).widthPx).toBeGreaterThan(
+      simulatedSizeOnHostPx(g9flat, host).widthPx,
+    );
+    expect(simulatedSizeOnHostPx(g9curved, host).heightPx).toBeCloseTo(
+      simulatedSizeOnHostPx(g9flat, host).heightPx,
+      6,
+    );
+  });
+});
+
 describe("simulation on host (the core overlay math)", () => {
   test("a device simulated on itself fills its own resolution exactly", () => {
     const sim = simulatedSizeOnHostPx(monitor1440, monitor1440);

@@ -251,6 +251,28 @@ function DeviceEditor({
       </div>
 
       <div className="space-y-1">
+        <Microlabel>Curve</Microlabel>
+        <Select
+          value={String(device.curvatureR ?? 0)}
+          onValueChange={(v) =>
+            onPatch({ curvatureR: Number(v) || undefined })
+          }
+        >
+          <SelectTrigger size="sm" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="0">Flat</SelectItem>
+            {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
+              <SelectItem key={r} value={String(r)}>
+                {r}R
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1">
         <div className="flex items-center justify-between">
           <Microlabel>Screen height · floor to center</Microlabel>
           <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">

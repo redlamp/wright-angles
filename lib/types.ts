@@ -50,6 +50,11 @@ export interface Device {
    * centered gaze either way; elevation is a scene-realism control.
    */
   elevationCm?: number;
+  /**
+   * Curvature radius in mm using the industry convention (1000R = 1m
+   * radius; smaller = curvier). Undefined/0 = flat panel.
+   */
+  curvatureR?: number;
 }
 
 /** A preset is a Device minus per-instance state. */
@@ -62,7 +67,10 @@ export interface MediaItem {
   name: string;
   /** MIME type of the stored blob. */
   type: string;
-  /** Intrinsic pixel size of the image. */
+  kind: "image" | "video";
+  /** Video duration in seconds. */
+  duration?: number;
+  /** Intrinsic pixel size of the content. */
   width: number;
   height: number;
   /**

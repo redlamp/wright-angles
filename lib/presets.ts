@@ -157,6 +157,7 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     distanceCm: 70,
     resolution: { w: 5120, h: 1440 },
     aspect: { w: 32, h: 9 },
+    curvatureR: 1000,
   },
 
   // TVs
