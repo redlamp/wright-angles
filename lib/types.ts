@@ -44,6 +44,12 @@ export interface Device {
   /** Key color used for outlines/keylines everywhere this device is drawn. */
   color: string;
   visible: boolean;
+  /**
+   * Screen-center height from the floor in cm (3D view). Undefined means
+   * "aligned to the viewer's eye height" — the angular math assumes a
+   * centered gaze either way; elevation is a scene-realism control.
+   */
+  elevationCm?: number;
 }
 
 /** A preset is a Device minus per-instance state. */

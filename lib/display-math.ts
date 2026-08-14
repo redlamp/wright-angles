@@ -166,6 +166,33 @@ export function imageScaleOnHost(
 }
 
 /**
+ * Apparent-size ratio between two viewing situations: how wide `target`
+ * looks to its viewer relative to how wide `host` looks to its viewer.
+ * 0.45 means "appears at 45% of the host's apparent width".
+ */
+export function apparentWidthRatio(target: Device, host: Device): number {
+  const h = deviceAngles(host).horizontalDeg;
+  return h > 0 ? deviceAngles(target).horizontalDeg / h : 0;
+}
+
+/**
+ * Angular size of a feature authored `px` tall at `referenceHeight`
+ * (e.g. 24px in a 1080p HUD) when that content runs fullscreen on
+ * `device` — the "will my font ship legible" number.
+ */
+export function contentPxToArcmin(
+  px: number,
+  referenceHeight: number,
+  device: Device,
+): number {
+  if (referenceHeight <= 0) return 0;
+  return pixelsToArcmin(
+    (px * device.resolution.h) / referenceHeight,
+    device,
+  );
+}
+
+/**
  * Human acuity reference points, in arc minutes.
  * 20/20 vision resolves ~1 arcmin of detail; comfortable body text is
  * usually quoted at 18–22 arcmin cap height, with ~15 as a floor for
