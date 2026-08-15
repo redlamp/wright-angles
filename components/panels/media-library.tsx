@@ -11,8 +11,19 @@ import {
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { MediaItem } from "@/lib/types";
+import type { MediaCrop, MediaItem } from "@/lib/types";
 import { aspectFromResolution } from "@/lib/display-math";
+import {
+  cropOf,
+  cropScaleStyle,
+  dragCrop,
+  effectiveDims,
+  isFullFrame,
+  presetCrop,
+  viewBoxStyle,
+  type CropHandle,
+  type CropPreset,
+} from "@/lib/media-crop";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -344,6 +355,265 @@ function NameField({ item }: { item: MediaItem }) {
   );
 }
 
+/**
+ * Contain-fits the cropped region inside the 16:9 preview box with plain
+ * CSS — SyncedVideo and the GIF follower canvas take no style prop, so
+ * object-view-box can't be applied to them; instead the full-frame child
+ * is oversized/offset behind an overflow clip shaped to the effective
+ * dims. The parent is the flex-centered aspect-video box.
+ */
+function PreviewCropFrame({
+  item,
+  children,
+}: {
+  item: MediaItem;
+  children: React.ReactNode;
+}) {
+  const eff = effectiveDims(item);
+  const wide = eff.width / eff.height >= 16 / 9;
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{
+        aspectRatio: `${eff.width} / ${eff.height}`,
+        ...(wide ? { width: "100%" } : { height: "100%" }),
+      }}
+    >
+      <div className="absolute" style={cropScaleStyle(item)}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+type AspectSnap = "free" | "16:9" | "16:10";
+const SNAP_RATIO: Record<AspectSnap, number | null> = {
+  free: null,
+  "16:9": 16 / 9,
+  "16:10": 16 / 10,
+};
+const NEXT_SNAP: Record<AspectSnap, AspectSnap> = {
+  free: "16:9",
+  "16:9": "16:10",
+  "16:10": "free",
+};
+
+const CROP_HANDLES: { id: CropHandle; className: string }[] = [
+  { id: "nw", className: "top-0 left-0 cursor-nwse-resize" },
+  { id: "n", className: "top-0 left-1/2 cursor-ns-resize" },
+  { id: "ne", className: "top-0 left-full cursor-nesw-resize" },
+  { id: "e", className: "top-1/2 left-full cursor-ew-resize" },
+  { id: "se", className: "top-full left-full cursor-nwse-resize" },
+  { id: "s", className: "top-full left-1/2 cursor-ns-resize" },
+  { id: "sw", className: "top-full left-0 cursor-nesw-resize" },
+  { id: "w", className: "top-1/2 left-0 cursor-ew-resize" },
+];
+
+/** Keyed by item id at the callsite so drafts reset when the item changes. */
+function CropEditor({
+  item,
+  objectUrl,
+  onApply,
+  onCancel,
+}: {
+  item: MediaItem;
+  objectUrl: string;
+  onApply: (crop: MediaCrop | undefined) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<MediaCrop>(() => ({ ...cropOf(item) }));
+  const [snap, setSnap] = useState<AspectSnap>("free");
+  const hostRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    handle: CropHandle;
+    startX: number;
+    startY: number;
+    base: MediaCrop;
+  } | null>(null);
+
+  // The handle id rides on data-handle so one handler serves all nine
+  // drag surfaces (a curried closure trips the react-compiler ref lint).
+  const onDragStart = (e: React.PointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    drag.current = {
+      handle: (e.currentTarget.dataset.handle ?? "move") as CropHandle,
+      startX: e.clientX,
+      startY: e.clientY,
+      base: draft,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = drag.current;
+    const host = hostRef.current;
+    if (!d || !host || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    const r = host.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const ratio = SNAP_RATIO[snap];
+    setDraft(
+      dragCrop(
+        d.base,
+        d.handle,
+        (e.clientX - d.startX) / r.width,
+        (e.clientY - d.startY) / r.height,
+        // Aspect lock in normalized units: pixel ratio × (H/W).
+        ratio ? (ratio * item.height) / item.width : null,
+      ),
+    );
+  };
+  const onDragEnd = () => {
+    drag.current = null;
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        ref={hostRef}
+        className="relative touch-none overflow-hidden rounded-md bg-black/40 select-none"
+        style={{ aspectRatio: `${item.width} / ${item.height}` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={objectUrl}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 size-full"
+        />
+        {/* The crop window; the oversized shadow is the outside scrim. */}
+        <div
+          className="absolute cursor-move touch-none"
+          style={{
+            left: `${draft.x * 100}%`,
+            top: `${draft.y * 100}%`,
+            width: `${draft.w * 100}%`,
+            height: `${draft.h * 100}%`,
+            boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
+            outline: "1px solid rgba(255,255,255,0.9)",
+          }}
+          data-handle="move"
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+        >
+          {CROP_HANDLES.map(({ id, className }) => (
+            <div
+              key={id}
+              data-handle={id}
+              className={cn(
+                "absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-[2px] border border-black/60 bg-white",
+                className,
+              )}
+              onPointerDown={onDragStart}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          title="Cycle aspect snap for resize handles"
+          className="ctl-quiet h-8 px-2 font-mono text-xs"
+          onClick={() => setSnap(NEXT_SNAP[snap])}
+        >
+          snap · {snap}
+        </button>
+        <span className="min-w-0 flex-1 truncate text-right font-mono text-xs text-muted-foreground">
+          {Math.round(draft.w * item.width)}×{Math.round(draft.h * item.height)}
+          px
+        </span>
+        <Button
+          size="sm"
+          onClick={() => onApply(isFullFrame(draft) ? undefined : draft)}
+        >
+          Apply
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const CROP_PRESETS: { kind: CropPreset; label: string }[] = [
+  { kind: "bottom-16-9", label: "Bottom 16:9" },
+  { kind: "center-16-9", label: "Center 16:9" },
+  { kind: "square", label: "Square center" },
+];
+
+/** Crop presets + the inline freeform editor. Video crops use the poster. */
+function CropSection({
+  item,
+  objectUrl,
+}: {
+  item: MediaItem;
+  objectUrl: string;
+}) {
+  const setCrop = useMediaStore((s) => s.setCrop);
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-5 items-center justify-between">
+        <SectionLabel>Crop</SectionLabel>
+        {item.crop ? (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            onClick={() => {
+              setCrop(item.id, undefined);
+              setEditing(false);
+            }}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {CROP_PRESETS.map(({ kind, label }) => {
+          const preset = presetCrop(kind, item.width, item.height);
+          return (
+            <Button
+              key={kind}
+              variant="secondary"
+              size="sm"
+              disabled={!preset}
+              title={
+                preset ? undefined : "The image is already this shape"
+              }
+              onClick={() => preset && setCrop(item.id, preset)}
+            >
+              {label}
+            </Button>
+          );
+        })}
+        <Button
+          variant={editing ? "default" : "secondary"}
+          size="sm"
+          aria-expanded={editing}
+          onClick={() => setEditing((v) => !v)}
+        >
+          Adjust…
+        </Button>
+      </div>
+      {editing ? (
+        <CropEditor
+          key={item.id}
+          item={item}
+          objectUrl={objectUrl}
+          onApply={(crop) => {
+            setCrop(item.id, crop);
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 /** Keyed by item id at the callsite so the armed state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
@@ -351,25 +621,39 @@ function DetailCard({ item }: { item: MediaItem }) {
   const remove = useMediaStore((s) => s.remove);
   const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
   const [armed, setArmed] = useState(false);
-  const aspect = aspectFromResolution({ w: item.width, h: item.height });
+  const eff = effectiveDims(item);
+  const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
 
   return (
     <div className="space-y-2.5 p-2.5">
       <SectionLabel>Active media</SectionLabel>
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
         {item.kind === "video" && videoUrl ? (
-          <SyncedVideo src={videoUrl} className="size-full object-contain" />
+          item.crop ? (
+            <PreviewCropFrame item={item}>
+              <SyncedVideo src={videoUrl} className="size-full" />
+            </PreviewCropFrame>
+          ) : (
+            <SyncedVideo src={videoUrl} className="size-full object-contain" />
+          )
         ) : item.type === "image/gif" ? (
-          <GifView
-            url={objectUrl}
-            alt={item.name}
-            className="size-full object-contain"
-          />
+          item.crop ? (
+            <PreviewCropFrame item={item}>
+              <GifView url={objectUrl} alt={item.name} className="size-full" />
+            </PreviewCropFrame>
+          ) : (
+            <GifView
+              url={objectUrl}
+              alt={item.name}
+              className="size-full object-contain"
+            />
+          )
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={objectUrl}
             alt={item.name}
+            style={viewBoxStyle(item)}
             className="size-full object-contain"
           />
         )}
@@ -382,16 +666,24 @@ function DetailCard({ item }: { item: MediaItem }) {
       {/* Measurements: what the simulation actually uses. */}
       <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
         <div>
-          {item.width}×{item.height}px native · {aspect.w}:{aspect.h}
+          {eff.width}×{eff.height}px {item.crop ? "cropped" : "native"} ·{" "}
+          {aspect.w}:{aspect.h}
           {item.kind === "video" && item.duration
             ? ` · ${Math.round(item.duration)}s`
             : ""}
         </div>
+        {item.crop ? (
+          <div>
+            cropped from {item.width}×{item.height}px native
+          </div>
+        ) : null}
         <div>
           shown as {item.referenceHeight}p content
           {item.referenceHeight !== item.height ? " (scaled)" : ""}
         </div>
       </div>
+
+      <CropSection item={item} objectUrl={objectUrl} />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
         Reference size

@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { HighlightBox, MediaItem } from "@/lib/types";
+import type { HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
 import {
   idbClearMedia,
   idbDeleteMedia,
@@ -117,6 +117,8 @@ interface MediaState {
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
   setReferenceHeight: (id: string, referenceHeight: number) => void;
+  /** Set or clear (undefined) the item's crop window. */
+  setCrop: (id: string, crop: MediaCrop | undefined) => void;
   wipeAll: () => Promise<void>;
 }
 
@@ -400,6 +402,22 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   setReferenceHeight: (id, referenceHeight) => {
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, referenceHeight } : i)),
+    }));
+    persistMeta(get, id);
+  },
+
+  setCrop: (id, crop) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        if (!crop) {
+          // Drop the key entirely so cleared items persist crop-free.
+          const rest = { ...i };
+          delete rest.crop;
+          return rest;
+        }
+        return { ...i, crop };
+      }),
     }));
     persistMeta(get, id);
   },

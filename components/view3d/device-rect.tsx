@@ -95,7 +95,9 @@ function applyCenterY(
 
 /**
  * The active media item's texture, loaded once at scene level and shared by
- * every rect. Width/height are the content's intrinsic pixels (for fit).
+ * every rect. Width/height are the content's EFFECTIVE pixels — the crop
+ * window when one is set, else intrinsic — so letterbox fit matches what
+ * the texture's repeat/offset actually shows (see initScreenTexture).
  */
 export interface ScreenMedia {
   texture: Texture;

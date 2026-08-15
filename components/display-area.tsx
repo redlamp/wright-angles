@@ -15,6 +15,13 @@ import {
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
+import {
+  boxInCrop,
+  cropOf,
+  cropScaleStyle,
+  effectiveDims,
+  viewBoxStyle,
+} from "@/lib/media-crop";
 import type { Device, HighlightBox, MediaItem } from "@/lib/types";
 
 /**
@@ -93,6 +100,37 @@ function useScreenViewport() {
   return vp;
 }
 
+/**
+ * Wrapper-based CSS crop for media elements that take no style prop
+ * (SyncedVideo, the GIF follower canvas — object-view-box needs an inline
+ * style): the effective region contain-fit into the rect becomes a clip
+ * box, with the full-frame element oversized and offset behind it.
+ */
+function CropFrame({
+  item,
+  w,
+  h,
+  children,
+}: {
+  item: MediaItem;
+  w: number;
+  h: number;
+  children: React.ReactNode;
+}) {
+  const eff = effectiveDims(item);
+  const area = containFit(eff.width, eff.height, w, h);
+  return (
+    <div
+      className="absolute overflow-hidden"
+      style={{ left: area.x, top: area.y, width: area.w, height: area.h }}
+    >
+      <div className="absolute" style={cropScaleStyle(item)}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const boxBandColor = (worstArcmin: number) =>
   worstArcmin >= ACUITY.comfortableTextArcmin
     ? "#46a758"
@@ -120,11 +158,17 @@ function BoxLayer({
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
-  const area = containFit(media.width, media.height, rectW, rectH);
+  const crop = cropOf(media);
+  const eff = effectiveDims(media);
+  const area = containFit(eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
   return (
     <>
       {(media.boxes ?? []).map((b) => {
+        // Boxes stay normalized to the full image; render them through
+        // the crop window (clipped; hidden when fully outside).
+        const cb = boxInCrop(b, crop);
+        if (!cb) return null;
         const color = boxBandColor(worstByBox.get(b.id) ?? 99);
         const selected = b.id === selectedBoxId;
         return (
@@ -133,10 +177,10 @@ function BoxLayer({
             role={isHost ? "button" : undefined}
             className="absolute"
             style={{
-              left: area.x + b.x * area.w,
-              top: area.y + b.y * area.h,
-              width: b.w * area.w,
-              height: b.h * area.h,
+              left: area.x + cb.x * area.w,
+              top: area.y + cb.y * area.h,
+              width: cb.w * area.w,
+              height: cb.h * area.h,
               border: `${selected && isHost ? 2 : 1}px solid ${color}`,
               boxShadow: selected && isHost ? `0 0 0 1px ${color}55` : undefined,
               cursor: isHost ? "pointer" : undefined,
@@ -202,6 +246,20 @@ export function DisplayArea() {
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
   const activeVideoUrl =
     activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
+  // All contain-fit math below runs on the cropped (effective) dims.
+  // Memoized so the react-compiler can keep the manual memos below —
+  // it can't see into the helpers to prove they don't mutate activeItem.
+  const { eff, crop, imgViewBox } = useMemo(
+    () =>
+      activeItem
+        ? {
+            eff: effectiveDims(activeItem),
+            crop: cropOf(activeItem),
+            imgViewBox: viewBoxStyle(activeItem),
+          }
+        : { eff: null, crop: null, imgViewBox: undefined },
+    [activeItem],
+  );
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
@@ -217,6 +275,8 @@ export function DisplayArea() {
   const worstByBox = useMemo(() => {
     const map = new Map<string, number>();
     if (!activeItem) return map;
+    const c = cropOf(activeItem);
+    const dims = effectiveDims(activeItem);
     const devs = [
       ...(thisDevice.visible ? [thisDevice] : []),
       ...devices.filter((d) => d.visible),
@@ -224,7 +284,13 @@ export function DisplayArea() {
     for (const b of activeItem.boxes ?? []) {
       let worst = Infinity;
       for (const d of devs) {
-        worst = Math.min(worst, boxMetricsOnDevice(b.h, activeItem, d).arcmin);
+        // The cropped region is what contain-fits onto each device, so
+        // the box height re-normalizes against the crop (b.h/c.h of
+        // dims.height = the box's unchanged source-pixel height).
+        worst = Math.min(
+          worst,
+          boxMetricsOnDevice(b.h / c.h, dims, d).arcmin,
+        );
       }
       map.set(b.id, worst);
     }
@@ -397,10 +463,24 @@ export function DisplayArea() {
       if (img) {
         g.fillStyle = "#000";
         g.fillRect(x, y, w, h);
-        const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-        const iw = img.naturalWidth * s;
-        const ih = img.naturalHeight * s;
-        g.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+        // Draw only the crop window (full frame when no crop).
+        const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
+        const sw = c.w * img.naturalWidth;
+        const sh = c.h * img.naturalHeight;
+        const s = Math.min(w / sw, h / sh);
+        const iw = sw * s;
+        const ih = sh * s;
+        g.drawImage(
+          img,
+          c.x * img.naturalWidth,
+          c.y * img.naturalHeight,
+          sw,
+          sh,
+          x + (w - iw) / 2,
+          y + (h - ih) / 2,
+          iw,
+          ih,
+        );
       } else {
         g.fillStyle =
           displayFill === "device-color" ? d.color : "rgba(0,0,0,0.5)";
@@ -433,7 +513,7 @@ export function DisplayArea() {
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [thisDevice, devices, activeUrl, displayFill]);
+  }, [thisDevice, devices, activeUrl, crop, displayFill]);
 
   return (
     <div
@@ -467,22 +547,38 @@ export function DisplayArea() {
                     : `${device.color}0d`,
             }}
           >
-            {activeVideoUrl ? (
-              <SyncedVideo
-                src={activeVideoUrl}
-                className="size-full object-contain select-none"
-              />
+            {activeVideoUrl && activeItem ? (
+              activeItem.crop ? (
+                <CropFrame item={activeItem} w={w} h={h}>
+                  <SyncedVideo
+                    src={activeVideoUrl}
+                    className="size-full select-none"
+                  />
+                </CropFrame>
+              ) : (
+                <SyncedVideo
+                  src={activeVideoUrl}
+                  className="size-full object-contain select-none"
+                />
+              )
             ) : activeItem?.type === "image/gif" && activeUrl ? (
-              <GifView
-                url={activeUrl}
-                className="size-full object-contain select-none"
-              />
+              activeItem.crop ? (
+                <CropFrame item={activeItem} w={w} h={h}>
+                  <GifView url={activeUrl} className="size-full select-none" />
+                </CropFrame>
+              ) : (
+                <GifView
+                  url={activeUrl}
+                  className="size-full object-contain select-none"
+                />
+              )
             ) : activeUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={activeUrl}
                 alt=""
                 draggable={false}
+                style={imgViewBox}
                 className="size-full object-contain select-none"
               />
             ) : null}
@@ -518,13 +614,11 @@ export function DisplayArea() {
           and box selection are never blocked by nested rects. */}
       {(() => {
         const hostRect = rects.find((r) => r.device.isThis);
-        if (!activeItem || !hostRect) return null;
-        const area = containFit(
-          activeItem.width,
-          activeItem.height,
-          hostRect.w,
-          hostRect.h,
-        );
+        if (!activeItem || !eff || !crop || !hostRect) return null;
+        const area = containFit(eff.width, eff.height, hostRect.w, hostRect.h);
+        // Draft is kept in full-image coords like persisted boxes; render
+        // it through the crop window like BoxLayer does.
+        const draftCb = draft ? boxInCrop(draft, crop) : null;
         return (
           <div
             // Above every device rect (z 1..n), below the app chrome
@@ -547,14 +641,14 @@ export function DisplayArea() {
                 isHost={!drawMode}
               />
             </div>
-            {draft ? (
+            {draftCb ? (
               <div
                 className="pointer-events-none absolute border border-dashed border-white/80"
                 style={{
-                  left: area.x + draft.x * area.w,
-                  top: area.y + draft.y * area.h,
-                  width: draft.w * area.w,
-                  height: draft.h * area.h,
+                  left: area.x + draftCb.x * area.w,
+                  top: area.y + draftCb.y * area.h,
+                  width: draftCb.w * area.w,
+                  height: draftCb.h * area.h,
                 }}
               />
             ) : null}
@@ -563,32 +657,26 @@ export function DisplayArea() {
                 className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
                 onPointerDown={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(
-                    activeItem.width,
-                    activeItem.height,
-                    r.width,
-                    r.height,
-                  );
+                  const a = containFit(eff.width, eff.height, r.width, r.height);
                   if (!a.w) return;
+                  // Screen → crop space → full-image coords (boxes are
+                  // stored against the full intrinsic image).
                   dragStart.current = {
-                    x: (e.clientX - r.left - a.x) / a.w,
-                    y: (e.clientY - r.top - a.y) / a.h,
+                    x: crop.x + ((e.clientX - r.left - a.x) / a.w) * crop.w,
+                    y: crop.y + ((e.clientY - r.top - a.y) / a.h) * crop.h,
                   };
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }}
                 onPointerMove={(e) => {
                   if (!dragStart.current) return;
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(
-                    activeItem.width,
-                    activeItem.height,
-                    r.width,
-                    r.height,
-                  );
+                  const a = containFit(eff.width, eff.height, r.width, r.height);
                   if (!a.w) return;
                   const clamp = (v: number) => Math.min(1, Math.max(0, v));
-                  const nx = clamp((e.clientX - r.left - a.x) / a.w);
-                  const ny = clamp((e.clientY - r.top - a.y) / a.h);
+                  const nx =
+                    crop.x + clamp((e.clientX - r.left - a.x) / a.w) * crop.w;
+                  const ny =
+                    crop.y + clamp((e.clientY - r.top - a.y) / a.h) * crop.h;
                   const s = dragStart.current;
                   setDraft({
                     id: "draft",

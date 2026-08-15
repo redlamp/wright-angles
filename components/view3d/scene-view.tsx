@@ -20,8 +20,9 @@ import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
-import type { Device } from "@/lib/types";
+import type { Device, MediaCrop } from "@/lib/types";
 import { physicalSizeCm } from "@/lib/display-math";
+import { effectiveDims } from "@/lib/media-crop";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
@@ -44,40 +45,53 @@ function markTextureDirty(tex: Texture) {
   tex.needsUpdate = true;
 }
 
-function initScreenTexture(tex: Texture) {
+/**
+ * The crop composes with the U-mirror via repeat/offset (sampled uv' =
+ * uv·repeat + offset). Three's UV origin is bottom-left while the crop is
+ * y-down, so the crop's vertical window [y, y+h] sits at v ∈
+ * [1−y−h, 1−y]: repeat.y = h, offset.y = 1−y−h. Mirrored U must run
+ * right-to-left across the window [x, x+w]: u' = (x+w) − u·w, i.e.
+ * repeat.x = −w, offset.x = x+w (no crop: −1 / 1, exactly today's mirror).
+ */
+function initScreenTexture(tex: Texture, crop?: MediaCrop) {
+  const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
   tex.colorSpace = SRGBColorSpace;
   tex.wrapS = RepeatWrapping;
-  tex.repeat.x = -1;
-  tex.offset.x = 1;
+  tex.repeat.set(-c.w, c.h);
+  tex.offset.set(c.x + c.w, 1 - c.y - c.h);
   tex.needsUpdate = true;
 }
 
-function useScreenTexture(tex: Texture) {
-  useEffect(() => initScreenTexture(tex), [tex]);
+function useScreenTexture(tex: Texture, crop?: MediaCrop) {
+  useEffect(() => initScreenTexture(tex, crop), [tex, crop]);
 }
 
 function ImageScreens({
   url,
+  crop,
   children,
 }: {
   url: string;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useLoader(TextureLoader, url);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   return <>{children(tex)}</>;
 }
 
 /** Screens driven by the playback engine's master video element. */
 function EngineVideoScreens({
   video,
+  crop,
   children,
 }: {
   video: HTMLVideoElement;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useMemo(() => new VideoTexture(video), [video]);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
   return <>{children(tex)}</>;
 }
@@ -85,13 +99,15 @@ function EngineVideoScreens({
 /** Screens mirroring the GIF engine's frame canvas. */
 function EngineGifScreens({
   engine,
+  crop,
   children,
 }: {
   engine: GifEngine;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
   const lastStamp = useRef(-1);
   useFrame(() => {
@@ -268,6 +284,10 @@ export default function SceneView({
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
+  // Crop: rects letterbox against the effective (cropped) dims; the crop
+  // window itself is applied on the shared texture's repeat/offset.
+  const mediaCrop = activeItem?.crop;
+  const mediaDims = activeItem ? effectiveDims(activeItem) : null;
 
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
@@ -346,8 +366,8 @@ export default function SceneView({
         }
         onDragState={setNodeDragging}
         media={
-          tex && activeItem
-            ? { texture: tex, width: activeItem.width, height: activeItem.height }
+          tex && mediaDims
+            ? { texture: tex, width: mediaDims.width, height: mediaDims.height }
             : null
         }
       />
@@ -400,13 +420,17 @@ export default function SceneView({
         {/* Fallback keeps the plain rects up while a texture loads. */}
         <Suspense fallback={rects(null)}>
           {activeItem && engine?.kind === "video" ? (
-            <EngineVideoScreens video={engine.video}>
+            <EngineVideoScreens video={engine.video} crop={mediaCrop}>
               {rects}
             </EngineVideoScreens>
           ) : activeItem && engine?.kind === "gif" ? (
-            <EngineGifScreens engine={engine}>{rects}</EngineGifScreens>
+            <EngineGifScreens engine={engine} crop={mediaCrop}>
+              {rects}
+            </EngineGifScreens>
           ) : activeItem && imageUrl ? (
-            <ImageScreens url={imageUrl}>{rects}</ImageScreens>
+            <ImageScreens url={imageUrl} crop={mediaCrop}>
+              {rects}
+            </ImageScreens>
           ) : (
             rects(null)
           )}
