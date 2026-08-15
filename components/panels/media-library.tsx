@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaItem } from "@/lib/types";
+import { aspectFromResolution } from "@/lib/display-math";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { FloatingPanel } from "./floating-panel";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -39,46 +41,16 @@ type SortMode = "added-asc" | "added-desc" | "name";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
-  );
-}
-
-function SegmentedToggle<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="panel-inset flex h-8 items-center gap-0.5 rounded-md p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          className={cn(
-            "h-full flex-1 rounded-[6px] text-xs transition-colors",
-            o.value === value
-              ? "bg-foreground text-background"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   );
 }
 
 /**
  * Sample images are a gitignored dev convenience: a manifest at
  * `public/reference/manifest.json` listing image filenames. If it isn't
- * there (any error, non-200, or empty), the button simply never appears.
+ * there (any error, non-200, or empty), the action simply never appears.
  */
 function normalizeManifest(data: unknown): string[] {
   if (!Array.isArray(data)) return [];
@@ -117,25 +89,17 @@ function useSampleManifest(): string[] | null {
   return names;
 }
 
-function ImportSection() {
+/**
+ * One slim row: import, generated test images, samples. Dropping files
+ * anywhere on the app window already imports them, so no dropzone.
+ */
+function Toolbar() {
   const addFiles = useMediaStore((s) => s.addFiles);
   const addGenerated = useMediaStore((s) => s.addGenerated);
   const items = useMediaStore((s) => s.items);
-
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-
   const samples = useSampleManifest();
   const [loadingSamples, setLoadingSamples] = useState(false);
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
-    },
-    [addFiles],
-  );
 
   const loadSamples = useCallback(async () => {
     if (!samples || loadingSamples) return;
@@ -150,11 +114,7 @@ function ImportSection() {
           const res = await fetch(`${BASE_PATH}/reference/${path}`);
           if (!res.ok) continue;
           const blob = await res.blob();
-          files.push(
-            new File([blob], name, {
-              type: blob.type || "image/png",
-            }),
-          );
+          files.push(new File([blob], name, { type: blob.type || "image/png" }));
         } catch {
           // Skip any file that fails to load.
         }
@@ -166,33 +126,20 @@ function ImportSection() {
   }, [samples, loadingSamples, items, addFiles]);
 
   return (
-    <div className="space-y-2 p-2.5">
-      <button
-        type="button"
-        className={cn(
-          "panel-inset flex h-14 w-full flex-col items-center justify-center gap-0.5 rounded-md border border-dashed border-input text-xs text-muted-foreground transition-colors hover:text-foreground",
-          dragOver && "border-ring text-foreground",
-        )}
+    <div className="flex items-center gap-1.5 p-2.5">
+      <Button
+        variant="secondary"
+        size="sm"
+        className="flex-1"
+        title="Import images or videos (or drop them anywhere in the window)"
         onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
       >
-        <span className="flex items-center gap-1.5">
-          <UploadIcon className="size-3.5" />
-          Drop images or click to browse
-        </span>
-        <span className="text-[9px] opacity-70">
-          Stored in your browser only — never uploaded
-        </span>
-      </button>
+        <UploadIcon className="size-4" /> Import
+      </Button>
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         multiple
         hidden
         onChange={(e) => {
@@ -200,35 +147,43 @@ function ImportSection() {
           e.target.value = "";
         }}
       />
-
-      <div className="flex gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger className="ctl-quiet flex h-8 flex-1 items-center justify-center gap-1.5 text-xs">
-            <SparklesIcon className="size-3.5" /> New test image
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-44">
-            {GENERATED_KINDS.map((k) => (
-              <DropdownMenuItem
-                key={k.kind}
-                onClick={() => void addGenerated(k.kind)}
-              >
-                {k.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {samples ? (
-          <button
-            type="button"
-            className="ctl-quiet flex h-8 flex-1 items-center justify-center gap-1.5 text-xs disabled:pointer-events-none disabled:opacity-50"
-            disabled={loadingSamples}
-            onClick={() => void loadSamples()}
-          >
-            <FolderDownIcon className="size-3.5" />
-            {loadingSamples ? "Loading…" : "Load samples"}
-          </button>
-        ) : null}
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              title="Add a generated test image"
+            >
+              <SparklesIcon className="size-4" /> Test
+            </Button>
+          }
+        />
+        <DropdownMenuContent className="w-44">
+          {GENERATED_KINDS.map((k) => (
+            <DropdownMenuItem
+              key={k.kind}
+              onClick={() => void addGenerated(k.kind)}
+            >
+              {k.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {samples ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+          title="Import the local sample screenshots"
+          disabled={loadingSamples}
+          onClick={() => void loadSamples()}
+        >
+          <FolderDownIcon className="size-4" />
+          {loadingSamples ? "…" : "Samples"}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -258,10 +213,10 @@ function LibraryList() {
     <div className="border-t border-border">
       <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1.5">
         <div className="min-w-0 flex-1">
-          <SectionLabel>Library ({items.length})</SectionLabel>
+          <SectionLabel>Library · {items.length}</SectionLabel>
         </div>
         <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-          <SelectTrigger size="sm" className="w-24" aria-label="Sort by">
+          <SelectTrigger size="sm" className="w-26" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -283,22 +238,22 @@ function LibraryList() {
               aria-label={label}
               aria-pressed={view === mode}
               className={cn(
-                "flex size-6 items-center justify-center rounded-[6px] transition-colors",
+                "flex size-7 items-center justify-center rounded-[6px] transition-colors",
                 view === mode
                   ? "bg-foreground text-background"
                   : "text-muted-foreground hover:text-foreground",
               )}
               onClick={() => setView(mode)}
             >
-              <Icon className="size-3.5" />
+              <Icon className="size-4" />
             </button>
           ))}
         </div>
       </div>
 
       {items.length === 0 ? (
-        <p className="px-2.5 pb-2.5 text-xs text-muted-foreground">
-          No images yet. Import some, or start with a test image.
+        <p className="px-2.5 pb-2.5 text-sm text-muted-foreground">
+          No media yet. Drop images or videos anywhere in the window.
         </p>
       ) : view === "grid" ? (
         <div className="grid grid-cols-3 gap-1.5 px-2.5 pb-2.5">
@@ -331,7 +286,7 @@ function LibraryList() {
               key={item.id}
               type="button"
               className={cn(
-                "flex h-8 w-full items-center gap-2 rounded-md px-1 text-left transition-colors",
+                "flex h-9 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors",
                 item.id === activeId
                   ? "panel-inset ring-1 ring-ring ring-inset"
                   : "hover:bg-muted/50",
@@ -346,10 +301,10 @@ function LibraryList() {
                   className="size-full object-cover"
                 />
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs" title={item.name}>
+              <span className="min-w-0 flex-1 truncate text-sm" title={item.name}>
                 {item.name}
               </span>
-              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">
                 {item.width}×{item.height}
               </span>
             </button>
@@ -371,8 +326,7 @@ function NameField({ item }: { item: MediaItem }) {
 
   return (
     <Input
-      className="h-8 text-sm"
-      aria-label="Image name"
+      aria-label="Media name"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -390,10 +344,11 @@ function DetailCard({ item }: { item: MediaItem }) {
   const remove = useMediaStore((s) => s.remove);
   const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
   const [armed, setArmed] = useState(false);
+  const aspect = aspectFromResolution({ w: item.width, h: item.height });
 
   return (
-    <div className="space-y-2 border-t border-border p-2.5">
-      <SectionLabel>Active image</SectionLabel>
+    <div className="space-y-2.5 p-2.5">
+      <SectionLabel>Active media</SectionLabel>
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -403,21 +358,33 @@ function DetailCard({ item }: { item: MediaItem }) {
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        <NameField key={item.id} item={item} />
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-          {item.width}×{item.height}
-        </span>
+      <NameField key={item.id} item={item} />
+
+      {/* Measurements: what the simulation actually uses. */}
+      <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
+        <div>
+          {item.width}×{item.height}px native · {aspect.w}:{aspect.h}
+          {item.kind === "video" && item.duration
+            ? ` · ${Math.round(item.duration)}s`
+            : ""}
+        </div>
+        <div>
+          shown as {item.referenceHeight}p content
+          {item.referenceHeight !== item.height ? " (scaled)" : ""}
+        </div>
       </div>
 
-      <label className="flex h-8 items-center justify-between gap-2 text-[10px] text-muted-foreground uppercase tracking-wide">
+      <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
         Reference size
         <Select
           value={String(item.referenceHeight)}
           onValueChange={(v) => setReferenceHeight(item.id, Number(v))}
         >
-          <SelectTrigger size="sm" className="w-28">
-            <SelectValue />
+          <SelectTrigger size="sm" className="w-30">
+            <SelectValue>
+              {item.referenceHeight}p
+              {item.referenceHeight === item.height ? " (native)" : ""}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {[...new Set([item.height, ...REFERENCE_CHOICES])]
@@ -430,59 +397,67 @@ function DetailCard({ item }: { item: MediaItem }) {
           </SelectContent>
         </Select>
       </label>
-      <p className="text-[10px] leading-4 text-muted-foreground">
-        The resolution this content was authored for. A 1080p capture shown on
-        a 1440p device is scaled up, like a console would.
-      </p>
 
       {armed ? (
         <div className="flex gap-2">
           <button
             type="button"
-            className="h-8 flex-1 rounded-md bg-destructive text-xs text-white transition-opacity hover:opacity-90"
+            className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
             onClick={() => void remove(item.id)}
           >
             Really remove
           </button>
           <button
             type="button"
-            className="ctl-quiet h-8 flex-1 text-xs"
+            className="ctl-quiet h-8 flex-1 text-sm"
             onClick={() => setArmed(false)}
           >
             Cancel
           </button>
         </div>
       ) : (
-        <button
-          type="button"
-          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-destructive/40 text-xs text-destructive transition-colors hover:bg-destructive/10"
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={() => setArmed(true)}
         >
-          <Trash2Icon className="size-3.5" /> Remove from library…
-        </button>
+          <Trash2Icon className="size-4" /> Remove from library…
+        </Button>
       )}
     </div>
   );
 }
 
-function DisplayFillSection() {
+function DisplayFillRow() {
   const displayFill = useSettingsStore((s) => s.displayFill);
   const setDisplayFill = useSettingsStore((s) => s.setDisplayFill);
 
   return (
-    <div className="space-y-1 border-t border-border p-2.5">
-      <SectionLabel>Empty device fill</SectionLabel>
-      <SegmentedToggle<DisplayFill>
-        value={displayFill}
-        options={[
-          { value: "black", label: "Black" },
-          { value: "device-color", label: "Key color" },
-        ]}
-        onChange={setDisplayFill}
-      />
-      <p className="text-[10px] leading-4 text-muted-foreground">
-        How devices without an image render in the 2D overlay.
-      </p>
+    <div className="flex items-center justify-between gap-2 border-t border-border px-2.5 py-2">
+      <SectionLabel>Empty fill</SectionLabel>
+      <div className="panel-inset flex h-8 items-center gap-0.5 rounded-md p-0.5">
+        {(
+          [
+            { value: "black", label: "Black" },
+            { value: "device-color", label: "Key color" },
+          ] as { value: DisplayFill; label: string }[]
+        ).map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={cn(
+              "h-full rounded-[6px] px-2.5 text-xs transition-colors",
+              o.value === displayFill
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setDisplayFill(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -498,13 +473,30 @@ export function MediaLibraryPanel() {
       title="Media Library"
       icon={ImageIcon}
       defaultPosition={{ x: 420, y: 16 }}
-      width={340}
+      width={360}
     >
-      <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
-        <ImportSection />
-        <LibraryList />
-        {active ? <DetailCard key={active.id} item={active} /> : null}
-        <DisplayFillSection />
+      {/* Container query: widen the panel past 30rem and the detail
+          column sits beside the library instead of below it. */}
+      <div className="@container">
+        <div className="grid max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto @[30rem]:grid-cols-2 @[30rem]:divide-x @[30rem]:divide-border">
+          <div className="min-w-0">
+            <Toolbar />
+            <LibraryList />
+          </div>
+          <div className="min-w-0 border-t border-border @[30rem]:border-t-0">
+            {active ? (
+              <DetailCard key={active.id} item={active} />
+            ) : (
+              <p className="p-2.5 text-sm text-muted-foreground">
+                Select something in the library to see its details.
+              </p>
+            )}
+            <DisplayFillRow />
+            <p className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
+              Media is stored in your browser only — never uploaded.
+            </p>
+          </div>
+        </div>
       </div>
     </FloatingPanel>
   );
