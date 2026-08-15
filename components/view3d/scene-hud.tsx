@@ -18,8 +18,6 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
   const setScenario = useViewerStore((s) => s.setScenario);
   const heightCm = useViewerStore((s) => s.heightCm);
   const setHeightCm = useViewerStore((s) => s.setHeightCm);
-  const showProjection = useViewerStore((s) => s.showProjectionLines);
-  const setShowProjection = useViewerStore((s) => s.setShowProjectionLines);
 
   return (
     <>
@@ -68,20 +66,6 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
             {Math.round(heightCm)} cm
           </span>
         </div>
-        <button
-          type="button"
-          aria-pressed={showProjection}
-          title="Lines from the eye to every display's corners — the cone of vision. Click a display to highlight its own."
-          className={cn(
-            "mt-1.5 h-7 w-full rounded-md text-[11px] transition-colors",
-            showProjection
-              ? "bg-foreground text-background"
-              : "panel-inset text-muted-foreground hover:text-foreground",
-          )}
-          onClick={() => setShowProjection(!showProjection)}
-        >
-          Corner projection lines
-        </button>
       </div>
     </>
   );
