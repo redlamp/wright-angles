@@ -48,6 +48,11 @@ interface DeviceState {
   removeDevice: (id: string) => void;
   /** Move a device to a new index in the list (drag reorder). */
   moveDevice: (id: string, toIndex: number) => void;
+  /**
+   * Clone a device (same specs, next auto color) — the way to test one
+   * display at several distances side by side.
+   */
+  duplicateDevice: (id: string) => void;
   toggleVisible: (id: string) => void;
   resetAll: () => void;
 }
@@ -97,6 +102,26 @@ export const useDeviceStore = create<DeviceState>()(
             moved,
           );
           return { devices };
+        }),
+      duplicateDevice: (id) =>
+        set((s) => {
+          const src =
+            s.devices.find((d) => d.id === id) ??
+            (s.thisDevice.id === id ? s.thisDevice : undefined);
+          if (!src) return {};
+          const idx = s.devices.findIndex((d) => d.id === id);
+          const copy: Device = {
+            ...src,
+            resolution: { ...src.resolution },
+            aspect: { ...src.aspect },
+            elevation: src.elevation ? { ...src.elevation } : undefined,
+            id: newId(),
+            label: `${src.label} (2)`,
+            color: DEVICE_COLORS[s.colorCursor % DEVICE_COLORS.length],
+          };
+          const devices = [...s.devices];
+          devices.splice(idx >= 0 ? idx + 1 : devices.length, 0, copy);
+          return { devices, colorCursor: s.colorCursor + 1 };
         }),
       toggleVisible: (id) =>
         set((s) => ({

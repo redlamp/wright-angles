@@ -2,12 +2,15 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
   EyeIcon,
   EyeOffIcon,
   MonitorIcon,
+  PinIcon,
   PlusIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
@@ -24,6 +27,7 @@ import {
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { FloatingPanel } from "./floating-panel";
 import { NumberStepper } from "@/components/number-stepper";
@@ -157,14 +161,16 @@ function AngleReadout({ device }: { device: Device }) {
   );
 }
 
-function DeviceEditor({
+export function DeviceEditor({
   device,
   onPatch,
   onRemove,
+  onDuplicate,
 }: {
   device: Device;
   onPatch: (patch: Partial<Device>) => void;
   onRemove?: () => void;
+  onDuplicate?: () => void;
 }) {
   const sizeUnit = useSettingsStore((s) => s.sizeUnit);
   const setSizeUnit = useSettingsStore((s) => s.setSizeUnit);
@@ -431,8 +437,21 @@ function DeviceEditor({
         </label>
       ) : null}
 
-      {onRemove ? (
-        <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {onDuplicate ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Duplicate this device — the way to test one display at several distances"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onDuplicate}
+          >
+            <CopyIcon className="size-4" /> Duplicate
+          </Button>
+        ) : (
+          <span />
+        )}
+        {onRemove ? (
           <Button
             variant="ghost"
             size="sm"
@@ -441,8 +460,8 @@ function DeviceEditor({
           >
             <Trash2Icon className="size-4" /> Delete
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       <AngleReadout device={device} />
     </div>
@@ -472,21 +491,22 @@ interface ReorderHooks {
 
 function DeviceRow({
   device,
-  isThisDevice,
   onPatch,
-  onRemove,
   onToggleVisible,
   reorder,
 }: {
   device: Device;
-  isThisDevice?: boolean;
   onPatch: (patch: Partial<Device>) => void;
-  onRemove?: () => void;
   onToggleVisible: () => void;
   /** Present only for reorderable (test) devices. */
   reorder?: ReorderHooks;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const openDetailId = useUiStore((s) => s.openDetailId);
+  const pinned = useUiStore((s) => s.pinnedDetails[device.id]);
+  const openDetail = useUiStore((s) => s.openDetail);
+  const detailOpen = openDetailId === device.id || Boolean(pinned);
+  const toggleDetail = () =>
+    openDetail(openDetailId === device.id ? null : device.id);
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -502,7 +522,13 @@ function DeviceRow({
       {reorder?.markerBottom ? (
         <div className="absolute right-2 -bottom-px left-2 z-10 h-0.5 rounded-full bg-ring" />
       ) : null}
-      <div className={cn(ROW_GRID, "h-10 pr-1.5 pl-2")}>
+      <div
+        className={cn(
+          ROW_GRID,
+          "h-10 pr-1.5 pl-2",
+          detailOpen && "bg-muted/40",
+        )}
+      >
         <Button
           variant="ghost"
           size="icon"
@@ -557,7 +583,7 @@ function DeviceRow({
             !device.visible && "text-muted-foreground",
             reorder && "cursor-grab active:cursor-grabbing",
           )}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={toggleDetail}
           title={device.deviceName || device.label}
         >
           {device.label}
@@ -569,22 +595,18 @@ function DeviceRow({
         <Button
           variant="ghost"
           size="icon"
-          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-label={detailOpen ? "Close details" : "Open details"}
           className="size-7 text-muted-foreground hover:text-foreground"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={toggleDetail}
         >
-          <ChevronDownIcon
-            className={cn("size-4 transition-transform", expanded && "rotate-180")}
+          <ChevronRightIcon
+            className={cn(
+              "size-4 transition-transform",
+              detailOpen && "rotate-180",
+            )}
           />
         </Button>
       </div>
-      {expanded ? (
-        <DeviceEditor
-          device={device}
-          onPatch={onPatch}
-          onRemove={isThisDevice ? undefined : onRemove}
-        />
-      ) : null}
     </div>
   );
 }
@@ -653,12 +675,90 @@ function AddDeviceMenu() {
   );
 }
 
-export function DeviceManagerPanel() {
+/** Detail flyout beside the Device Manager, pinnable into its own window. */
+function DetailFlyout() {
+  const openDetailId = useUiStore((s) => s.openDetailId);
+  const openDetail = useUiStore((s) => s.openDetail);
+  const pinDetail = useUiStore((s) => s.pinDetail);
+  const panelPos = useUiStore(
+    (s) => s.panelPositions.devices ?? { x: 64, y: 16 },
+  );
+  const panelWidth = useUiStore((s) => s.panelWidths.devices ?? 380);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const removeDevice = useDeviceStore((s) => s.removeDevice);
+  const duplicateDevice = useDeviceStore((s) => s.duplicateDevice);
+
+  if (!openDetailId) return null;
+  const isThis = thisDevice.id === openDetailId;
+  const device = isThis
+    ? thisDevice
+    : devices.find((d) => d.id === openDetailId);
+  if (!device) return null;
+
+  return (
+    <div className="panel-frame absolute top-0 left-full ml-2 w-80 rounded-lg border border-border">
+      <div className="flex h-9 items-center gap-2 border-b border-border px-2.5">
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{ background: device.color }}
+        />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {device.label}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Pin details as a window"
+          title="Pin — keep these details open and inspect another device"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          onClick={() =>
+            pinDetail(device.id, {
+              x: panelPos.x + panelWidth + 8,
+              y: panelPos.y,
+            })
+          }
+        >
+          <PinIcon className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close details"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          onClick={() => openDetail(null)}
+        >
+          <XIcon className="size-4" />
+        </Button>
+      </div>
+      <div className="max-h-[calc(100vh-10rem)] overflow-x-clip overflow-y-auto">
+        <DeviceEditor
+          device={device}
+          onPatch={(patch) =>
+            isThis ? updateThisDevice(patch) : updateDevice(device.id, patch)
+          }
+          onRemove={
+            isThis
+              ? undefined
+              : () => {
+                  removeDevice(device.id);
+                  openDetail(null);
+                }
+          }
+          onDuplicate={() => duplicateDevice(device.id)}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function DeviceManagerPanel() {
+  const thisDevice = useDeviceStore((s) => s.thisDevice);
+  const devices = useDeviceStore((s) => s.devices);
+  const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
+  const updateDevice = useDeviceStore((s) => s.updateDevice);
   const moveDevice = useDeviceStore((s) => s.moveDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const listRef = useRef<HTMLDivElement>(null);
@@ -698,7 +798,6 @@ export function DeviceManagerPanel() {
         </div>
         <DeviceRow
           device={thisDevice}
-          isThisDevice
           onPatch={updateThisDevice}
           onToggleVisible={() =>
             updateThisDevice({ visible: !thisDevice.visible })
@@ -721,7 +820,6 @@ export function DeviceManagerPanel() {
               key={d.id}
               device={d}
               onPatch={(patch) => updateDevice(d.id, patch)}
-              onRemove={() => removeDevice(d.id)}
               onToggleVisible={() => toggleVisible(d.id)}
               reorder={{
                 onDragOver: rowDragOver(i),
@@ -737,6 +835,7 @@ export function DeviceManagerPanel() {
           <AddDeviceMenu />
         </div>
       </div>
+      <DetailFlyout />
     </FloatingPanel>
   );
 }

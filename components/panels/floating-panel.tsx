@@ -11,7 +11,7 @@ import { useUiStore, type PanelId } from "@/stores/ui-store";
  */
 let zCursor = 40;
 const Z_CAP = 250;
-const nextZ = () => (zCursor = Math.min(Z_CAP, zCursor + 1));
+export const nextZ = () => (zCursor = Math.min(Z_CAP, zCursor + 1));
 
 const MIN_W = 260;
 const MAX_W = 640;

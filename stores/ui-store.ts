@@ -20,6 +20,14 @@ interface UiState {
   /** Manual 2D pan (CSS px), applied on top of the center mode. */
   panOffset: { x: number; y: number };
   setPanOffset: (offset: { x: number; y: number }) => void;
+  /** Device whose detail flyout is open beside the Device Manager. */
+  openDetailId: string | null;
+  /** Pinned device-detail windows and their positions. */
+  pinnedDetails: Record<string, { x: number; y: number }>;
+  openDetail: (id: string | null) => void;
+  pinDetail: (id: string, pos: { x: number; y: number }) => void;
+  unpinDetail: (id: string) => void;
+  moveDetail: (id: string, pos: { x: number; y: number }) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -50,6 +58,24 @@ export const useUiStore = create<UiState>()(
       setViewMode: (viewMode) => set({ viewMode }),
       panOffset: { x: 0, y: 0 },
       setPanOffset: (panOffset) => set({ panOffset }),
+      openDetailId: null,
+      pinnedDetails: {},
+      openDetail: (openDetailId) => set({ openDetailId }),
+      pinDetail: (id, pos) =>
+        set((s) => ({
+          pinnedDetails: { ...s.pinnedDetails, [id]: pos },
+          openDetailId: s.openDetailId === id ? null : s.openDetailId,
+        })),
+      unpinDetail: (id) =>
+        set((s) => {
+          const pinnedDetails = { ...s.pinnedDetails };
+          delete pinnedDetails[id];
+          return { pinnedDetails };
+        }),
+      moveDetail: (id, pos) =>
+        set((s) => ({
+          pinnedDetails: { ...s.pinnedDetails, [id]: pos },
+        })),
     }),
     { name: "wright-angles:ui" },
   ),

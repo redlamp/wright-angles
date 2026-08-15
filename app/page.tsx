@@ -10,6 +10,7 @@ import {
 import { Sidebar } from "@/components/sidebar";
 import { DisplayArea } from "@/components/display-area";
 import { DeviceManagerPanel } from "@/components/panels/device-manager";
+import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
 import { MediaLibraryPanel } from "@/components/panels/media-library";
 import { PerceptionReportPanel } from "@/components/panels/perception-report";
 import { InfoPanel } from "@/components/panels/info-panel";
@@ -110,6 +111,7 @@ export default function Home() {
         <>
           <Sidebar />
           <DeviceManagerPanel />
+          <DeviceDetailWindows />
           <MediaLibraryPanel />
           <PerceptionReportPanel />
           <InfoPanel />
