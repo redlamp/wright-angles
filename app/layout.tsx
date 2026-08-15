@@ -14,7 +14,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="dark h-full antialiased">
+    // suppressHydrationWarning: browser extensions inject attributes into
+    // <html> before hydration (e.g. data-google-analytics-opt-out), and the
+    // theme class is client-managed. Only this element's attributes are
+    // exempted; child mismatches still warn.
+    <html lang="en" className="dark h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full">{children}</body>
     </html>
   );
