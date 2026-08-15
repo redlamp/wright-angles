@@ -14,6 +14,60 @@ import {
 import { containFit } from "@/lib/fit";
 import type { Device, HighlightBox, MediaItem } from "@/lib/types";
 
+/**
+ * Where the window's client area sits on the physical screen, in CSS px.
+ * screenX/screenY are virtual-desktop coordinates; availLeft/availTop
+ * (Chromium) locate this monitor in that space. Browser chrome is
+ * estimated from the outer/inner delta (borders split left/right, the
+ * rest is the title/tab bar). Polled — there is no window-move event.
+ */
+function useScreenViewport() {
+  const [vp, setVp] = useState<{
+    clientX: number;
+    clientY: number;
+    screenW: number;
+    screenH: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const read = () => {
+      const chromeX = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
+      const chromeY = Math.max(
+        0,
+        window.outerHeight - window.innerHeight - chromeX,
+      );
+      const s = window.screen as Screen & {
+        availLeft?: number;
+        availTop?: number;
+      };
+      const next = {
+        clientX: window.screenX + chromeX - (s.availLeft ?? 0),
+        clientY: window.screenY + chromeY - (s.availTop ?? 0),
+        screenW: s.width,
+        screenH: s.height,
+      };
+      setVp((prev) =>
+        prev &&
+        prev.clientX === next.clientX &&
+        prev.clientY === next.clientY &&
+        prev.screenW === next.screenW &&
+        prev.screenH === next.screenH
+          ? prev
+          : next,
+      );
+    };
+    read();
+    const id = window.setInterval(read, 500);
+    window.addEventListener("resize", read);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("resize", read);
+    };
+  }, []);
+
+  return vp;
+}
+
 const boxBandColor = (worstArcmin: number) =>
   worstArcmin >= ACUITY.comfortableTextArcmin
     ? "#46a758"
@@ -172,12 +226,39 @@ export function DisplayArea() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedBoxId, drawMode, activeItem, removeBox, selectBox, setDrawMode]);
 
-  const rects = useMemo(() => {
-    if (!area.w || !area.h) return [];
-    const k = Math.min(
+  const displayMode = useSettingsStore((s) => s.displayMode);
+  const setDisplayMode = useSettingsStore((s) => s.setDisplayMode);
+  const vp = useScreenViewport();
+  const viewportActive = displayMode === "viewport" && vp !== null;
+
+  // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
+  // panel exactly onto the physical screen (the window shows the slice it
+  // covers); fit mode shrinks the whole panel into the window.
+  const k = useMemo(() => {
+    if (!area.w || !area.h) return 0;
+    if (viewportActive && vp) return vp.screenW / thisDevice.resolution.w;
+    return Math.min(
       area.w / thisDevice.resolution.w,
       area.h / thisDevice.resolution.h,
     );
+  }, [
+    area.w,
+    area.h,
+    viewportActive,
+    vp,
+    thisDevice.resolution.w,
+    thisDevice.resolution.h,
+  ]);
+
+  // Composition center in client coordinates: the physical screen's
+  // center in viewport mode, the window's center in fit mode.
+  const center =
+    viewportActive && vp
+      ? { x: vp.screenW / 2 - vp.clientX, y: vp.screenH / 2 - vp.clientY }
+      : { x: area.w / 2, y: area.h / 2 };
+
+  const rects = useMemo(() => {
+    if (!k) return [];
     const all: (Device & { isThis?: boolean })[] = [
       ...(thisDevice.visible ? [{ ...thisDevice, isThis: true }] : []),
       ...devices.filter((d) => d.visible),
@@ -197,16 +278,13 @@ export function DisplayArea() {
         };
       })
       .sort((a, b) => b.w * b.h - a.w * a.h);
-  }, [area.w, area.h, thisDevice, devices]);
+  }, [k, thisDevice, devices]);
 
-  const scalePct = useMemo(() => {
-    if (!area.w || !area.h) return null;
-    const k = Math.min(
-      area.w / thisDevice.resolution.w,
-      area.h / thisDevice.resolution.h,
-    );
-    return Math.round(k * dpr * 100);
-  }, [area.w, area.h, dpr, thisDevice.resolution.w, thisDevice.resolution.h]);
+  /** Physical-truth percentage: 100 = one device px per native screen px. */
+  const scalePct = useMemo(
+    () => (k ? Math.round(k * dpr * 100) : null),
+    [k, dpr],
+  );
 
   // Snapshot the composition at This Device's native resolution — a
   // shareable reference PNG of the comparison (poster frame for videos).
@@ -297,8 +375,14 @@ export function DisplayArea() {
       {rects.map(({ device, w, h }, i) => (
         <div
           key={device.id}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{ width: w, height: h, zIndex: i + 1 }}
+          className="absolute -translate-x-1/2 -translate-y-1/2"
+          style={{
+            left: center.x,
+            top: center.y,
+            width: w,
+            height: h,
+            zIndex: i + 1,
+          }}
         >
           <div
             className="absolute inset-0 bg-black"
@@ -374,8 +458,13 @@ export function DisplayArea() {
             // Above every device rect (z 1..n), below the app chrome
             // (sidebar z-30, panels z-40+), so UI stays clickable while
             // drawing.
-            className="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
-            style={{ width: hostRect.w, height: hostRect.h }}
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: center.x,
+              top: center.y,
+              width: hostRect.w,
+              height: hostRect.h,
+            }}
           >
             <div className="[&>div]:pointer-events-auto">
               <BoxLayer
@@ -491,11 +580,29 @@ export function DisplayArea() {
         >
           <DownloadIcon className="size-3" /> export view
         </button>
+        <button
+          type="button"
+          title={
+            viewportActive
+              ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
+              : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
+          }
+          className="flex h-6 items-center rounded-md bg-black/50 px-2 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+          onClick={() =>
+            setDisplayMode(viewportActive ? "fit" : "viewport")
+          }
+        >
+          {viewportActive ? "viewport" : "fit"}
+        </button>
         {scalePct !== null ? (
           <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
-            {scalePct === 100
-              ? "1:1 physical scale"
-              : `${scalePct}% scale — fullscreen at native res for 1:1`}
+            {viewportActive
+              ? scalePct >= 99 && scalePct <= 101
+                ? "1:1 physical scale"
+                : `${scalePct}% — This Device res ≠ this screen's native res`
+              : scalePct === 100
+                ? "1:1 physical scale"
+                : `${scalePct}% scale — viewport mode for 1:1`}
           </div>
         ) : null}
       </div>
