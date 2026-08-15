@@ -10,19 +10,19 @@ automation can't verify WebGL or feel).
 
 ## Onboarding
 
-- [ ] First load: welcome dialog → Calibrate my screen → presets/steppers
+- [x] First load: welcome dialog → Calibrate my screen → presets/steppers
       with live degree readout → scenario step → Done. Skip works too.
-- [ ] Settings → "Run setup assistant again" re-opens it.
+- [x] Settings → "Run setup assistant again" re-opens it.
 
 ## Device Manager (rebuilt)
 
-- [ ] Every distance slider is the same width, regardless of name length.
-- [ ] Steppers: −/+ nudge by 1 (Shift = 10); value field editable;
+- [x] Every distance slider is the same width, regardless of name length.
+- [x] Steppers: −/+ nudge by 1 (Shift = 10); value field editable;
       arrow keys work in the field. Same on display size.
-- [ ] Units toggle switches all steppers/readouts cm ⇄ in.
-- [ ] Curve select on your G9 preset (1000R): horizontal degrees in the
+- [x] Units toggle switches all steppers/readouts cm ⇄ in.
+- [x] Curve select on your G9 preset (1000R): horizontal degrees in the
       readout jump ~6° vs Flat — the wrap effect.
-- [ ] Screen height: Eye level toggle ⇄ manual slider (3D only).
+- [x] Screen height: Eye level toggle ⇄ manual slider (3D only).
 - [ ] Readout bottom line: px needed for 16′/20′ on that device.
 
 ## Measure mode (new core feature)
@@ -52,29 +52,59 @@ automation can't verify WebGL or feel).
 ## Settings / setup
 
 - [ ] Export downloads a JSON; Import restores it (try round-trip).
-- [ ] Theme: System follows OS; Dark/Light force. 3D scene: Match UI /
+- [x] Theme: System follows OS; Dark/Light force. 3D scene: Match UI /
       Dark / Light. ⚠ check scene light palette legibility.
-- [ ] Storage usage bar shows; wipe still two-step.
+- [x] Storage usage bar shows; wipe still two-step.
 
 ## 3D scene ⚠
 
-- [ ] Scenario toggle Standing / At a desk / On a couch: figure pose,
+- [x] Scenario toggle Standing / At a desk / On a couch: figure pose,
       desk/couch props, eye height all change; height slider scales.
-- [ ] 2D→3D: camera starts head-on and flies to the 3/4 view; 3D→2D
+- [x] 2D→3D: camera starts head-on and flies to the 3/4 view; 3D→2D
       flies back before switching. Interrupt mid-flight — no snapping.
-- [ ] Screen height override on a device moves its rect vertically.
-- [ ] Content textures on device screens (image + video), handheld
+- [x] Screen height override on a device moves its rect vertically.
+- [x] Content textures on device screens (image + video), handheld
       chassis around Switch/Deck screens, curved G9 screen, pose tween
       with hands, FPS readout — landed this morning, verify all.
 
 ## 2D export
 
-- [ ] "export view" downloads a PNG of the composition at native res
+- [x] "export view" downloads a PNG of the composition at native res
       with labels + footer stamp.
 
 ## Open decisions (carried + new)
 
-- [ ] License (from yesterday).
-- [ ] Dev → main promotion for first Pages deploy.
+- [x] License (from yesterday) — MIT adopted.
+- [x] Dev → main promotion for first Pages deploy.
 - [ ] Whether measured-box verdicts should use cap-height convention
       (ISO) vs body-height (Xbox px minimums) — see research notes.
+
+## Round 3 — review-fix verification (2026-08-15 morning)
+
+- [ ] Device Manager: normal type sizes; distance slider in editor,
+      4-char steppers in rows; Device name mirrors into Label until
+      customized; in/cm flips on both size AND distance; curve shows
+      "1000R" in the closed select; per-stance screen height; color
+      swatch in row; rows open collapsed; drag-reorder shows an insert
+      marker line where the device will land.
+- [ ] Popups (reference size, curve, add-device) always above panels.
+- [ ] 2D toolbar: scale line above fixed-width buttons in order
+      measure · center · viewport · export; center toggle screen/window
+      resets pan; hold-Space pan + double-click recenter.
+- [ ] Letterbox bars take the key-color fill when enabled.
+- [ ] 3D: rect heights tween on stance change; furniture animates
+      in/out; natural handheld hold angle; PNG export from the HUD.
+
+## Suggested next (not yet built — rank these)
+
+- [ ] Browser-zoom ≠ 100% detection + warning badge (1:1 silently wrong).
+- [ ] Measure boxes mirrored into the 3D content texture.
+- [ ] Credit-card calibration to verify true PPI against OS scaling.
+- [ ] Comparison table view (all devices × H°/V°/PPD/′-per-px, CSV out).
+- [ ] Per-device image assignment + hot-zone multi-image switching (PRD).
+- [ ] Shareable setup links (URL hash) alongside export/import.
+- [ ] Sub-retina (<60 PPD) indicator per device — research shows Switch
+      OLED and Deck LCD sit just under it at hold distance.
+- [ ] EXIF strip on image import (studio privacy hygiene).
+- [ ] Non-linear distance slider above ~150cm.
+- [ ] Keyboard shortcuts (panel toggles, view switch, measure mode).

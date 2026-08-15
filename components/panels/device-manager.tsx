@@ -96,6 +96,13 @@ function DistanceStepper({
   );
 }
 
+/** Inline flip for the global distance unit. */
+function DistanceUnitFlip() {
+  const unit = useSettingsStore((s) => s.unit);
+  const setUnit = useSettingsStore((s) => s.setUnit);
+  return <UnitFlip value={unit} onChange={setUnit} />;
+}
+
 /** Tiny in/cm switcher inline with a section label. */
 function UnitFlip({
   value,
@@ -237,7 +244,10 @@ function DeviceEditor({
       </div>
 
       <div className="space-y-1.5">
-        <Microlabel>Viewing distance</Microlabel>
+        <div className="flex items-center justify-between">
+          <Microlabel>Viewing distance</Microlabel>
+          <DistanceUnitFlip />
+        </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
           <Slider
             min={DIST_MIN_CM}
@@ -333,7 +343,9 @@ function DeviceEditor({
           onValueChange={(v) => onPatch({ curvatureR: Number(v) || undefined })}
         >
           <SelectTrigger className="w-28">
-            <SelectValue />
+            <SelectValue>
+              {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="0">Flat</SelectItem>
@@ -450,14 +462,21 @@ function eyeLevelNow(): number {
   }
 }
 
+interface ReorderHooks {
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  markerTop: boolean;
+  markerBottom: boolean;
+}
+
 function DeviceRow({
   device,
   isThisDevice,
   onPatch,
   onRemove,
   onToggleVisible,
-  onDragReorder,
-  index,
+  reorder,
 }: {
   device: Device;
   isThisDevice?: boolean;
@@ -465,8 +484,7 @@ function DeviceRow({
   onRemove?: () => void;
   onToggleVisible: () => void;
   /** Present only for reorderable (test) devices. */
-  onDragReorder?: (draggedId: string, ontoIndex: number) => void;
-  index?: number;
+  reorder?: ReorderHooks;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -474,27 +492,16 @@ function DeviceRow({
   return (
     <div
       className={cn("relative", dragging && "opacity-40")}
-      onDragOver={
-        onDragReorder
-          ? (e) => {
-              if (e.dataTransfer.types.includes("application/x-wa-device")) {
-                e.preventDefault();
-              }
-            }
-          : undefined
-      }
-      onDrop={
-        onDragReorder && index !== undefined
-          ? (e) => {
-              const id = e.dataTransfer.getData("application/x-wa-device");
-              if (id && id !== device.id) {
-                e.preventDefault();
-                onDragReorder(id, index);
-              }
-            }
-          : undefined
-      }
+      onDragOver={reorder?.onDragOver}
+      onDrop={reorder?.onDrop}
     >
+      {/* Insert markers: where the dragged device lands on release. */}
+      {reorder?.markerTop ? (
+        <div className="absolute -top-px right-2 left-2 z-10 h-0.5 rounded-full bg-ring" />
+      ) : null}
+      {reorder?.markerBottom ? (
+        <div className="absolute right-2 -bottom-px left-2 z-10 h-0.5 rounded-full bg-ring" />
+      ) : null}
       <div className={cn(ROW_GRID, "h-10 pr-1.5 pl-2")}>
         <Button
           variant="ghost"
@@ -524,9 +531,9 @@ function DeviceRow({
         </label>
         <button
           type="button"
-          draggable={Boolean(onDragReorder)}
+          draggable={Boolean(reorder)}
           onDragStart={
-            onDragReorder
+            reorder
               ? (e) => {
                   e.dataTransfer.setData(
                     "application/x-wa-device",
@@ -537,11 +544,18 @@ function DeviceRow({
                 }
               : undefined
           }
-          onDragEnd={onDragReorder ? () => setDragging(false) : undefined}
+          onDragEnd={
+            reorder
+              ? () => {
+                  setDragging(false);
+                  reorder.onDragEnd();
+                }
+              : undefined
+          }
           className={cn(
             "min-w-0 truncate text-left text-sm",
             !device.visible && "text-muted-foreground",
-            onDragReorder && "cursor-grab active:cursor-grabbing",
+            reorder && "cursor-grab active:cursor-grabbing",
           )}
           onClick={() => setExpanded((v) => !v)}
           title={device.deviceName || device.label}
@@ -648,6 +662,27 @@ export function DeviceManagerPanel() {
   const moveDevice = useDeviceStore((s) => s.moveDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const listRef = useRef<HTMLDivElement>(null);
+  /** Where a dragged device will land on release (0..devices.length). */
+  const [insertIdx, setInsertIdx] = useState<number | null>(null);
+
+  const rowDragOver = (index: number) => (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("application/x-wa-device")) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    setInsertIdx(e.clientY < r.top + r.height / 2 ? index : index + 1);
+  };
+  const rowDrop = (e: React.DragEvent) => {
+    const id = e.dataTransfer.getData("application/x-wa-device");
+    if (id && insertIdx !== null) {
+      e.preventDefault();
+      const from = devices.findIndex((d) => d.id === id);
+      if (from >= 0) {
+        moveDevice(id, insertIdx > from ? insertIdx - 1 : insertIdx);
+      }
+    }
+    setInsertIdx(null);
+  };
+  const clearMarker = () => setInsertIdx(null);
 
   return (
     <FloatingPanel
@@ -672,18 +707,29 @@ export function DeviceManagerPanel() {
         <div className="mt-1 border-t border-border px-2.5 pt-2 pb-1">
           <Microlabel>Test devices</Microlabel>
         </div>
-        <div ref={listRef} className="divide-y divide-border/50">
+        <div
+          ref={listRef}
+          className="divide-y divide-border/50"
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              clearMarker();
+            }
+          }}
+        >
           {devices.map((d, i) => (
             <DeviceRow
               key={d.id}
               device={d}
-              index={i}
               onPatch={(patch) => updateDevice(d.id, patch)}
               onRemove={() => removeDevice(d.id)}
               onToggleVisible={() => toggleVisible(d.id)}
-              onDragReorder={(draggedId, ontoIndex) =>
-                moveDevice(draggedId, ontoIndex)
-              }
+              reorder={{
+                onDragOver: rowDragOver(i),
+                onDrop: rowDrop,
+                onDragEnd: clearMarker,
+                markerTop: insertIdx === i,
+                markerBottom: i === devices.length - 1 && insertIdx === devices.length,
+              }}
             />
           ))}
         </div>

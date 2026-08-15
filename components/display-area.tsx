@@ -665,17 +665,6 @@ export function DisplayArea() {
           </div>
         ) : null}
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            title="Center the composition on the physical screen or in this window"
-            className="h-6 w-20 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
-            onClick={() => {
-              setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
-              setPanOffset({ x: 0, y: 0 });
-            }}
-          >
-            {displayCenter === "screen" ? "⌖ screen" : "⌖ window"}
-          </button>
           {activeItem ? (
             <button
               type="button"
@@ -696,6 +685,17 @@ export function DisplayArea() {
               {drawMode ? "done" : "measure"}
             </button>
           ) : null}
+          <button
+            type="button"
+            title="Center the composition on the physical screen or in this window"
+            className="h-6 w-28 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            onClick={() => {
+              setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
+              setPanOffset({ x: 0, y: 0 });
+            }}
+          >
+            {displayCenter === "screen" ? "center · screen" : "center · window"}
+          </button>
           <button
             type="button"
             title={
