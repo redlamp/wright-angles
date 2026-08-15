@@ -2,8 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  ChevronRightIcon,
   CopyIcon,
+  EllipsisVerticalIcon,
   EyeIcon,
   EyeOffIcon,
   MonitorIcon,
@@ -596,15 +596,13 @@ function DeviceRow({
           variant="ghost"
           size="icon"
           aria-label={detailOpen ? "Close details" : "Open details"}
-          className="size-7 text-muted-foreground hover:text-foreground"
+          className={cn(
+            "size-7 text-muted-foreground hover:text-foreground",
+            detailOpen && "text-foreground",
+          )}
           onClick={toggleDetail}
         >
-          <ChevronRightIcon
-            className={cn(
-              "size-4 transition-transform",
-              detailOpen && "rotate-180",
-            )}
-          />
+          <EllipsisVerticalIcon className="size-4" />
         </Button>
       </div>
     </div>

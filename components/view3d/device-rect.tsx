@@ -325,30 +325,34 @@ export default function DeviceRect({
         curved ? (
           <group position={[0, 0, -R]}>
             {/* Letterbox backing, a hair inside the outline's arc. */}
+            {/* Backing renders viewer-side only so the content's mirror
+                image stays visible from behind the device. */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
                   -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
               />
-              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
             </mesh>
             <mesh>
               <cylinderGeometry
                 args={[R - 0.25, R - 0.25, fit.h, 48, 1, true,
                   -fit.w / (R - 0.25) / 2, fit.w / (R - 0.25)]}
               />
-              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
             </mesh>
           </group>
         ) : (
           <>
+            {/* Backing renders viewer-side only so the content's mirror
+                image stays visible from behind the device. */}
             <mesh position={[0, 0, -0.15]}>
               <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
             </mesh>
             <mesh position={[0, 0, -0.3]}>
               <planeGeometry args={[fit.w, fit.h]} />
-              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
             </mesh>
           </>
         )
