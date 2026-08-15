@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { XIcon, type LucideIcon } from "lucide-react";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
 
-/** Shared z-order: the most recently touched panel floats to the top. */
+/**
+ * Shared z-order: the most recently touched panel floats to the top.
+ * Capped below the portal layer (popups/dialogs render at z-300) so a
+ * long session can never raise a panel above its own dropdowns.
+ */
 let zCursor = 40;
+const Z_CAP = 250;
+const nextZ = () => (zCursor = Math.min(Z_CAP, zCursor + 1));
 
 const MIN_W = 260;
 const MAX_W = 640;
@@ -79,7 +85,7 @@ export function FloatingPanel({
   const [z, setZ] = useState(40);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
-  const bringToFront = useCallback(() => setZ(++zCursor), []);
+  const bringToFront = useCallback(() => setZ(nextZ()), []);
 
   const onHeaderPointerDown = useCallback(
     (e: React.PointerEvent) => {
