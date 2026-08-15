@@ -86,11 +86,11 @@ function applyCenterY(
   label: Group | null,
   y: number,
   heightCm: number,
-  distLift: number,
 ) {
   if (rect) rect.position.y = y;
   if (drop) drop.scale.y = dropLen(y, heightCm);
-  if (label) label.position.y = -y + 5 + distLift;
+  // The floor marker (node + flat angled label) sits on the ground.
+  if (label) label.position.y = -y + 0.12;
 }
 
 /**
@@ -248,7 +248,6 @@ export default function DeviceRect({
       labelRef.current,
       curY.current,
       heightCm,
-      lp.distLift,
     );
     if (showProjection || selected) {
       updateProjection(
@@ -437,19 +436,25 @@ export default function DeviceRect({
         />
       </group>
       {SHOW_LABELS ? (
-        <Billboard
-          ref={labelRef}
-          position={[lp.distX, -centerY + 5 + lp.distLift, 0]}
-        >
+        /* Floor marker: a small node where the drop line lands, with the
+           distance laid flat on the ground at 45° (spreadsheet-header
+           style) — parallel diagonals never collide. */
+        <group ref={labelRef} position={[0, -centerY + 0.12, 0]}>
+          <mesh position={[0, 1.2, 0]}>
+            <sphereGeometry args={[1.4, 16, 12]} />
+            <meshBasicMaterial color={device.color} />
+          </mesh>
           <Text
             fontSize={5}
             color={device.color}
-            anchorX="center"
-            anchorY="bottom"
+            anchorX="left"
+            anchorY="middle"
+            position={[2.5, 0.06, -2.5]}
+            rotation={[-Math.PI / 2, 0, -Math.PI / 4]}
           >
             {`${Math.round(device.distanceCm)} cm`}
           </Text>
-        </Billboard>
+        </group>
       ) : null}
     </group>
   );
