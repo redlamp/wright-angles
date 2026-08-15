@@ -787,10 +787,24 @@ export function MediaLibraryPanel() {
     const el = bodyRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setWide(entry.contentRect.width >= 470);
+      setWide(entry.contentRect.width >= 440);
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  // Two-column is the intended default; panels persisted at the old
+  // narrow defaults (340/360) predate that and get bumped once. A width
+  // the user deliberately narrowed (below 380 but not a known default)
+  // is left alone.
+  const storedWidth = useUiStore((s) => s.panelWidths.media);
+  const setPanelWidth = useUiStore((s) => s.setPanelWidth);
+  useEffect(() => {
+    if (storedWidth !== undefined && storedWidth <= 380) {
+      setPanelWidth("media", 520);
+    }
+    // One-time legacy migration on mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const detailColumn = (
@@ -815,7 +829,7 @@ export function MediaLibraryPanel() {
       title="Media Library"
       icon={ImageIcon}
       defaultPosition={{ x: 420, y: 16 }}
-      width={360}
+      width={520}
     >
       <div
         ref={bodyRef}
