@@ -111,3 +111,10 @@ automation can't verify WebGL or feel).
 - [ ] Crop tool for active media — e.g. a 1920×1112 capture with browser
       chrome cropped to the bottom 1920×1080 so only the content shows
       (Taylor 2026-08-15, future task).
+- [ ] Label declutter, attempt 2: Phase-1 greedy screen-space version was
+      reverted (bad layout + a recompute loop that stalled the app —
+      its effect keyed on an array rebuilt every render). Taylor's
+      direction for next attempt: place distance labels at a fixed
+      30° south-east offset from the drop-line node's screen
+      projection — deterministic, no per-rest solving. Build it on a
+      memoized `visible` list and verify against the stall first.
