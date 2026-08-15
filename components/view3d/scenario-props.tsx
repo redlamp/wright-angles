@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import { MeshBasicMaterial } from "three";
 import type { Scenario } from "@/stores/viewer-store";
+import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y } from "./viewer-figure";
 
-// Dark neutrals a step above the ground plane, well below the figure gray,
-// so props read as context without competing with device key colors.
+// Neutrals near the ground plane, well below the figure gray, so props read
+// as context without competing with device key colors. Colors come from the
+// scene palette; these shared materials are retinted when the theme flips.
 const FURNITURE_MAT = new MeshBasicMaterial({ color: "#4b4b4b" });
 const SOFT_MAT = new MeshBasicMaterial({ color: "#464646" });
 
@@ -77,7 +80,18 @@ function Couch() {
 }
 
 /** Furniture context for the current scenario; nothing when standing. */
-export default function ScenarioProps({ scenario }: { scenario: Scenario }) {
+export default function ScenarioProps({
+  scenario,
+  palette,
+}: {
+  scenario: Scenario;
+  palette: ScenePalette;
+}) {
+  useEffect(() => {
+    FURNITURE_MAT.color.set(palette.furniture);
+    SOFT_MAT.color.set(palette.soft);
+  }, [palette]);
+
   if (scenario === "desk") {
     return (
       <group>

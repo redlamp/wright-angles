@@ -198,11 +198,13 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     aspect: { w: 16, h: 9 },
   },
   {
+    // The modal US TV size; default distance is the Lechner 2.7m
+    // (wiki/research/tv-market-sizes-and-distances.md).
     presetId: "tv-65-4k",
     label: "65″ 4K TV",
     category: "tv",
     diagonalIn: 65,
-    distanceCm: 300,
+    distanceCm: 270,
     resolution: { w: 3840, h: 2160 },
     aspect: { w: 16, h: 9 },
   },
