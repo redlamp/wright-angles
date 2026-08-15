@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, PencilRulerIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
+import { useUiStore } from "@/stores/ui-store";
 import {
   ACUITY,
   boxMetricsOnDevice,
@@ -250,8 +252,46 @@ export function DisplayArea() {
 
   const displayMode = useSettingsStore((s) => s.displayMode);
   const setDisplayMode = useSettingsStore((s) => s.setDisplayMode);
+  const displayCenter = useSettingsStore((s) => s.displayCenter);
+  const setDisplayCenter = useSettingsStore((s) => s.setDisplayCenter);
+  const panOffset = useUiStore((s) => s.panOffset);
+  const setPanOffset = useUiStore((s) => s.setPanOffset);
   const vp = useScreenViewport();
   const viewportActive = displayMode === "viewport" && vp !== null;
+
+  // Hold Space to pan the composition; double-click while held recenters.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const panDrag = useRef<{
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (
+        e.code === "Space" &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement) &&
+        !(e.target instanceof HTMLButtonElement)
+      ) {
+        e.preventDefault();
+        setSpaceHeld(true);
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setSpaceHeld(false);
+        panDrag.current = null;
+      }
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
 
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
@@ -273,11 +313,16 @@ export function DisplayArea() {
   ]);
 
   // Composition center in client coordinates: the physical screen's
-  // center in viewport mode, the window's center in fit mode.
-  const center =
-    viewportActive && vp
+  // center ("screen" center mode, viewport only) or the window's center,
+  // plus the user's manual pan.
+  const baseCenter =
+    viewportActive && vp && displayCenter === "screen"
       ? { x: vp.screenW / 2 - vp.clientX, y: vp.screenH / 2 - vp.clientY }
       : { x: area.w / 2, y: area.h / 2 };
+  const center = {
+    x: baseCenter.x + panOffset.x,
+    y: baseCenter.y + panOffset.y,
+  };
 
   const rects = useMemo(() => {
     if (!k) return [];
@@ -411,11 +456,14 @@ export function DisplayArea() {
             style={{
               outline: `2px solid ${device.color}`,
               outlineOffset: -1,
-              background: activeUrl
-                ? "black"
-                : displayFill === "device-color"
+              // Fill also backs the letterbox bars when content doesn't
+              // cover the panel (16:9 image on a 32:9 display).
+              background:
+                displayFill === "device-color"
                   ? device.color
-                  : `${device.color}0d`,
+                  : activeUrl
+                    ? "black"
+                    : `${device.color}0d`,
             }}
           >
             {activeVideoUrl ? (
@@ -573,60 +621,102 @@ export function DisplayArea() {
         </div>
       ) : null}
 
-      <div className="absolute right-2 bottom-2 z-40 flex items-center gap-1.5">
-        {activeItem ? (
-          <button
-            type="button"
-            title={
-              drawMode
-                ? "Done drawing boxes (Esc)"
-                : "Draw measurement boxes on the image"
-            }
-            className={
-              "flex h-6 items-center gap-1 rounded-md px-2 font-mono text-[10px] transition-colors " +
-              (drawMode
-                ? "bg-white/25 text-white"
-                : "bg-black/50 text-white/60 hover:text-white")
-            }
-            onClick={() => setDrawMode(!drawMode)}
-          >
-            <PencilRulerIcon className="size-3" />
-            {drawMode ? "done" : "measure"}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          title="Export this view as a PNG reference image"
-          className="flex h-6 items-center gap-1 rounded-md bg-black/50 px-2 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
-          onClick={() => void exportView()}
-        >
-          <DownloadIcon className="size-3" /> export view
-        </button>
-        <button
-          type="button"
-          title={
-            viewportActive
-              ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
-              : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
-          }
-          className="flex h-6 items-center rounded-md bg-black/50 px-2 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
-          onClick={() =>
-            setDisplayMode(viewportActive ? "fit" : "viewport")
-          }
-        >
-          {viewportActive ? "viewport" : "fit"}
-        </button>
+      {/* Space-held pan surface: above content and annotations, below
+          the toolbar. Double-click recenters. */}
+      {spaceHeld ? (
+        <div
+          className={cn(
+            "absolute inset-0 z-25 cursor-grab touch-none active:cursor-grabbing",
+          )}
+          onPointerDown={(e) => {
+            panDrag.current = {
+              startX: e.clientX,
+              startY: e.clientY,
+              baseX: panOffset.x,
+              baseY: panOffset.y,
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            const p = panDrag.current;
+            if (!p) return;
+            setPanOffset({
+              x: p.baseX + (e.clientX - p.startX),
+              y: p.baseY + (e.clientY - p.startY),
+            });
+          }}
+          onPointerUp={() => {
+            panDrag.current = null;
+          }}
+          onDoubleClick={() => setPanOffset({ x: 0, y: 0 })}
+        />
+      ) : null}
+
+      <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
         {scalePct !== null ? (
           <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
             {viewportActive
               ? scalePct >= 99 && scalePct <= 101
-                ? "1:1 physical scale"
+                ? "1:1 physical scale · hold Space to pan"
                 : `${scalePct}% — This Device res ≠ this screen's native res`
               : scalePct === 100
                 ? "1:1 physical scale"
                 : `${scalePct}% scale — viewport mode for 1:1`}
           </div>
         ) : null}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            title="Center the composition on the physical screen or in this window"
+            className="h-6 w-20 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            onClick={() => {
+              setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
+              setPanOffset({ x: 0, y: 0 });
+            }}
+          >
+            {displayCenter === "screen" ? "⌖ screen" : "⌖ window"}
+          </button>
+          {activeItem ? (
+            <button
+              type="button"
+              title={
+                drawMode
+                  ? "Done drawing boxes (Esc)"
+                  : "Draw measurement boxes on the image"
+              }
+              className={cn(
+                "flex h-6 w-24 items-center justify-center gap-1 rounded-md font-mono text-[10px] transition-colors",
+                drawMode
+                  ? "bg-white/25 text-white"
+                  : "bg-black/50 text-white/60 hover:text-white",
+              )}
+              onClick={() => setDrawMode(!drawMode)}
+            >
+              <PencilRulerIcon className="size-3" />
+              {drawMode ? "done" : "measure"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            title={
+              viewportActive
+                ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
+                : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
+            }
+            className="h-6 w-20 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
+          >
+            {viewportActive ? "viewport" : "fit"}
+          </button>
+          <button
+            type="button"
+            title="Export this view as a PNG reference image"
+            className="flex h-6 w-28 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            onClick={() => void exportView()}
+          >
+            <DownloadIcon className="size-3" /> export view
+          </button>
+        </div>
       </div>
     </div>
   );
