@@ -10,9 +10,12 @@ interface UiState {
   openPanels: Record<PanelId, boolean>;
   /** Panel drag positions in px from the viewport's top-left. */
   panelPositions: Partial<Record<PanelId, { x: number; y: number }>>;
+  /** User-resized panel widths in px. */
+  panelWidths: Partial<Record<PanelId, number>>;
   viewMode: ViewMode;
   togglePanel: (id: PanelId) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
+  setPanelWidth: (id: PanelId, width: number) => void;
   setViewMode: (mode: ViewMode) => void;
 }
 
@@ -27,6 +30,7 @@ export const useUiStore = create<UiState>()(
         settings: false,
       },
       panelPositions: {},
+      panelWidths: {},
       viewMode: "2d",
       togglePanel: (id) =>
         set((s) => ({
@@ -35,6 +39,10 @@ export const useUiStore = create<UiState>()(
       setPanelPosition: (id, pos) =>
         set((s) => ({
           panelPositions: { ...s.panelPositions, [id]: pos },
+        })),
+      setPanelWidth: (id, width) =>
+        set((s) => ({
+          panelWidths: { ...s.panelWidths, [id]: width },
         })),
       setViewMode: (viewMode) => set({ viewMode }),
     }),

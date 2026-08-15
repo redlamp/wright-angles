@@ -7,6 +7,9 @@ import { useUiStore, type PanelId } from "@/stores/ui-store";
 /** Shared z-order: the most recently touched panel floats to the top. */
 let zCursor = 40;
 
+const MIN_W = 260;
+const MAX_W = 640;
+
 interface FloatingPanelProps {
   id: PanelId;
   title: string;
@@ -21,15 +24,55 @@ export function FloatingPanel({
   title,
   icon: Icon,
   defaultPosition,
-  width = 320,
+  width: defaultWidth = 320,
   children,
 }: FloatingPanelProps) {
   const open = useUiStore((s) => s.openPanels[id]);
   const stored = useUiStore((s) => s.panelPositions[id]);
+  const storedWidth = useUiStore((s) => s.panelWidths[id]);
   const setPanelPosition = useUiStore((s) => s.setPanelPosition);
+  const setPanelWidth = useUiStore((s) => s.setPanelWidth);
   const togglePanel = useUiStore((s) => s.togglePanel);
 
+  const width = storedWidth ?? defaultWidth;
   const pos = stored ?? defaultPosition;
+  const resize = useRef<{
+    edge: "left" | "right";
+    startX: number;
+    startW: number;
+    startPosX: number;
+  } | null>(null);
+
+  const clampW = (w: number) => Math.min(MAX_W, Math.max(MIN_W, w));
+
+  const onResizeDown = (e: React.PointerEvent, edge: "left" | "right") => {
+    resize.current = {
+      edge,
+      startX: e.clientX,
+      startW: width,
+      startPosX: pos.x,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+
+  const onResizeMove = (e: React.PointerEvent) => {
+    const r = resize.current;
+    if (!r) return;
+    const dx = e.clientX - r.startX;
+    if (r.edge === "right") {
+      setPanelWidth(id, clampW(r.startW + dx));
+    } else {
+      // Left edge: right edge stays put, so x shifts with the size change.
+      const w = clampW(r.startW - dx);
+      setPanelWidth(id, w);
+      setPanelPosition(id, { x: r.startPosX + (r.startW - w), y: pos.y });
+    }
+  };
+
+  const onResizeUp = () => {
+    resize.current = null;
+  };
   const ref = useRef<HTMLDivElement>(null);
   // Stable initial z so server and client render identically; panels
   // stack by DOM order until first interaction.
@@ -109,6 +152,25 @@ export function FloatingPanel({
         </button>
       </div>
       <div className="border-t border-border">{children}</div>
+      {/* Edge resize handles: invisible strips, ew-resize cursor. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${title} (left edge)`}
+        className="absolute top-0 bottom-0 -left-1 w-2 cursor-ew-resize touch-none"
+        onPointerDown={(e) => onResizeDown(e, "left")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+      />
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${title} (right edge)`}
+        className="absolute top-0 bottom-0 -right-1 w-2 cursor-ew-resize touch-none"
+        onPointerDown={(e) => onResizeDown(e, "right")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizeUp}
+      />
     </div>
   );
 }

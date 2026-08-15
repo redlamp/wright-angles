@@ -133,18 +133,18 @@ function DeviceEditor({
   return (
     <div className="space-y-2.5 px-2.5 pt-1.5 pb-2.5">
       <div className="grid grid-cols-2 gap-2">
-        <label className="space-y-1">
+        <label className="min-w-0 space-y-1">
           <Microlabel>Label</Microlabel>
           <Input
-            className="h-8 text-sm"
+            className="h-8 w-full min-w-0 text-sm"
             value={device.label}
             onChange={(e) => onPatch({ label: e.target.value })}
           />
         </label>
-        <label className="space-y-1">
+        <label className="min-w-0 space-y-1">
           <Microlabel>Device name</Microlabel>
           <Input
-            className="h-8 text-sm"
+            className="h-8 w-full min-w-0 text-sm"
             placeholder="e.g. LG C3"
             value={device.deviceName ?? ""}
             onChange={(e) => onPatch({ deviceName: e.target.value })}
@@ -201,7 +201,7 @@ function DeviceEditor({
             </SelectContent>
           </Select>
           <Input
-            className="h-8 flex-1 text-right font-mono text-xs"
+            className="h-8 min-w-0 flex-1 text-right font-mono text-xs"
             type="number"
             aria-label="Width px"
             value={device.resolution.w}
@@ -213,7 +213,7 @@ function DeviceEditor({
           />
           <span className="text-xs text-muted-foreground">×</span>
           <Input
-            className="h-8 flex-1 text-right font-mono text-xs"
+            className="h-8 min-w-0 flex-1 text-right font-mono text-xs"
             type="number"
             aria-label="Height px"
             value={device.resolution.h}
@@ -504,7 +504,7 @@ export function DeviceManagerPanel() {
       defaultPosition={{ x: 64, y: 16 }}
       width={360}
     >
-      <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
+      <div className="max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
