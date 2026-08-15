@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ChevronDownIcon,
   EyeIcon,
@@ -24,7 +24,7 @@ import {
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { eyeHeightCm, useViewerStore } from "@/stores/viewer-store";
+import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { FloatingPanel } from "./floating-panel";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
@@ -49,24 +49,28 @@ import {
 } from "@/components/ui/select";
 
 const DIST_MIN_CM = 10;
-const DIST_MAX_CM = 400;
+const DIST_MAX_CM = 9999;
+const DIST_SLIDER_MAX_CM = 400;
 
 /**
- * Shared row grid so every slider is exactly the same width no matter
- * how long the device name is: eye | name | slider | stepper | chevron.
+ * Shared collapsed-row grid so every stepper is aligned no matter how
+ * long the device name is: eye | color | name | distance | chevron.
  */
 const ROW_GRID =
-  "grid grid-cols-[1.5rem_6.25rem_minmax(0,1fr)_5.75rem_1.5rem] items-center gap-1.5";
+  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_6rem_1.75rem] items-center gap-1.5";
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
   );
 }
 
-/** Distance stepper in the display unit; canonical value stays cm. */
+/**
+ * Distance in the global unit, 4-character budget: integers from 100 up
+ * (to 9999cm), one decimal below.
+ */
 function DistanceStepper({
   distanceCm,
   onChange,
@@ -76,17 +80,48 @@ function DistanceStepper({
 }) {
   const unit = useSettingsStore((s) => s.unit);
   const inches = unit === "in";
+  const shown = inches ? distanceCm / CM_PER_IN : distanceCm;
   return (
     <NumberStepper
       ariaLabel="viewing distance"
-      value={inches ? distanceCm / CM_PER_IN : distanceCm}
+      value={shown}
       onChange={(v) => onChange(inches ? v * CM_PER_IN : v)}
       step={inches ? 0.5 : 1}
       bigStep={inches ? 5 : 10}
       min={inches ? DIST_MIN_CM / CM_PER_IN : DIST_MIN_CM}
       max={inches ? DIST_MAX_CM / CM_PER_IN : DIST_MAX_CM}
-      decimals={inches ? 1 : 0}
+      decimals={shown >= 100 ? 0 : 1}
+      className="h-7"
     />
+  );
+}
+
+/** Tiny in/cm switcher inline with a section label. */
+function UnitFlip({
+  value,
+  onChange,
+}: {
+  value: "in" | "cm";
+  onChange: (u: "in" | "cm") => void;
+}) {
+  return (
+    <span className="flex items-center gap-0.5">
+      {(["in", "cm"] as const).map((u) => (
+        <button
+          key={u}
+          type="button"
+          className={cn(
+            "rounded px-1.5 py-0.5 text-xs transition-colors",
+            u === value
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          onClick={() => onChange(u)}
+        >
+          {u}
+        </button>
+      ))}
+    </span>
   );
 }
 
@@ -97,7 +132,7 @@ function AngleReadout({ device }: { device: Device }) {
   const pxFor = (arcmin: number) =>
     a.arcminPerPx > 0 ? Math.ceil(arcmin / a.arcminPerPx) : 0;
   return (
-    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground">
+    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
       <div>
         {a.horizontalArcmin.toFixed(0)}′ × {a.verticalArcmin.toFixed(0)}′ (
         {a.horizontalDeg.toFixed(1)}° × {a.verticalDeg.toFixed(1)}°)
@@ -107,7 +142,7 @@ function AngleReadout({ device }: { device: Device }) {
         {a.ppi.toFixed(0)} ppi
       </div>
       {showBands ? (
-        <div className="border-t border-border pt-0.5">
+        <div className="border-t border-border pt-1">
           text: ≥{pxFor(16)}px min (16′) · ≥{pxFor(20)}px comfy (20′)
         </div>
       ) : null}
@@ -124,38 +159,58 @@ function DeviceEditor({
   onPatch: (patch: Partial<Device>) => void;
   onRemove?: () => void;
 }) {
-  const unit = useSettingsStore((s) => s.unit);
+  const sizeUnit = useSettingsStore((s) => s.sizeUnit);
+  const setSizeUnit = useSettingsStore((s) => s.setSizeUnit);
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
-  const inches = unit === "in";
+  const sizeInches = sizeUnit === "in";
   const aspectLabel = `${device.aspect.w}:${device.aspect.h}`;
-  const eyeCm = eyeHeightCm(scenario, heightCm);
+  const scenarioLabel =
+    SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
+  const elevation = device.elevation?.[scenario];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _hc = heightCm; // keeps the editor reactive to height changes
+  const sizeShown = sizeInches
+    ? device.diagonalIn
+    : device.diagonalIn * CM_PER_IN;
 
   return (
-    <div className="space-y-2.5 px-2.5 pt-1.5 pb-2.5">
+    <div className="space-y-3 px-2.5 pt-2 pb-3">
       <div className="grid grid-cols-2 gap-2">
+        <label className="min-w-0 space-y-1">
+          <Microlabel>Device name</Microlabel>
+          <Input
+            className="w-full min-w-0"
+            placeholder="e.g. LG C3"
+            value={device.deviceName ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              // Mirror into the label until the label is customized.
+              const mirrored =
+                !device.label || device.label === device.deviceName;
+              onPatch({
+                deviceName: v,
+                ...(mirrored ? { label: v } : {}),
+              });
+            }}
+          />
+        </label>
         <label className="min-w-0 space-y-1">
           <Microlabel>Label</Microlabel>
           <Input
-            className="h-8 w-full min-w-0 text-sm"
+            className="w-full min-w-0"
             value={device.label}
             onChange={(e) => onPatch({ label: e.target.value })}
           />
         </label>
-        <label className="min-w-0 space-y-1">
-          <Microlabel>Device name</Microlabel>
-          <Input
-            className="h-8 w-full min-w-0 text-sm"
-            placeholder="e.g. LG C3"
-            value={device.deviceName ?? ""}
-            onChange={(e) => onPatch({ deviceName: e.target.value })}
-          />
-        </label>
       </div>
 
-      <div className="space-y-1">
-        <Microlabel>Display size · diagonal {unit}</Microlabel>
-        <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-1.5">
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Microlabel>Display size · diagonal</Microlabel>
+          <UnitFlip value={sizeUnit} onChange={setSizeUnit} />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
           <Slider
             min={3}
             max={150}
@@ -167,20 +222,40 @@ function DeviceEditor({
           />
           <NumberStepper
             ariaLabel="display size"
-            value={inches ? device.diagonalIn : device.diagonalIn * CM_PER_IN}
+            value={sizeShown}
             onChange={(v) =>
-              onPatch({ diagonalIn: inches ? v : v / CM_PER_IN })
+              onPatch({ diagonalIn: sizeInches ? v : v / CM_PER_IN })
             }
-            step={inches ? 0.1 : 0.5}
-            bigStep={inches ? 1 : 5}
+            step={sizeInches ? 0.1 : 0.5}
+            bigStep={sizeInches ? 1 : 5}
             min={1}
-            max={inches ? 200 : 500}
-            decimals={1}
+            max={sizeInches ? 300 : 999}
+            decimals={sizeShown >= 100 ? 0 : 1}
+            className="h-7"
           />
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-1.5">
+        <Microlabel>Viewing distance</Microlabel>
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
+          <Slider
+            min={DIST_MIN_CM}
+            max={DIST_SLIDER_MAX_CM}
+            step={1}
+            value={Math.min(device.distanceCm, DIST_SLIDER_MAX_CM)}
+            onValueChange={(v) =>
+              onPatch({ distanceCm: Array.isArray(v) ? v[0] : v })
+            }
+          />
+          <DistanceStepper
+            distanceCm={device.distanceCm}
+            onChange={(distanceCm) => onPatch({ distanceCm })}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
         <Microlabel>Dimensions</Microlabel>
         <div className="flex items-center gap-1.5">
           <Select
@@ -190,7 +265,7 @@ function DeviceEditor({
               if (found) onPatch({ aspect: { w: found.w, h: found.h } });
             }}
           >
-            <SelectTrigger size="sm" className="w-20 shrink-0">
+            <SelectTrigger className="w-22 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -202,7 +277,7 @@ function DeviceEditor({
             </SelectContent>
           </Select>
           <Input
-            className="h-8 min-w-0 flex-1 text-right font-mono text-xs"
+            className="min-w-0 flex-1 text-right font-mono"
             type="number"
             aria-label="Width px"
             value={device.resolution.w}
@@ -212,9 +287,9 @@ function DeviceEditor({
               onPatch({ resolution: { ...device.resolution, w } });
             }}
           />
-          <span className="text-xs text-muted-foreground">×</span>
+          <span className="text-sm text-muted-foreground">×</span>
           <Input
-            className="h-8 min-w-0 flex-1 text-right font-mono text-xs"
+            className="min-w-0 flex-1 text-right font-mono"
             type="number"
             aria-label="Height px"
             value={device.resolution.h}
@@ -232,7 +307,7 @@ function DeviceEditor({
                 key={`${r.w}x${r.h}`}
                 type="button"
                 className={cn(
-                  "rounded-md px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+                  "rounded-md px-2 py-1 font-mono text-xs transition-colors",
                   r.w === device.resolution.w && r.h === device.resolution.h
                     ? "bg-foreground text-background"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -251,15 +326,13 @@ function DeviceEditor({
         ) : null}
       </div>
 
-      <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
         <Microlabel>Curve</Microlabel>
         <Select
           value={String(device.curvatureR ?? 0)}
-          onValueChange={(v) =>
-            onPatch({ curvatureR: Number(v) || undefined })
-          }
+          onValueChange={(v) => onPatch({ curvatureR: Number(v) || undefined })}
         >
-          <SelectTrigger size="sm" className="w-full">
+          <SelectTrigger className="w-28">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -273,55 +346,70 @@ function DeviceEditor({
         </Select>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Microlabel>Screen height · floor to center</Microlabel>
-          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Microlabel>Screen height · {scenarioLabel.toLowerCase()}</Microlabel>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Eye level
             <Switch
-              checked={device.elevationCm === undefined}
+              checked={elevation === undefined}
               onCheckedChange={(on) =>
                 onPatch({
-                  elevationCm: on ? undefined : Math.round(eyeCm),
+                  elevation: {
+                    ...device.elevation,
+                    [scenario]: on
+                      ? undefined
+                      : Math.round(
+                          // Start the override at the current eye height.
+                          useViewerStore
+                            .getState()
+                            .heightCm && device.distanceCm
+                            ? eyeLevelNow()
+                            : 120,
+                        ),
+                  },
                 })
               }
             />
           </label>
         </div>
-        {device.elevationCm !== undefined ? (
-          <div className="grid grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-1.5">
+        {elevation !== undefined ? (
+          <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
             <Slider
               min={0}
               max={250}
               step={1}
-              value={device.elevationCm}
+              value={elevation}
               onValueChange={(v) =>
-                onPatch({ elevationCm: Array.isArray(v) ? v[0] : v })
+                onPatch({
+                  elevation: {
+                    ...device.elevation,
+                    [scenario]: Array.isArray(v) ? v[0] : v,
+                  },
+                })
               }
             />
             <NumberStepper
               ariaLabel="screen height from floor"
-              value={device.elevationCm}
-              onChange={(v) => onPatch({ elevationCm: v })}
+              value={elevation}
+              onChange={(v) =>
+                onPatch({
+                  elevation: { ...device.elevation, [scenario]: v },
+                })
+              }
               step={1}
               bigStep={10}
               min={0}
               max={300}
+              className="h-7"
             />
           </div>
-        ) : (
-          <p className="text-[10px] text-muted-foreground">
-            Follows the viewer&apos;s eye height ({Math.round(eyeCm)} cm) in
-            the 3D scene.
-          </p>
-        )}
+        ) : null}
       </div>
 
       {device.deviceName && HANDHELD_BODIES[device.deviceName] ? (
-        <label className="flex h-8 items-center justify-between text-xs">
-          <span className="text-muted-foreground">
-            3D device body ({device.deviceName})
-          </span>
+        <label className="flex h-8 items-center justify-between text-sm">
+          <span className="text-muted-foreground">3D device body</span>
           <Switch
             checked={device.show3dBody !== false}
             onCheckedChange={(on) =>
@@ -331,31 +419,35 @@ function DeviceEditor({
         </label>
       ) : null}
 
-      <div className="flex items-end justify-between gap-2">
-        <label className="space-y-1">
-          <Microlabel>Key color</Microlabel>
-          <input
-            type="color"
-            className="block h-8 w-12 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
-            value={device.color}
-            onChange={(e) => onPatch({ color: e.target.value })}
-          />
-        </label>
-        {onRemove ? (
+      {onRemove ? (
+        <div className="flex justify-end">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={onRemove}
           >
-            <Trash2Icon className="size-3.5" /> Delete
+            <Trash2Icon className="size-4" /> Delete
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <AngleReadout device={device} />
     </div>
   );
+}
+
+function eyeLevelNow(): number {
+  const { scenario, heightCm } = useViewerStore.getState();
+  // Local import cycle avoidance: mirror eyeHeightCm's constants.
+  switch (scenario) {
+    case "standing":
+      return heightCm * 0.936;
+    case "desk":
+      return heightCm * 0.45 + 45;
+    case "couch":
+      return heightCm * 0.45 + 40;
+  }
 }
 
 function DeviceRow({
@@ -364,55 +456,98 @@ function DeviceRow({
   onPatch,
   onRemove,
   onToggleVisible,
+  onDragReorder,
+  index,
 }: {
   device: Device;
   isThisDevice?: boolean;
   onPatch: (patch: Partial<Device>) => void;
   onRemove?: () => void;
   onToggleVisible: () => void;
+  /** Present only for reorderable (test) devices. */
+  onDragReorder?: (draggedId: string, ontoIndex: number) => void;
+  index?: number;
 }) {
-  const [expanded, setExpanded] = useState(isThisDevice ?? false);
+  const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   return (
-    <div className="relative">
-      <div
-        className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full"
-        style={{ background: device.color }}
-      />
-      <div className={cn(ROW_GRID, "h-9 pr-1.5 pl-2")}>
+    <div
+      className={cn("relative", dragging && "opacity-40")}
+      onDragOver={
+        onDragReorder
+          ? (e) => {
+              if (e.dataTransfer.types.includes("application/x-wa-device")) {
+                e.preventDefault();
+              }
+            }
+          : undefined
+      }
+      onDrop={
+        onDragReorder && index !== undefined
+          ? (e) => {
+              const id = e.dataTransfer.getData("application/x-wa-device");
+              if (id && id !== device.id) {
+                e.preventDefault();
+                onDragReorder(id, index);
+              }
+            }
+          : undefined
+      }
+    >
+      <div className={cn(ROW_GRID, "h-10 pr-1.5 pl-2")}>
         <Button
           variant="ghost"
           size="icon"
           aria-label={device.visible ? "Hide device" : "Show device"}
-          className="size-6 text-muted-foreground hover:text-foreground"
+          className="size-7 text-muted-foreground hover:text-foreground"
           onClick={onToggleVisible}
         >
           {device.visible ? (
-            <EyeIcon className="size-3.5" />
+            <EyeIcon className="size-4" />
           ) : (
-            <EyeOffIcon className="size-3.5 opacity-50" />
+            <EyeOffIcon className="size-4 opacity-50" />
           )}
         </Button>
+        {/* Key color: compact swatch, native picker on click. */}
+        <label
+          className="relative block h-5 w-5 cursor-pointer overflow-hidden rounded-[6px] border border-border"
+          title="Key color"
+          style={{ background: device.color }}
+        >
+          <input
+            type="color"
+            className="absolute inset-0 cursor-pointer opacity-0"
+            value={device.color}
+            onChange={(e) => onPatch({ color: e.target.value })}
+          />
+        </label>
         <button
           type="button"
+          draggable={Boolean(onDragReorder)}
+          onDragStart={
+            onDragReorder
+              ? (e) => {
+                  e.dataTransfer.setData(
+                    "application/x-wa-device",
+                    device.id,
+                  );
+                  e.dataTransfer.effectAllowed = "move";
+                  setDragging(true);
+                }
+              : undefined
+          }
+          onDragEnd={onDragReorder ? () => setDragging(false) : undefined}
           className={cn(
             "min-w-0 truncate text-left text-sm",
             !device.visible && "text-muted-foreground",
+            onDragReorder && "cursor-grab active:cursor-grabbing",
           )}
           onClick={() => setExpanded((v) => !v)}
           title={device.deviceName || device.label}
         >
           {device.label}
         </button>
-        <Slider
-          min={DIST_MIN_CM}
-          max={DIST_MAX_CM}
-          step={1}
-          value={device.distanceCm}
-          onValueChange={(v) =>
-            onPatch({ distanceCm: Array.isArray(v) ? v[0] : v })
-          }
-        />
         <DistanceStepper
           distanceCm={device.distanceCm}
           onChange={(distanceCm) => onPatch({ distanceCm })}
@@ -421,19 +556,20 @@ function DeviceRow({
           variant="ghost"
           size="icon"
           aria-label={expanded ? "Collapse" : "Expand"}
-          className="size-6 text-muted-foreground hover:text-foreground"
+          className="size-7 text-muted-foreground hover:text-foreground"
           onClick={() => setExpanded((v) => !v)}
         >
           <ChevronDownIcon
-            className={cn(
-              "size-3.5 transition-transform",
-              expanded && "rotate-180",
-            )}
+            className={cn("size-4 transition-transform", expanded && "rotate-180")}
           />
         </Button>
       </div>
       {expanded ? (
-        <DeviceEditor device={device} onPatch={onPatch} onRemove={onRemove} />
+        <DeviceEditor
+          device={device}
+          onPatch={onPatch}
+          onRemove={isThisDevice ? undefined : onRemove}
+        />
       ) : null}
     </div>
   );
@@ -473,16 +609,16 @@ function AddDeviceMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="secondary" size="sm" className="h-8 w-full text-xs">
-            <PlusIcon className="size-3.5" /> Add device
+          <Button variant="secondary" size="sm" className="w-full">
+            <PlusIcon className="size-4" /> Add device
           </Button>
         }
       />
-      <DropdownMenuContent className="max-h-96 w-56 overflow-y-auto">
+      <DropdownMenuContent className="max-h-96 w-60 overflow-y-auto">
         {groups.map((g, i) => (
           <DropdownMenuGroup key={g.cat}>
             {i > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+            <DropdownMenuLabel className="text-xs tracking-wide text-muted-foreground uppercase">
               {CATEGORY_LABELS[g.cat]}
             </DropdownMenuLabel>
             {g.presets.map((p) => (
@@ -491,7 +627,7 @@ function AddDeviceMenu() {
                 onClick={() => addFromPreset(p)}
               >
                 <span className="flex-1">{p.label}</span>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-xs text-muted-foreground">
                   {p.resolution.w}×{p.resolution.h}
                 </span>
               </DropdownMenuItem>
@@ -509,7 +645,9 @@ export function DeviceManagerPanel() {
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const removeDevice = useDeviceStore((s) => s.removeDevice);
+  const moveDevice = useDeviceStore((s) => s.moveDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
+  const listRef = useRef<HTMLDivElement>(null);
 
   return (
     <FloatingPanel
@@ -517,7 +655,7 @@ export function DeviceManagerPanel() {
       title="Device Manager"
       icon={MonitorIcon}
       defaultPosition={{ x: 64, y: 16 }}
-      width={360}
+      width={380}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto">
         <div className="px-2.5 pt-2 pb-1">
@@ -534,14 +672,18 @@ export function DeviceManagerPanel() {
         <div className="mt-1 border-t border-border px-2.5 pt-2 pb-1">
           <Microlabel>Test devices</Microlabel>
         </div>
-        <div className="divide-y divide-border/50">
-          {devices.map((d) => (
+        <div ref={listRef} className="divide-y divide-border/50">
+          {devices.map((d, i) => (
             <DeviceRow
               key={d.id}
               device={d}
+              index={i}
               onPatch={(patch) => updateDevice(d.id, patch)}
               onRemove={() => removeDevice(d.id)}
               onToggleVisible={() => toggleVisible(d.id)}
+              onDragReorder={(draggedId, ontoIndex) =>
+                moveDevice(draggedId, ontoIndex)
+              }
             />
           ))}
         </div>

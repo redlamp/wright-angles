@@ -16,6 +16,12 @@ export type DisplayFill = "black" | "device-color";
  * composition to fit the window.
  */
 export type DisplayMode = "viewport" | "fit";
+/**
+ * Where the composition centers in viewport mode: on the physical
+ * screen's center ("screen") or on the browser window's center
+ * ("window"). A manual pan offset applies on top of either.
+ */
+export type DisplayCenter = "screen" | "window";
 
 interface SettingsState {
   unit: LengthUnit;
@@ -23,6 +29,9 @@ interface SettingsState {
   sceneTheme: SceneTheme;
   displayFill: DisplayFill;
   displayMode: DisplayMode;
+  displayCenter: DisplayCenter;
+  /** Display-size fields shown in inches or centimeters. */
+  sizeUnit: LengthUnit;
   /** Show ISO/AVIXA arcmin legibility bands in readouts. */
   showLegibilityBands: boolean;
   /** Onboarding completed (or explicitly skipped). */
@@ -32,6 +41,8 @@ interface SettingsState {
   setSceneTheme: (theme: SceneTheme) => void;
   setDisplayFill: (fill: DisplayFill) => void;
   setDisplayMode: (mode: DisplayMode) => void;
+  setDisplayCenter: (center: DisplayCenter) => void;
+  setSizeUnit: (unit: LengthUnit) => void;
   setShowLegibilityBands: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
 }
@@ -44,6 +55,8 @@ export const useSettingsStore = create<SettingsState>()(
       sceneTheme: "follow",
       displayFill: "black",
       displayMode: "viewport",
+      displayCenter: "screen",
+      sizeUnit: "in",
       showLegibilityBands: true,
       onboarded: false,
       setUnit: (unit) => set({ unit }),
@@ -51,6 +64,8 @@ export const useSettingsStore = create<SettingsState>()(
       setSceneTheme: (sceneTheme) => set({ sceneTheme }),
       setDisplayFill: (displayFill) => set({ displayFill }),
       setDisplayMode: (displayMode) => set({ displayMode }),
+      setDisplayCenter: (displayCenter) => set({ displayCenter }),
+      setSizeUnit: (sizeUnit) => set({ sizeUnit }),
       setShowLegibilityBands: (showLegibilityBands) =>
         set({ showLegibilityBands }),
       setOnboarded: (onboarded) => set({ onboarded }),

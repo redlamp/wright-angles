@@ -45,11 +45,13 @@ export interface Device {
   color: string;
   visible: boolean;
   /**
-   * Screen-center height from the floor in cm (3D view). Undefined means
-   * "aligned to the viewer's eye height" — the angular math assumes a
-   * centered gaze either way; elevation is a scene-realism control.
+   * Screen-center height from the floor in cm, per viewing scenario (3D
+   * view). A missing entry means "aligned to the viewer's eye height" —
+   * the angular math assumes a centered gaze either way; elevation is a
+   * scene-realism control. (A standing-desk monitor sits differently
+   * than the same monitor seen from a couch.)
    */
-  elevationCm?: number;
+  elevation?: { standing?: number; desk?: number; couch?: number };
   /**
    * Curvature radius in mm using the industry convention (1000R = 1m
    * radius; smaller = curvier). Undefined/0 = flat panel.

@@ -46,6 +46,8 @@ interface DeviceState {
   addFromPreset: (preset: DevicePreset) => void;
   updateDevice: (id: string, patch: Partial<Device>) => void;
   removeDevice: (id: string) => void;
+  /** Move a device to a new index in the list (drag reorder). */
+  moveDevice: (id: string, toIndex: number) => void;
   toggleVisible: (id: string) => void;
   resetAll: () => void;
 }
@@ -83,6 +85,19 @@ export const useDeviceStore = create<DeviceState>()(
         })),
       removeDevice: (id) =>
         set((s) => ({ devices: s.devices.filter((d) => d.id !== id) })),
+      moveDevice: (id, toIndex) =>
+        set((s) => {
+          const from = s.devices.findIndex((d) => d.id === id);
+          if (from < 0) return {};
+          const devices = [...s.devices];
+          const [moved] = devices.splice(from, 1);
+          devices.splice(
+            Math.min(Math.max(0, toIndex), devices.length),
+            0,
+            moved,
+          );
+          return { devices };
+        }),
       toggleVisible: (id) =>
         set((s) => ({
           devices: s.devices.map((d) =>

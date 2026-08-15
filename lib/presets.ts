@@ -295,6 +295,7 @@ export const COMMON_RESOLUTIONS: Record<string, { w: number; h: number }[]> = {
     { w: 1280, h: 800 },
     { w: 1920, h: 1200 },
     { w: 2560, h: 1600 },
+    { w: 3840, h: 2400 },
   ],
   "21:9": [
     { w: 2560, h: 1080 },
@@ -304,6 +305,7 @@ export const COMMON_RESOLUTIONS: Record<string, { w: number; h: number }[]> = {
   "32:9": [
     { w: 3840, h: 1080 },
     { w: 5120, h: 1440 },
+    { w: 7680, h: 2160 },
   ],
   "4:3": [
     { w: 1024, h: 768 },

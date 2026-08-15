@@ -17,6 +17,9 @@ interface UiState {
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
   setPanelWidth: (id: PanelId, width: number) => void;
   setViewMode: (mode: ViewMode) => void;
+  /** Manual 2D pan (CSS px), applied on top of the center mode. */
+  panOffset: { x: number; y: number };
+  setPanOffset: (offset: { x: number; y: number }) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -45,6 +48,8 @@ export const useUiStore = create<UiState>()(
           panelWidths: { ...s.panelWidths, [id]: width },
         })),
       setViewMode: (viewMode) => set({ viewMode }),
+      panOffset: { x: 0, y: 0 },
+      setPanOffset: (panOffset) => set({ panOffset }),
     }),
     { name: "wright-angles:ui" },
   ),
