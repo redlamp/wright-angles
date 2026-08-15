@@ -291,6 +291,7 @@ export default function SceneView({
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}
         eyeY={eyeH}
+        projectTo={farZ + 5}
         showProjection={showProjection}
         selected={selectedId === d.id}
         onSelect={() =>

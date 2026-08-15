@@ -43,11 +43,17 @@ function dropLen(y: number, heightCm: number): number {
   return Math.abs(len) < 1e-3 ? 1e-3 : len;
 }
 
-/** Rewrite the 4 eye→corner segments in the rect's local space. */
+/**
+ * Rewrite the 4 eye→corner rays in the rect's local space, extended
+ * THROUGH the corners out to `reachZ` (world distance) so the cone
+ * visibly lands on the farthest display.
+ */
 function updateProjection(
   geom: BufferGeometry | null,
   eye: [number, number, number],
   corners: [number, number, number][],
+  distCm: number,
+  reachZ: number,
 ) {
   if (!geom) return;
   let attr = geom.getAttribute("position") as BufferAttribute | undefined;
@@ -57,13 +63,19 @@ function updateProjection(
   }
   const a = attr.array as Float32Array;
   corners.forEach((c, i) => {
+    const dirX = c[0] - eye[0];
+    const dirY = c[1] - eye[1];
+    const dirZ = c[2] - eye[2];
+    // Local z of the eye is -distCm; scale the ray so its end lands on
+    // the reachZ plane (world) = reachZ - distCm (local).
+    const k = dirZ > 1e-6 ? reachZ / dirZ : 1;
     const o = i * 6;
     a[o] = eye[0];
     a[o + 1] = eye[1];
     a[o + 2] = eye[2];
-    a[o + 3] = c[0];
-    a[o + 4] = c[1];
-    a[o + 5] = c[2];
+    a[o + 3] = eye[0] + dirX * k;
+    a[o + 4] = eye[1] + dirY * k;
+    a[o + 5] = eye[2] + dirZ * k;
   });
   attr.needsUpdate = true;
 }
@@ -134,6 +146,7 @@ export default function DeviceRect({
   displayFill,
   labels,
   eyeY,
+  projectTo,
   showProjection,
   selected,
   onSelect,
@@ -154,6 +167,8 @@ export default function DeviceRect({
   labels?: LabelPlacement;
   /** Viewer eye height (cm) — the origin of the projection lines. */
   eyeY: number;
+  /** World z the projection rays extend to (the farthest display). */
+  projectTo: number;
   /** Show this rect's eye-to-corner projection lines faintly. */
   showProjection?: boolean;
   /** Selected in the scene: projection lines render at full strength. */
@@ -168,12 +183,19 @@ export default function DeviceRect({
   const R = device.curvatureR ? device.curvatureR / 10 : 0;
   const curved = R > 0;
 
-  // Eye→corner projection endpoints in local space (curved panels use
-  // their actual arc-end corners).
+  const fit = media
+    ? containFit(media.width, media.height, widthCm, heightCm)
+    : null;
+
+  // Projection endpoints in local space: the IMAGE bounds when media is
+  // shown (what the viewer actually attends to), else the panel corners.
+  // Curved panels use their actual arc-end corners.
+  const projW = fit ? fit.w : widthCm;
+  const projH = fit ? fit.h : heightCm;
   const projCorners = useMemo<[number, number, number][]>(() => {
-    const hw = widthCm / 2;
-    const hh = heightCm / 2;
+    const hh = projH / 2;
     if (!curved) {
+      const hw = projW / 2;
       return [
         [-hw, -hh, 0],
         [hw, -hh, 0],
@@ -181,16 +203,18 @@ export default function DeviceRect({
         [-hw, hh, 0],
       ];
     }
-    const arc = widthCm / R;
-    const x = R * Math.sin(arc / 2);
-    const z = -R + R * Math.cos(arc / 2);
+    // Content sits on a slightly smaller radius than the outline.
+    const r = fit ? R - 0.25 : R;
+    const arc = projW / r;
+    const x = r * Math.sin(arc / 2);
+    const z = -R + r * Math.cos(arc / 2);
     return [
       [-x, -hh, z],
       [x, -hh, z],
       [x, hh, z],
       [-x, hh, z],
     ];
-  }, [widthCm, heightCm, curved, R]);
+  }, [projW, projH, curved, R, fit]);
 
   const rectRef = useRef<Group>(null);
   const dropRef = useRef<Group>(null);
@@ -231,6 +255,8 @@ export default function DeviceRect({
         projRef.current,
         [0, eyeY - curY.current, -device.distanceCm],
         projCorners,
+        device.distanceCm,
+        projectTo,
       );
     }
   });
@@ -275,7 +301,6 @@ export default function DeviceRect({
     device.show3dBody !== false && device.deviceName
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
-  const fit = media ? containFit(media.width, media.height, widthCm, heightCm) : null;
 
   // Name label scales with the rect so a phone at 36cm doesn't drown in text.
   const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
