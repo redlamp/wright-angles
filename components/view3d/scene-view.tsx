@@ -299,6 +299,9 @@ export default function SceneView({
   };
   const [controlsOn, setControlsOn] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [nodeDragging, setNodeDragging] = useState(false);
+  const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
+  const updateDevice = useDeviceStore((s) => s.updateDevice);
   const showProjection = useViewerStore((s) => s.showProjectionLines);
 
   // The GL canvas element, captured in onCreated for the export action.
@@ -336,6 +339,12 @@ export default function SceneView({
         onSelect={() =>
           setSelectedId((cur) => (cur === d.id ? null : d.id))
         }
+        onDistanceDrag={(distanceCm) =>
+          d.id === thisDevice.id
+            ? updateThisDevice({ distanceCm })
+            : updateDevice(d.id, { distanceCm })
+        }
+        onDragState={setNodeDragging}
         media={
           tex && activeItem
             ? { texture: tex, width: activeItem.width, height: activeItem.height }
@@ -418,6 +427,7 @@ export default function SceneView({
           <OrbitControls
             makeDefault
             enableDamping
+            enabled={!nodeDragging}
             target={orbitPose.target}
             maxPolarAngle={Math.PI / 2 - 0.05}
             maxDistance={farZ * 6}

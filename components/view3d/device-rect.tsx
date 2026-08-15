@@ -150,6 +150,8 @@ export default function DeviceRect({
   showProjection,
   selected,
   onSelect,
+  onDistanceDrag,
+  onDragState,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
@@ -174,6 +176,10 @@ export default function DeviceRect({
   /** Selected in the scene: projection lines render at full strength. */
   selected?: boolean;
   onSelect?: () => void;
+  /** Live distance while the floor node is dragged along the floor. */
+  onDistanceDrag?: (distanceCm: number) => void;
+  /** Reports node-drag start/end so the parent can pause OrbitControls. */
+  onDragState?: (dragging: boolean) => void;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
   const lp = labels ?? ZERO_LABELS;
@@ -444,6 +450,42 @@ export default function DeviceRect({
             <sphereGeometry args={[1.4, 16, 12]} />
             <meshBasicMaterial color={device.color} />
           </mesh>
+          {/* Oversized invisible hit target: the node doubles as a drag
+              handle for the viewing distance along the sight line. */}
+          {onDistanceDrag ? (
+            <mesh
+              position={[0, 1.2, 0]}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                (e.target as Element).setPointerCapture(e.pointerId);
+                onDragState?.(true);
+              }}
+              onPointerMove={(e) => {
+                if (
+                  !(e.target as Element).hasPointerCapture?.(e.pointerId)
+                ) {
+                  return;
+                }
+                // Project the pointer ray onto the floor plane (y = 0);
+                // its world z IS the new viewing distance.
+                const t = -e.ray.origin.y / e.ray.direction.y;
+                if (t > 0) {
+                  const z = e.ray.origin.z + e.ray.direction.z * t;
+                  onDistanceDrag(
+                    Math.round(Math.min(9999, Math.max(10, z))),
+                  );
+                }
+              }}
+              onPointerUp={(e) => {
+                (e.target as Element).releasePointerCapture?.(e.pointerId);
+                onDragState?.(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <sphereGeometry args={[5, 8, 6]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          ) : null}
           {/* Point-label convention: right of the node, center-left
               anchored with padding, screen-facing; the 45° screen-space
               diagonal keeps neighboring labels collision-free. */}
