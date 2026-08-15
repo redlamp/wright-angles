@@ -58,7 +58,9 @@ function stepFurniture(
   step: number,
   deskGroup: Group | null,
   couchGroup: Group | null,
-) {
+): boolean {
+  const prevDesk = progress.desk;
+  const prevCouch = progress.couch;
   progress.desk = MathUtils.clamp(
     progress.desk + (active === "desk" ? step : -step),
     0,
@@ -71,6 +73,8 @@ function stepFurniture(
   );
   applyFurniture(deskGroup, DESK_MATS, progress.desk);
   applyFurniture(couchGroup, COUCH_MATS, progress.couch);
+  // Whether anything is still mid-transition (drives demand-frameloop).
+  return progress.desk !== prevDesk || progress.couch !== prevCouch;
 }
 
 /** Desk chair with its seat top at SEAT_Y.desk; backrest behind the figure. */
@@ -169,14 +173,16 @@ export default function ScenarioProps({
     couch: scenario === "couch" ? 1 : 0,
   });
 
-  useFrame((_, delta) => {
-    stepFurniture(
+  useFrame((state, delta) => {
+    const moving = stepFurniture(
       progress.current,
       scenario,
       delta / TWEEN_S,
       deskRef.current,
       couchRef.current,
     );
+    // Keep frames coming while the crossfade runs (demand frameloop).
+    if (moving) state.invalidate();
   });
 
   return (

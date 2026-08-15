@@ -270,6 +270,8 @@ export default function ViewerFigure({
       const t = Math.min(1, (state.clock.elapsedTime - a.start) / TWEEN_S);
       cur.current = t >= 1 ? target : lerpPose(a.from, target, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
+      // Keep frames coming while tweening (demand frameloop).
+      state.invalidate();
     }
     if (rootRef.current && torsoRef.current && headRef.current) {
       applyPose(cur.current, rootRef.current, torsoRef.current, headRef.current, sides.current);

@@ -128,6 +128,8 @@ export default function CameraRig({
   useFrame((state) => {
     const a = anim.current;
     if (!a) return;
+    // Keep frames coming while the camera flies (demand frameloop).
+    state.invalidate();
     if (a.start === null) a.start = state.clock.elapsedTime;
     const t = Math.min(1, (state.clock.elapsedTime - a.start) / a.duration);
     const e = easeInOutCubic(t);
