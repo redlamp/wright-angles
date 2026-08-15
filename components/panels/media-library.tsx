@@ -15,6 +15,7 @@ import type { MediaItem } from "@/lib/types";
 import { aspectFromResolution } from "@/lib/display-math";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
+import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -466,6 +467,37 @@ export function MediaLibraryPanel() {
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const active = items.find((i) => i.id === activeId);
+  const splitPct = useUiStore((s) => s.mediaSplitPct);
+  const setSplitPct = useUiStore((s) => s.setMediaSplitPct);
+
+  // Two columns once the panel is wide enough; the divider is draggable.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setWide(entry.contentRect.width >= 470);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const detailColumn = (
+    <div className={cn("min-w-0", !wide && "border-t border-border")}>
+      {active ? (
+        <DetailCard key={active.id} item={active} />
+      ) : (
+        <p className="p-2.5 text-sm text-muted-foreground">
+          Select something in the library to see its details.
+        </p>
+      )}
+      <DisplayFillRow />
+      <p className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
+        Media is stored in your browser only — never uploaded.
+      </p>
+    </div>
+  );
 
   return (
     <FloatingPanel
@@ -475,28 +507,38 @@ export function MediaLibraryPanel() {
       defaultPosition={{ x: 420, y: 16 }}
       width={360}
     >
-      {/* Container query: widen the panel past 30rem and the detail
-          column sits beside the library instead of below it. */}
-      <div className="@container">
-        <div className="grid max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto @[30rem]:grid-cols-2 @[30rem]:divide-x @[30rem]:divide-border">
-          <div className="min-w-0">
-            <Toolbar />
-            <LibraryList />
-          </div>
-          <div className="min-w-0 border-t border-border @[30rem]:border-t-0">
-            {active ? (
-              <DetailCard key={active.id} item={active} />
-            ) : (
-              <p className="p-2.5 text-sm text-muted-foreground">
-                Select something in the library to see its details.
-              </p>
-            )}
-            <DisplayFillRow />
-            <p className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
-              Media is stored in your browser only — never uploaded.
-            </p>
-          </div>
+      <div
+        ref={bodyRef}
+        className="grid max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto"
+        style={
+          wide
+            ? { gridTemplateColumns: `${splitPct}% 5px minmax(0, 1fr)` }
+            : undefined
+        }
+      >
+        <div className="min-w-0">
+          <Toolbar />
+          <LibraryList />
         </div>
+        {wide ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize library columns"
+            className="cursor-col-resize touch-none border-x border-border bg-transparent transition-colors hover:bg-ring/40"
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+              const host = bodyRef.current;
+              if (!host) return;
+              const r = host.getBoundingClientRect();
+              setSplitPct(((e.clientX - r.left) / r.width) * 100);
+            }}
+          />
+        ) : null}
+        {detailColumn}
       </div>
     </FloatingPanel>
   );

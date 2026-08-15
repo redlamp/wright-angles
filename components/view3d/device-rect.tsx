@@ -80,6 +80,21 @@ function updateProjection(
   attr.needsUpdate = true;
 }
 
+/**
+ * Turntable-align a floor label toward the camera: yaw the group so its
+ * +Z points at the camera's horizontal position, keeping the flat 45°
+ * text readable from any orbit angle (never mirrored or upside-down).
+ */
+function applyLabelYaw(
+  spin: Group | null,
+  camX: number,
+  camZ: number,
+  worldZ: number,
+) {
+  if (!spin) return;
+  spin.rotation.y = Math.atan2(camX, camZ - worldZ);
+}
+
 function applyCenterY(
   rect: Group | null,
   drop: Group | null,
@@ -219,6 +234,7 @@ export default function DeviceRect({
   const rectRef = useRef<Group>(null);
   const dropRef = useRef<Group>(null);
   const labelRef = useRef<Group>(null);
+  const labelSpinRef = useRef<Group>(null);
   const projRef = useRef<BufferGeometry>(null);
 
   // Height tween state, same pattern as viewer-figure's pose tween: the
@@ -248,6 +264,12 @@ export default function DeviceRect({
       labelRef.current,
       curY.current,
       heightCm,
+    );
+    applyLabelYaw(
+      labelSpinRef.current,
+      state.camera.position.x,
+      state.camera.position.z,
+      device.distanceCm,
     );
     if (showProjection || selected) {
       updateProjection(
@@ -444,16 +466,19 @@ export default function DeviceRect({
             <sphereGeometry args={[1.4, 16, 12]} />
             <meshBasicMaterial color={device.color} />
           </mesh>
-          <Text
-            fontSize={5}
-            color={device.color}
-            anchorX="left"
-            anchorY="middle"
-            position={[2.5, 0.06, -2.5]}
-            rotation={[-Math.PI / 2, 0, -Math.PI / 4]}
-          >
-            {`${Math.round(device.distanceCm)} cm`}
-          </Text>
+          {/* Yawed toward the camera each frame (applyLabelYaw). */}
+          <group ref={labelSpinRef}>
+            <Text
+              fontSize={5}
+              color={device.color}
+              anchorX="left"
+              anchorY="middle"
+              position={[2.5, 0.06, -2.5]}
+              rotation={[-Math.PI / 2, 0, -Math.PI / 4]}
+            >
+              {`${Math.round(device.distanceCm)} cm`}
+            </Text>
+          </group>
         </group>
       ) : null}
     </group>

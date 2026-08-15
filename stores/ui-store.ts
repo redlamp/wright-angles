@@ -20,6 +20,9 @@ interface UiState {
   /** Manual 2D pan (CSS px), applied on top of the center mode. */
   panOffset: { x: number; y: number };
   setPanOffset: (offset: { x: number; y: number }) => void;
+  /** Media Library two-column split, left column percent (25–75). */
+  mediaSplitPct: number;
+  setMediaSplitPct: (pct: number) => void;
   /** Device whose detail flyout is open beside the Device Manager. */
   openDetailId: string | null;
   /** Pinned device-detail windows and their positions. */
@@ -58,6 +61,9 @@ export const useUiStore = create<UiState>()(
       setViewMode: (viewMode) => set({ viewMode }),
       panOffset: { x: 0, y: 0 },
       setPanOffset: (panOffset) => set({ panOffset }),
+      mediaSplitPct: 50,
+      setMediaSplitPct: (pct) =>
+        set({ mediaSplitPct: Math.min(75, Math.max(25, pct)) }),
       openDetailId: null,
       pinnedDetails: {},
       openDetail: (openDetailId) => set({ openDetailId }),

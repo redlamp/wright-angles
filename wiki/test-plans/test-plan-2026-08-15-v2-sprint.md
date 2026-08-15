@@ -108,3 +108,6 @@ automation can't verify WebGL or feel).
 - [ ] EXIF strip on image import (studio privacy hygiene).
 - [ ] Non-linear distance slider above ~150cm.
 - [ ] Keyboard shortcuts (panel toggles, view switch, measure mode).
+- [ ] Crop tool for active media — e.g. a 1920×1112 capture with browser
+      chrome cropped to the bottom 1920×1080 so only the content shows
+      (Taylor 2026-08-15, future task).
