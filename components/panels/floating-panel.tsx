@@ -26,6 +26,11 @@ interface FloatingPanelProps {
   maxWidth?: number | "none";
   /** Extra controls rendered in the header, before the close button. */
   headerActions?: React.ReactNode;
+  /**
+   * Allow dragging the bottom edge / corner to fix the content height
+   * (children should fill with h-full and scroll internally).
+   */
+  resizableHeight?: boolean;
   children: React.ReactNode;
 }
 
@@ -37,21 +42,27 @@ export function FloatingPanel({
   width: defaultWidth = 320,
   maxWidth,
   headerActions,
+  resizableHeight,
   children,
 }: FloatingPanelProps) {
   const open = useUiStore((s) => s.openPanels[id]);
   const stored = useUiStore((s) => s.panelPositions[id]);
   const storedWidth = useUiStore((s) => s.panelWidths[id]);
+  const storedHeight = useUiStore((s) => s.panelHeights[id]);
   const setPanelPosition = useUiStore((s) => s.setPanelPosition);
   const setPanelWidth = useUiStore((s) => s.setPanelWidth);
+  const setPanelHeight = useUiStore((s) => s.setPanelHeight);
   const togglePanel = useUiStore((s) => s.togglePanel);
 
   const width = storedWidth ?? defaultWidth;
+  const height = resizableHeight ? storedHeight : undefined;
   const pos = stored ?? defaultPosition;
   const resize = useRef<{
-    edge: "left" | "right";
+    edge: "left" | "right" | "bottom" | "corner";
     startX: number;
+    startY: number;
     startW: number;
+    startH: number;
     startPosX: number;
   } | null>(null);
 
@@ -63,11 +74,24 @@ export function FloatingPanel({
     return Math.min(cap, Math.max(MIN_W, w));
   };
 
-  const onResizeDown = (e: React.PointerEvent, edge: "left" | "right") => {
+  const MIN_H = 200;
+  const clampH = (h: number) =>
+    Math.min(window.innerHeight - pos.y - 48, Math.max(MIN_H, h));
+
+  const onResizeDown = (
+    e: React.PointerEvent,
+    edge: "left" | "right" | "bottom" | "corner",
+  ) => {
     resize.current = {
       edge,
       startX: e.clientX,
+      startY: e.clientY,
       startW: width,
+      // Measured so the first bottom-drag starts from the live height.
+      startH:
+        height ??
+        (ref.current?.querySelector("[data-panel-content]")?.clientHeight ??
+          MIN_H),
       startPosX: pos.x,
     };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -78,9 +102,14 @@ export function FloatingPanel({
     const r = resize.current;
     if (!r) return;
     const dx = e.clientX - r.startX;
-    if (r.edge === "right") {
+    const dy = e.clientY - r.startY;
+    if (r.edge === "right" || r.edge === "corner") {
       setPanelWidth(id, clampW(r.startW + dx));
-    } else {
+    }
+    if (r.edge === "bottom" || r.edge === "corner") {
+      setPanelHeight(id, clampH(r.startH + dy));
+    }
+    if (r.edge === "left") {
       // Left edge: right edge stays put, so x shifts with the size change.
       const w = clampW(r.startW - dx);
       setPanelWidth(id, w);
@@ -170,7 +199,13 @@ export function FloatingPanel({
           <XIcon className="size-3.5" />
         </button>
       </div>
-      <div className="border-t border-border">{children}</div>
+      <div
+        data-panel-content
+        className="overflow-hidden border-t border-border"
+        style={height !== undefined ? { height } : undefined}
+      >
+        {children}
+      </div>
       {/* Edge resize handles: invisible strips, ew-resize cursor. */}
       <div
         role="separator"
@@ -190,6 +225,27 @@ export function FloatingPanel({
         onPointerMove={onResizeMove}
         onPointerUp={onResizeUp}
       />
+      {resizableHeight ? (
+        <>
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={`Resize ${title} (bottom edge)`}
+            className="absolute right-2 -bottom-1 left-2 h-2 cursor-ns-resize touch-none"
+            onPointerDown={(e) => onResizeDown(e, "bottom")}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizeUp}
+          />
+          <div
+            role="separator"
+            aria-label={`Resize ${title} (corner)`}
+            className="absolute -right-1 -bottom-1 size-3.5 cursor-nwse-resize touch-none"
+            onPointerDown={(e) => onResizeDown(e, "corner")}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizeUp}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

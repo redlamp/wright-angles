@@ -1079,6 +1079,7 @@ export function MediaLibraryPanel() {
       defaultPosition={{ x: 420, y: 16 }}
       width={520}
       maxWidth="none"
+      resizableHeight
       headerActions={
         <div className="panel-inset mr-1 flex items-center gap-0.5 rounded-md p-0.5">
           {(
@@ -1109,7 +1110,7 @@ export function MediaLibraryPanel() {
     >
       <div
         ref={bodyRef}
-        className="grid max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto"
+        className="grid h-full max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto"
         style={
           wide
             ? { gridTemplateColumns: `${splitPct}% 5px minmax(0, 1fr)` }

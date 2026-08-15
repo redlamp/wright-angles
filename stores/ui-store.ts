@@ -18,6 +18,9 @@ interface UiState {
   panelPositions: Partial<Record<PanelId, { x: number; y: number }>>;
   /** User-resized panel widths in px. */
   panelWidths: Partial<Record<PanelId, number>>;
+  /** User-resized panel content heights in px (height-resizable panels). */
+  panelHeights: Partial<Record<PanelId, number>>;
+  setPanelHeight: (id: PanelId, height: number) => void;
   viewMode: ViewMode;
   togglePanel: (id: PanelId) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
@@ -67,6 +70,11 @@ export const useUiStore = create<UiState>()(
       setPanelWidth: (id, width) =>
         set((s) => ({
           panelWidths: { ...s.panelWidths, [id]: width },
+        })),
+      panelHeights: {},
+      setPanelHeight: (id, height) =>
+        set((s) => ({
+          panelHeights: { ...s.panelHeights, [id]: height },
         })),
       setViewMode: (viewMode) => set({ viewMode }),
       panOffset: { x: 0, y: 0 },
