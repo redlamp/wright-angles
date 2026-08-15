@@ -39,5 +39,4 @@ Project knowledge lives in `wiki/` (an Obsidian vault) and `docs/PRD.md`.
 
 ## License
 
-Not yet decided — being worked out. Until a license is added, all rights
-reserved.
+MIT — see [LICENSE](LICENSE).
