@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Claude session-history buffer, not project code.
     ".remember/**",
+    // Vendored Tesseract.js runtime (minified), see public/ocr/README.md.
+    "public/ocr/**",
   ]),
 ]);
 

@@ -6,6 +6,7 @@ import {
   ImageIcon,
   LayoutGridIcon,
   ListIcon,
+  ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
   UploadIcon,
@@ -614,6 +615,115 @@ function CropSection({
   );
 }
 
+/** Detected lines are capped to the largest few so a text-dense shot
+ * doesn't flood the overlay and the Perception Report. */
+const MAX_DETECTED_BOXES = 24;
+
+const newBoxId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+
+/**
+ * Fully local OCR (vendored Tesseract, see public/ocr/README.md): each
+ * detected text line becomes a regular HighlightBox, so it flows into the
+ * 2D overlay and the Perception Report like a hand-drawn one. Keyed by
+ * item id via DetailCard, so the last-run state resets on switch.
+ */
+function TextDetectionSection({ item }: { item: MediaItem }) {
+  const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
+  const addBox = useMediaStore((s) => s.addBox);
+  const removeBox = useMediaStore((s) => s.removeBox);
+  const [running, setRunning] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [lastRun, setLastRun] = useState<{
+    ids: string[];
+    medianPx: number;
+  } | null>(null);
+
+  const isImage = item.kind === "image";
+
+  const detect = async () => {
+    if (running) return;
+    setRunning(true);
+    setFailed(false);
+    try {
+      // Client-only dynamic import: the OCR module (and the Tesseract
+      // worker behind it) never loads during prerender.
+      const { detectTextLines, largestByArea, medianHeightPx } = await import(
+        "@/lib/ocr"
+      );
+      const intrinsic = { width: item.width, height: item.height };
+      const lines = largestByArea(
+        await detectTextLines(objectUrl, intrinsic, item.crop),
+        MAX_DETECTED_BOXES,
+      );
+      const ids: string[] = [];
+      for (const line of lines) {
+        const id = newBoxId();
+        ids.push(id);
+        addBox(item.id, { id, ...line.box });
+      }
+      setLastRun({ ids, medianPx: medianHeightPx(lines, intrinsic) });
+    } catch (err) {
+      console.warn("Text detection failed:", err);
+      setFailed(true);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const clearDetected = () => {
+    if (!lastRun) return;
+    for (const id of lastRun.ids) removeBox(item.id, id);
+    setLastRun(null);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-5 items-center justify-between">
+        <SectionLabel>Text detection</SectionLabel>
+        {lastRun && lastRun.ids.length > 0 ? (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            onClick={clearDetected}
+          >
+            Clear detected
+          </button>
+        ) : null}
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={running || !isImage}
+        title={
+          isImage
+            ? "Find text lines with local OCR and add a measure box per line"
+            : "Text detection works on images only — running it on video posters may come later"
+        }
+        onClick={() => void detect()}
+      >
+        <ScanTextIcon className="size-4" />
+        {running ? "Detecting…" : "Detect text sizes"}
+      </Button>
+      {failed ? (
+        <p className="text-xs text-muted-foreground">
+          Couldn&apos;t detect text — see console.
+        </p>
+      ) : lastRun ? (
+        <p className="text-xs text-muted-foreground">
+          {lastRun.ids.length === 0
+            ? "No text found."
+            : `${lastRun.ids.length} text line${
+                lastRun.ids.length === 1 ? "" : "s"
+              } → boxes · median ${Math.round(lastRun.medianPx)}px tall`}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** Keyed by item id at the callsite so the armed state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
@@ -684,6 +794,8 @@ function DetailCard({ item }: { item: MediaItem }) {
       </div>
 
       <CropSection item={item} objectUrl={objectUrl} />
+
+      <TextDetectionSection item={item} />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
         Reference size
