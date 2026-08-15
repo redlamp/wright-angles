@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Columns2Icon,
   FolderDownIcon,
   ImageIcon,
   LayoutGridIcon,
   ListIcon,
+  RectangleVerticalIcon,
   ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
@@ -13,8 +15,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MediaCrop, MediaItem } from "@/lib/types";
-import { aspectFromResolution } from "@/lib/display-math";
 import {
+  ACUITY,
+  aspectFromResolution,
+  boxMetricsOnDevice,
+} from "@/lib/display-math";
+import {
+  boxInCrop,
   cropOf,
   cropScaleStyle,
   dragCrop,
@@ -25,6 +32,8 @@ import {
   type CropHandle,
   type CropPreset,
 } from "@/lib/media-crop";
+import { useAnnotationStore } from "@/stores/annotation-store";
+import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -56,6 +65,12 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 type ViewMode = "grid" | "list";
 type SortMode = "added-asc" | "added-desc" | "name";
+
+const SORT_LABELS: Record<SortMode, string> = {
+  "added-desc": "Newest first",
+  "added-asc": "Oldest first",
+  name: "By name",
+};
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -213,7 +228,7 @@ function LibraryList() {
   const setActive = useMediaStore((s) => s.setActive);
 
   const [view, setView] = useState<ViewMode>("grid");
-  const [sort, setSort] = useState<SortMode>("added-asc");
+  const [sort, setSort] = useState<SortMode>("added-desc");
 
   const sorted = useMemo(() => {
     const arr = [...items];
@@ -234,13 +249,17 @@ function LibraryList() {
           <SectionLabel>Library · {items.length}</SectionLabel>
         </div>
         <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-          <SelectTrigger size="sm" className="w-26" aria-label="Sort by">
-            <SelectValue />
+          <SelectTrigger size="sm" className="w-32" aria-label="Sort by">
+            {/* base-ui SelectValue renders the raw value unless given
+                children — show the human label, untruncated. */}
+            <SelectValue>{SORT_LABELS[sort]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="added-asc">Added ↑</SelectItem>
-            <SelectItem value="added-desc">Added ↓</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
+            {(Object.keys(SORT_LABELS) as SortMode[]).map((k) => (
+              <SelectItem key={k} value={k}>
+                {SORT_LABELS[k]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <div className="panel-inset flex items-center gap-0.5 rounded-md p-0.5">
@@ -630,6 +649,127 @@ const newBoxId = () =>
  * 2D overlay and the Perception Report like a hand-drawn one. Keyed by
  * item id via DetailCard, so the last-run state resets on switch.
  */
+interface ScanLine {
+  id: string;
+  text: string;
+  confidence: number;
+  box: { x: number; y: number; w: number; h: number };
+}
+
+const scanBandColor = (arcmin: number) =>
+  arcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : arcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
+
+/**
+ * The useful data behind an OCR run: the image with each detected line
+ * outlined and numbered, plus a per-line table (text, px height,
+ * confidence, arcmin on This Device). Rows select their measure box.
+ */
+function ScanResults({
+  item,
+  url,
+  lines,
+}: {
+  item: MediaItem;
+  url: string;
+  lines: ScanLine[];
+}) {
+  const thisDevice = useDeviceStore((s) => s.thisDevice);
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const selectBox = useAnnotationStore((s) => s.selectBox);
+  const crop = cropOf(item);
+  const eff = effectiveDims(item);
+
+  const rows = lines
+    .map((line, i) => {
+      const inCrop = boxInCrop(line.box, crop);
+      const arcmin = boxMetricsOnDevice(
+        line.box.h / crop.h,
+        eff,
+        thisDevice,
+      ).arcmin;
+      return { line, i, inCrop, arcmin };
+    })
+    .filter((r) => r.inCrop !== null);
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        className="relative w-full overflow-hidden rounded-md bg-black/40"
+        style={{ aspectRatio: `${eff.width} / ${eff.height}` }}
+      >
+        {/* Fills the container exactly (same aspect), so percentage
+            overlays line up with image pixels. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="size-full" style={viewBoxStyle(item)} />
+        {rows.map(({ line, i, inCrop }) => (
+          <button
+            key={line.id}
+            type="button"
+            aria-label={`Select detected line ${i + 1}`}
+            className={cn(
+              "absolute border",
+              line.id === selectedBoxId
+                ? "z-10 border-2 border-white"
+                : "border-[#f5a524]/80 hover:border-white/80",
+            )}
+            style={{
+              left: `${inCrop!.x * 100}%`,
+              top: `${inCrop!.y * 100}%`,
+              width: `${inCrop!.w * 100}%`,
+              height: `${inCrop!.h * 100}%`,
+            }}
+            onClick={() =>
+              selectBox(line.id === selectedBoxId ? null : line.id)
+            }
+          />
+        ))}
+      </div>
+      <div className="max-h-40 space-y-0.5 overflow-y-auto">
+        {rows.map(({ line, i, arcmin }) => (
+          <button
+            key={line.id}
+            type="button"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
+              line.id === selectedBoxId
+                ? "panel-inset ring-1 ring-ring ring-inset"
+                : "hover:bg-muted/50",
+            )}
+            onClick={() =>
+              selectBox(line.id === selectedBoxId ? null : line.id)
+            }
+          >
+            <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
+              {i + 1}
+            </span>
+            <span
+              className="min-w-0 flex-1 truncate text-sm"
+              title={line.text}
+            >
+              {line.text}
+            </span>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {Math.round(line.box.h * item.height)}px ·{" "}
+              {Math.round(line.confidence)}%
+            </span>
+            <span
+              className="shrink-0 font-mono text-xs"
+              style={{ color: scanBandColor(arcmin) }}
+              title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
+            >
+              {arcmin.toFixed(0)}′
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TextDetectionSection({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
   const addBox = useMediaStore((s) => s.addBox);
@@ -637,7 +777,7 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
   const [running, setRunning] = useState(false);
   const [failed, setFailed] = useState(false);
   const [lastRun, setLastRun] = useState<{
-    ids: string[];
+    lines: ScanLine[];
     medianPx: number;
   } | null>(null);
 
@@ -658,13 +798,18 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
         await detectTextLines(objectUrl, intrinsic, item.crop),
         MAX_DETECTED_BOXES,
       );
-      const ids: string[] = [];
+      const kept: ScanLine[] = [];
       for (const line of lines) {
         const id = newBoxId();
-        ids.push(id);
+        kept.push({
+          id,
+          text: line.text,
+          confidence: line.confidence,
+          box: line.box,
+        });
         addBox(item.id, { id, ...line.box });
       }
-      setLastRun({ ids, medianPx: medianHeightPx(lines, intrinsic) });
+      setLastRun({ lines: kept, medianPx: medianHeightPx(lines, intrinsic) });
     } catch (err) {
       console.warn("Text detection failed:", err);
       setFailed(true);
@@ -675,7 +820,7 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
 
   const clearDetected = () => {
     if (!lastRun) return;
-    for (const id of lastRun.ids) removeBox(item.id, id);
+    for (const line of lastRun.lines) removeBox(item.id, line.id);
     setLastRun(null);
   };
 
@@ -683,7 +828,7 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
     <div className="space-y-1.5">
       <div className="flex h-5 items-center justify-between">
         <SectionLabel>Text detection</SectionLabel>
-        {lastRun && lastRun.ids.length > 0 ? (
+        {lastRun && lastRun.lines.length > 0 ? (
           <button
             type="button"
             className="text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -713,12 +858,15 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
         </p>
       ) : lastRun ? (
         <p className="text-xs text-muted-foreground">
-          {lastRun.ids.length === 0
+          {lastRun.lines.length === 0
             ? "No text found."
-            : `${lastRun.ids.length} text line${
-                lastRun.ids.length === 1 ? "" : "s"
+            : `${lastRun.lines.length} text line${
+                lastRun.lines.length === 1 ? "" : "s"
               } → boxes · median ${Math.round(lastRun.medianPx)}px tall`}
         </p>
+      ) : null}
+      {lastRun && lastRun.lines.length > 0 ? (
+        <ScanResults item={item} url={objectUrl} lines={lastRun.lines} />
       ) : null}
     </div>
   );
@@ -892,32 +1040,20 @@ export function MediaLibraryPanel() {
   const splitPct = useUiStore((s) => s.mediaSplitPct);
   const setSplitPct = useUiStore((s) => s.setMediaSplitPct);
 
-  // Two columns once the panel is wide enough; the divider is draggable.
+  // Explicit 1/2-column choice from the header toggle; two-column bumps
+  // a too-narrow panel wide enough to be useful.
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [wide, setWide] = useState(false);
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setWide(entry.contentRect.width >= 440);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Two-column is the intended default; panels persisted at the old
-  // narrow defaults (340/360) predate that and get bumped once. A width
-  // the user deliberately narrowed (below 380 but not a known default)
-  // is left alone.
+  const mediaColumns = useUiStore((s) => s.mediaColumns);
+  const setMediaColumns = useUiStore((s) => s.setMediaColumns);
   const storedWidth = useUiStore((s) => s.panelWidths.media);
   const setPanelWidth = useUiStore((s) => s.setPanelWidth);
-  useEffect(() => {
-    if (storedWidth !== undefined && storedWidth <= 380) {
+  const wide = mediaColumns === 2;
+  const chooseColumns = (cols: 1 | 2) => {
+    setMediaColumns(cols);
+    if (cols === 2 && (storedWidth ?? 520) < 460) {
       setPanelWidth("media", 520);
     }
-    // One-time legacy migration on mount only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
 
   const detailColumn = (
     <div className={cn("min-w-0", !wide && "border-t border-border")}>
@@ -942,6 +1078,33 @@ export function MediaLibraryPanel() {
       icon={ImageIcon}
       defaultPosition={{ x: 420, y: 16 }}
       width={520}
+      headerActions={
+        <div className="panel-inset mr-1 flex items-center gap-0.5 rounded-md p-0.5">
+          {(
+            [
+              { cols: 1 as const, icon: RectangleVerticalIcon, label: "One column" },
+              { cols: 2 as const, icon: Columns2Icon, label: "Two columns" },
+            ] as const
+          ).map(({ cols, icon: ColIcon, label }) => (
+            <button
+              key={cols}
+              type="button"
+              aria-label={label}
+              aria-pressed={mediaColumns === cols}
+              title={label}
+              className={cn(
+                "flex size-5.5 items-center justify-center rounded-[5px] transition-colors",
+                mediaColumns === cols
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => chooseColumns(cols)}
+            >
+              <ColIcon className="size-3.5" />
+            </button>
+          ))}
+        </div>
+      }
     >
       <div
         ref={bodyRef}

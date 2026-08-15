@@ -22,6 +22,8 @@ interface FloatingPanelProps {
   icon: LucideIcon;
   defaultPosition: { x: number; y: number };
   width?: number;
+  /** Extra controls rendered in the header, before the close button. */
+  headerActions?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -31,6 +33,7 @@ export function FloatingPanel({
   icon: Icon,
   defaultPosition,
   width: defaultWidth = 320,
+  headerActions,
   children,
 }: FloatingPanelProps) {
   const open = useUiStore((s) => s.openPanels[id]);
@@ -148,6 +151,7 @@ export function FloatingPanel({
       >
         <Icon className="size-3.5 text-muted-foreground" />
         <span className="flex-1 text-sm font-medium">{title}</span>
+        {headerActions}
         <button
           type="button"
           aria-label={`Close ${title}`}
