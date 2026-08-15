@@ -62,6 +62,19 @@ export type DevicePreset = Omit<Device, "id" | "visible" | "color"> & {
   presetId: string;
 };
 
+/**
+ * A measurement rectangle drawn over a media item, in coordinates
+ * normalized to the media's intrinsic size (0–1), so it lands on the
+ * same content across devices and resolutions.
+ */
+export interface HighlightBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MediaItem {
   id: string;
   name: string;
@@ -79,6 +92,8 @@ export interface MediaItem {
    */
   referenceHeight: number;
   addedAt: number;
+  /** Measurement boxes drawn over this item. */
+  boxes?: HighlightBox[];
 }
 
 export type LengthUnit = "in" | "cm";

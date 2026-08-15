@@ -225,6 +225,29 @@ export function contentPxToArcmin(
 }
 
 /**
+ * Angular height of a highlight box (normalized height `nh` of a media
+ * item shown fullscreen-contain on `device`), plus its size in the
+ * media's own source pixels.
+ */
+export function boxMetricsOnDevice(
+  nh: number,
+  media: { width: number; height: number },
+  device: Device,
+) {
+  // Contain-fit the media into the device's pixel grid.
+  const scale = Math.min(
+    device.resolution.w / media.width,
+    device.resolution.h / media.height,
+  );
+  const devicePx = nh * media.height * scale;
+  return {
+    devicePx,
+    arcmin: pixelsToArcmin(devicePx, device),
+    mm: pixelsToMm(devicePx, device),
+  };
+}
+
+/**
  * Human acuity reference points, in arc minutes.
  * 20/20 vision resolves ~1 arcmin of detail; comfortable body text is
  * usually quoted at 18–22 arcmin cap height, with ~15 as a floor for
@@ -232,6 +255,8 @@ export function contentPxToArcmin(
  */
 export const ACUITY = {
   detailLimitArcmin: 1,
-  minCriticalTextArcmin: 15,
+  /** ISO 9241-303 clause 5.5 minimum character height. */
+  minCriticalTextArcmin: 16,
+  /** ISO 9241-303 required capability band (20–22′). */
   comfortableTextArcmin: 20,
 } as const;

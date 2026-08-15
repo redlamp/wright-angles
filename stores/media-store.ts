@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { MediaItem } from "@/lib/types";
+import type { HighlightBox, MediaItem } from "@/lib/types";
 import {
   idbClearMedia,
   idbDeleteMedia,
@@ -13,6 +13,16 @@ const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
+
+/** Re-write an item's metadata beside its stored blob(s). */
+function persistMeta(get: () => { items: MediaItem[] }, id: string) {
+  const item = get().items.find((i) => i.id === id);
+  if (!item) return;
+  void idbGetAllMedia().then((records) => {
+    const rec = records.find((r) => r.meta.id === id);
+    if (rec) void idbPutMedia(id, { ...rec, meta: item });
+  });
+}
 
 /** Intrinsic pixel size of an image blob. */
 function probeImage(blob: Blob): Promise<{ width: number; height: number }> {
@@ -97,6 +107,13 @@ interface MediaState {
   /** Create a built-in test image (rendered to canvas, stored like any import). */
   addGenerated: (kind: GeneratedKind) => Promise<void>;
   rename: (id: string, name: string) => void;
+  addBox: (mediaId: string, box: HighlightBox) => void;
+  updateBox: (
+    mediaId: string,
+    boxId: string,
+    patch: Partial<HighlightBox>,
+  ) => void;
+  removeBox: (mediaId: string, boxId: string) => void;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
   setReferenceHeight: (id: string, referenceHeight: number) => void;
@@ -318,12 +335,43 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, name: trimmed } : i)),
     }));
-    const item = get().items.find((i) => i.id === id);
-    if (!item) return;
-    void idbGetAllMedia().then((records) => {
-      const rec = records.find((r) => r.meta.id === id);
-      if (rec) void idbPutMedia(id, { meta: item, blob: rec.blob });
-    });
+    persistMeta(get, id);
+  },
+
+  addBox: (mediaId, box) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId ? { ...i, boxes: [...(i.boxes ?? []), box] } : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
+  },
+
+  updateBox: (mediaId, boxId, patch) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId
+          ? {
+              ...i,
+              boxes: (i.boxes ?? []).map((b) =>
+                b.id === boxId ? { ...b, ...patch } : b,
+              ),
+            }
+          : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
+  },
+
+  removeBox: (mediaId, boxId) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId
+          ? { ...i, boxes: (i.boxes ?? []).filter((b) => b.id !== boxId) }
+          : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
   },
 
   remove: async (id) => {
@@ -353,13 +401,7 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, referenceHeight } : i)),
     }));
-    // Persist the changed metadata alongside its blob.
-    const item = get().items.find((i) => i.id === id);
-    if (!item) return;
-    void idbGetAllMedia().then((records) => {
-      const rec = records.find((r) => r.meta.id === id);
-      if (rec) void idbPutMedia(id, { meta: item, blob: rec.blob });
-    });
+    persistMeta(get, id);
   },
 
   wipeAll: async () => {

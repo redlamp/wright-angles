@@ -1,16 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { GaugeIcon } from "lucide-react";
+import { GaugeIcon, Trash2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Device } from "@/lib/types";
 import {
   ACUITY,
   apparentWidthRatio,
+  boxMetricsOnDevice,
   contentPxToArcmin,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
+import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useAnnotationStore } from "@/stores/annotation-store";
 import { FloatingPanel } from "./floating-panel";
 import { NumberStepper } from "@/components/number-stepper";
 
@@ -35,8 +37,18 @@ export function PerceptionReportPanel() {
   const showBands = useSettingsStore((s) => s.showLegibilityBands);
   const [fontPx, setFontPx] = useState(24);
   const [refH, setRefH] = useState(1080);
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const removeBox = useMediaStore((s) => s.removeBox);
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const selectBox = useAnnotationStore((s) => s.selectBox);
+  const activeItem = items.find((i) => i.id === activeId) ?? null;
 
   const visible = devices.filter((d) => d.visible);
+  const allVisible = [
+    ...(thisDevice.visible ? [thisDevice] : []),
+    ...visible,
+  ];
   const hostArcmin = useMemo(
     () => contentPxToArcmin(fontPx, refH, thisDevice),
     [fontPx, refH, thisDevice],
@@ -121,6 +133,76 @@ export function PerceptionReportPanel() {
             })}
           </ul>
         )}
+
+        {activeItem && (activeItem.boxes?.length ?? 0) > 0 ? (
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+              Measured boxes · {activeItem.name}
+            </span>
+            <ul className="space-y-1.5">
+              {activeItem.boxes!.map((b, idx) => {
+                const srcW = Math.round(b.w * activeItem.width);
+                const srcH = Math.round(b.h * activeItem.height);
+                const refPx = Math.round(b.h * activeItem.referenceHeight);
+                return (
+                  <li
+                    key={b.id}
+                    className={cn(
+                      "panel-inset cursor-pointer rounded-md px-2.5 py-1.5 text-xs transition-shadow",
+                      b.id === selectedBoxId && "ring-1 ring-ring",
+                    )}
+                    onClick={() =>
+                      selectBox(b.id === selectedBoxId ? null : b.id)
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">Box {idx + 1}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {srcW}×{srcH}px src
+                        {activeItem.referenceHeight !== activeItem.height
+                          ? ` · ${refPx}px @ ${activeItem.referenceHeight}p`
+                          : ""}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove box ${idx + 1}`}
+                        className="text-muted-foreground transition-colors hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeBox(activeItem.id, b.id);
+                          if (b.id === selectedBoxId) selectBox(null);
+                        }}
+                      >
+                        <Trash2Icon className="size-3" />
+                      </button>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                      {allVisible.map((d) => {
+                        const m = boxMetricsOnDevice(b.h, activeItem, d);
+                        return (
+                          <span
+                            key={d.id}
+                            className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground"
+                            title={`${d.label}: ${m.mm.toFixed(1)}mm tall, ${Math.round(m.devicePx)}px`}
+                          >
+                            <LegibilityDot arcmin={m.arcmin} />
+                            <span
+                              className="max-w-20 truncate"
+                              style={{ color: d.color }}
+                            >
+                              {d.label}
+                            </span>
+                            {m.arcmin.toFixed(0)}′
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
 
         {showBands ? (
           <div className="space-y-1.5">

@@ -1,12 +1,82 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon } from "lucide-react";
+import { DownloadIcon, PencilRulerIcon } from "lucide-react";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { simulatedSizeOnHostPx } from "@/lib/display-math";
-import type { Device } from "@/lib/types";
+import { useAnnotationStore } from "@/stores/annotation-store";
+import {
+  ACUITY,
+  boxMetricsOnDevice,
+  simulatedSizeOnHostPx,
+} from "@/lib/display-math";
+import { containFit } from "@/lib/fit";
+import type { Device, HighlightBox, MediaItem } from "@/lib/types";
+
+const boxBandColor = (worstArcmin: number) =>
+  worstArcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : worstArcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
+
+/**
+ * Highlight boxes over one device rect. Coordinates are normalized to
+ * the media's content area (object-contain within the rect), so the
+ * same box lands on the same pixels of the image on every device.
+ */
+function BoxLayer({
+  rectW,
+  rectH,
+  media,
+  worstByBox,
+  isHost,
+}: {
+  rectW: number;
+  rectH: number;
+  media: MediaItem;
+  worstByBox: Map<string, number>;
+  isHost: boolean;
+}) {
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const selectBox = useAnnotationStore((s) => s.selectBox);
+  const area = containFit(media.width, media.height, rectW, rectH);
+  if (!area.w) return null;
+  return (
+    <>
+      {(media.boxes ?? []).map((b) => {
+        const color = boxBandColor(worstByBox.get(b.id) ?? 99);
+        const selected = b.id === selectedBoxId;
+        return (
+          <div
+            key={b.id}
+            role={isHost ? "button" : undefined}
+            className="absolute"
+            style={{
+              left: area.x + b.x * area.w,
+              top: area.y + b.y * area.h,
+              width: b.w * area.w,
+              height: b.h * area.h,
+              border: `${selected && isHost ? 2 : 1}px solid ${color}`,
+              boxShadow: selected && isHost ? `0 0 0 1px ${color}55` : undefined,
+              cursor: isHost ? "pointer" : undefined,
+              pointerEvents: isHost ? "auto" : "none",
+            }}
+            onClick={
+              isHost
+                ? (e) => {
+                    e.stopPropagation();
+                    selectBox(selected ? null : b.id);
+                  }
+                : undefined
+            }
+          />
+        );
+      })}
+    </>
+  );
+}
 
 /**
  * The 2D overlay: every visible device rendered at equal angular size,
@@ -53,6 +123,54 @@ export function DisplayArea() {
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
   const activeVideoUrl =
     activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
+
+  const drawMode = useAnnotationStore((s) => s.drawMode);
+  const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const selectBox = useAnnotationStore((s) => s.selectBox);
+  const addBox = useMediaStore((s) => s.addBox);
+  const removeBox = useMediaStore((s) => s.removeBox);
+  const [draft, setDraft] = useState<HighlightBox | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Worst-case legibility per box across every visible device — the
+  // "will this text survive everywhere" verdict that colors the box.
+  const worstByBox = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!activeItem) return map;
+    const devs = [
+      ...(thisDevice.visible ? [thisDevice] : []),
+      ...devices.filter((d) => d.visible),
+    ];
+    for (const b of activeItem.boxes ?? []) {
+      let worst = Infinity;
+      for (const d of devs) {
+        worst = Math.min(worst, boxMetricsOnDevice(b.h, activeItem, d).arcmin);
+      }
+      map.set(b.id, worst);
+    }
+    return map;
+  }, [activeItem, thisDevice, devices]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (selectedBoxId) selectBox(null);
+        else if (drawMode) setDrawMode(false);
+      }
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        selectedBoxId &&
+        activeItem &&
+        !(e.target instanceof HTMLInputElement)
+      ) {
+        removeBox(activeItem.id, selectedBoxId);
+        selectBox(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedBoxId, drawMode, activeItem, removeBox, selectBox, setDrawMode]);
 
   const rects = useMemo(() => {
     if (!area.w || !area.h) return [];
@@ -212,6 +330,90 @@ export function DisplayArea() {
                 className="size-full object-contain select-none"
               />
             ) : null}
+            {activeItem ? (
+              <BoxLayer
+                rectW={w}
+                rectH={h}
+                media={activeItem}
+                worstByBox={worstByBox}
+                isHost={Boolean(device.isThis) && !drawMode}
+              />
+            ) : null}
+            {activeItem && device.isThis && draft
+              ? (() => {
+                  const area = containFit(
+                    activeItem.width,
+                    activeItem.height,
+                    w,
+                    h,
+                  );
+                  return (
+                    <div
+                      className="pointer-events-none absolute border border-dashed border-white/80"
+                      style={{
+                        left: area.x + draft.x * area.w,
+                        top: area.y + draft.y * area.h,
+                        width: draft.w * area.w,
+                        height: draft.h * area.h,
+                      }}
+                    />
+                  );
+                })()
+              : null}
+            {activeItem && device.isThis && drawMode ? (
+              <div
+                className="absolute inset-0 cursor-crosshair touch-none"
+                onPointerDown={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const area = containFit(
+                    activeItem.width,
+                    activeItem.height,
+                    r.width,
+                    r.height,
+                  );
+                  if (!area.w) return;
+                  const nx = (e.clientX - r.left - area.x) / area.w;
+                  const ny = (e.clientY - r.top - area.y) / area.h;
+                  dragStart.current = { x: nx, y: ny };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  if (!dragStart.current) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const area = containFit(
+                    activeItem.width,
+                    activeItem.height,
+                    r.width,
+                    r.height,
+                  );
+                  if (!area.w) return;
+                  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+                  const nx = clamp((e.clientX - r.left - area.x) / area.w);
+                  const ny = clamp((e.clientY - r.top - area.y) / area.h);
+                  const s = dragStart.current;
+                  setDraft({
+                    id: "draft",
+                    x: Math.min(s.x, nx),
+                    y: Math.min(s.y, ny),
+                    w: Math.abs(nx - s.x),
+                    h: Math.abs(ny - s.y),
+                  });
+                }}
+                onPointerUp={() => {
+                  const d = draft;
+                  dragStart.current = null;
+                  setDraft(null);
+                  if (d && d.w > 0.004 && d.h > 0.004) {
+                    const id =
+                      typeof crypto !== "undefined" && "randomUUID" in crypto
+                        ? crypto.randomUUID()
+                        : Math.random().toString(36).slice(2);
+                    addBox(activeItem.id, { ...d, id });
+                    selectBox(id);
+                  }
+                }}
+              />
+            ) : null}
           </div>
           {/* Cycle label corners so tightly nested rects stay readable. */}
           <span
@@ -238,6 +440,26 @@ export function DisplayArea() {
       ) : null}
 
       <div className="absolute right-2 bottom-2 z-40 flex items-center gap-1.5">
+        {activeItem ? (
+          <button
+            type="button"
+            title={
+              drawMode
+                ? "Done drawing boxes (Esc)"
+                : "Draw measurement boxes on the image"
+            }
+            className={
+              "flex h-6 items-center gap-1 rounded-md px-2 font-mono text-[10px] transition-colors " +
+              (drawMode
+                ? "bg-white/25 text-white"
+                : "bg-black/50 text-white/60 hover:text-white")
+            }
+            onClick={() => setDrawMode(!drawMode)}
+          >
+            <PencilRulerIcon className="size-3" />
+            {drawMode ? "done" : "measure"}
+          </button>
+        ) : null}
         <button
           type="button"
           title="Export this view as a PNG reference image"
