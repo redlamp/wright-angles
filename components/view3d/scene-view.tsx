@@ -13,12 +13,10 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   TextureLoader,
-  Vector3,
   VideoTexture,
-  type PerspectiveCamera,
   type Texture,
 } from "three";
-import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -139,131 +137,6 @@ function headOnFovDeg(thisDevice: Device, displayMode: DisplayMode): number {
  * drop line and stagger height. Pure and order-stable — recomputed only
  * when devices/scenario/eye height change, never per frame.
  */
-/**
- * Phase-1 declutter (wiki/research/label-placement-decluttering.md):
- * on camera rest, project every label anchor to screen space, AABB-test
- * against already-placed labels in priority order (nearest first), and
- * resolve collisions by greedy cycling through cartographic positions
- * (right → left → above → above-right → above-left). Falls back to the
- * world-space clustering defaults when everything fits.
- */
-function LabelDeclutter({
-  targets,
-  onPlacements,
-}: {
-  targets: {
-    id: string;
-    nameAnchor: [number, number, number];
-    distAnchor: [number, number, number];
-    nameWCm: number;
-    nameHCm: number;
-    distWCm: number;
-  }[];
-  onPlacements: (m: Map<string, LabelPlacement>) => void;
-}) {
-  const camera = useThree((s) => s.camera);
-  const controls = useThree((s) => s.controls) as unknown as {
-    addEventListener?: (t: string, cb: () => void) => void;
-    removeEventListener?: (t: string, cb: () => void) => void;
-  } | null;
-  const size = useThree((s) => s.size);
-
-  useEffect(() => {
-    const compute = () => {
-      const pc = camera as PerspectiveCamera;
-      const halfH = Math.tan((pc.fov * Math.PI) / 360);
-      interface Box {
-        x0: number;
-        y0: number;
-        x1: number;
-        y1: number;
-      }
-      const placed: Box[] = [];
-      const out = new Map<string, LabelPlacement>();
-      const v = new Vector3();
-
-      const entries = targets
-        .flatMap((t) => [
-          { t, kind: "name" as const, anchor: t.nameAnchor, w: t.nameWCm, h: t.nameHCm },
-          { t, kind: "dist" as const, anchor: t.distAnchor, w: t.distWCm, h: t.distWCm * 0.5 },
-        ])
-        .map((e) => {
-          v.set(...e.anchor);
-          const camDist = v.distanceTo(pc.position);
-          v.project(pc);
-          return {
-            ...e,
-            px: ((v.x + 1) / 2) * size.width,
-            py: ((1 - v.y) / 2) * size.height,
-            behind: v.z > 1,
-            // World cm per screen px at this depth.
-            k: (2 * camDist * halfH) / size.height,
-            camDist,
-          };
-        })
-        .sort((a, b) => a.camDist - b.camDist);
-
-      for (const e of entries) {
-        const cur = out.get(e.t.id) ?? {
-          nameX: 0,
-          nameLift: 0,
-          distX: 0,
-          distLift: 0,
-        };
-        out.set(e.t.id, cur);
-        if (e.behind || e.k <= 0) continue;
-        const wpx = e.w / e.k;
-        const hpx = e.h / e.k;
-        // Candidate offsets in px (screen y grows downward).
-        const cands: [number, number][] = [
-          [0, 0],
-          [wpx / 2 + 6, 0],
-          [-wpx / 2 - 6, 0],
-          [0, -hpx - 4],
-          [wpx / 2 + 6, -hpx - 4],
-          [-wpx / 2 - 6, -hpx - 4],
-        ];
-        let chosen: [number, number] = cands[0];
-        for (const c of cands) {
-          const box: Box = {
-            x0: e.px + c[0] - wpx / 2,
-            y0: e.py + c[1] - hpx,
-            x1: e.px + c[0] + wpx / 2,
-            y1: e.py + c[1],
-          };
-          const hit = placed.some(
-            (p) => box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0,
-          );
-          if (!hit) {
-            chosen = c;
-            break;
-          }
-        }
-        placed.push({
-          x0: e.px + chosen[0] - wpx / 2,
-          y0: e.py + chosen[1] - hpx,
-          x1: e.px + chosen[0] + wpx / 2,
-          y1: e.py + chosen[1],
-        });
-        if (e.kind === "name") {
-          cur.nameX = chosen[0] * e.k;
-          cur.nameLift = -chosen[1] * e.k;
-        } else {
-          cur.distX = chosen[0] * e.k;
-          cur.distLift = -chosen[1] * e.k;
-        }
-      }
-      onPlacements(out);
-    };
-
-    compute();
-    controls?.addEventListener?.("end", compute);
-    return () => controls?.removeEventListener?.("end", compute);
-  }, [camera, controls, size.width, size.height, targets, onPlacements]);
-
-  return null;
-}
-
 function computeLabelPlacements(
   visible: Device[],
   scenario: Scenario,
@@ -406,31 +279,6 @@ export default function SceneView({
     () => computeLabelPlacements(visible, scenario, eyeH),
     [visible, scenario, eyeH],
   );
-  // Screen-space refinement overrides the world-space defaults whenever
-  // the camera rests (LabelDeclutter).
-  const [screenPlacements, setScreenPlacements] =
-    useState<Map<string, LabelPlacement> | null>(null);
-  const declutterTargets = useMemo(
-    () =>
-      visible.map((d) => {
-        const { heightCm } = physicalSizeCm(d.diagonalIn, d.aspect);
-        const cy = d.elevation?.[scenario] ?? eyeH;
-        const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
-        return {
-          id: d.id,
-          nameAnchor: [
-            0,
-            cy + heightCm / 2 + 3 + nameSize / 2,
-            d.distanceCm,
-          ] as [number, number, number],
-          distAnchor: [2.4, 2.4, d.distanceCm] as [number, number, number],
-          nameWCm: Math.max(4, d.label.length) * nameSize * 0.55,
-          nameHCm: nameSize * 1.2,
-          distWCm: 5 * 4.5,
-        };
-      }),
-    [visible, scenario, eyeH],
-  );
 
   // Orbit framing captured once; OrbitControls owns the camera after entry.
   const [orbitPose] = useState<CameraPose>(() => ({
@@ -483,7 +331,7 @@ export default function SceneView({
         centerY={d.elevation?.[scenario] ?? eyeH}
         palette={palette}
         displayFill={displayFill}
-        labels={(screenPlacements ?? labelPlacements).get(d.id)}
+        labels={labelPlacements.get(d.id)}
         eyeY={eyeH}
         projectTo={farZ + 5}
         showProjection={showProjection}
@@ -565,10 +413,6 @@ export default function SceneView({
         </Suspense>
 
         <FpsProbe />
-        <LabelDeclutter
-          targets={declutterTargets}
-          onPlacements={setScreenPlacements}
-        />
 
         <CameraRig
           orbitPose={orbitPose}

@@ -495,7 +495,7 @@ export default function DeviceRect({
               color={device.color}
               anchorX="left"
               anchorY="middle"
-              position={[2.4 + lp.distX, 1.2 + lp.distLift, 0]}
+              position={[2.4, 1.2, 0]}
               rotation={[0, 0, Math.PI / 4]}
             >
               {`${Math.round(device.distanceCm)} cm`}
