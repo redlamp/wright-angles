@@ -330,66 +330,104 @@ export function DisplayArea() {
                 className="size-full object-contain select-none"
               />
             ) : null}
-            {activeItem ? (
+            {activeItem && !device.isThis ? (
               <BoxLayer
                 rectW={w}
                 rectH={h}
                 media={activeItem}
                 worstByBox={worstByBox}
-                isHost={Boolean(device.isThis) && !drawMode}
+                isHost={false}
               />
             ) : null}
-            {activeItem && device.isThis && draft
-              ? (() => {
-                  const area = containFit(
-                    activeItem.width,
-                    activeItem.height,
-                    w,
-                    h,
-                  );
-                  return (
-                    <div
-                      className="pointer-events-none absolute border border-dashed border-white/80"
-                      style={{
-                        left: area.x + draft.x * area.w,
-                        top: area.y + draft.y * area.h,
-                        width: draft.w * area.w,
-                        height: draft.h * area.h,
-                      }}
-                    />
-                  );
-                })()
-              : null}
-            {activeItem && device.isThis && drawMode ? (
+          </div>
+          {/* Cycle label corners so tightly nested rects stay readable. */}
+          <span
+            className={
+              "absolute px-1 font-mono text-[10px] leading-4 whitespace-nowrap " +
+              [
+                "top-0 left-0 -translate-y-full pb-0.5",
+                "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
+                "bottom-0 left-0 translate-y-full pt-0.5",
+                "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
+              ][i % 4]
+            }
+            style={{ color: device.color }}
+          >
+            {device.label} · {Math.round(device.distanceCm)} cm
+          </span>
+        </div>
+      ))}
+
+      {/* Host annotation layer sits above every device rect so drawing
+          and box selection are never blocked by nested rects. */}
+      {(() => {
+        const hostRect = rects.find((r) => r.device.isThis);
+        if (!activeItem || !hostRect) return null;
+        const area = containFit(
+          activeItem.width,
+          activeItem.height,
+          hostRect.w,
+          hostRect.h,
+        );
+        return (
+          <div
+            // Above every device rect (z 1..n), below the app chrome
+            // (sidebar z-30, panels z-40+), so UI stays clickable while
+            // drawing.
+            className="pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
+            style={{ width: hostRect.w, height: hostRect.h }}
+          >
+            <div className="[&>div]:pointer-events-auto">
+              <BoxLayer
+                rectW={hostRect.w}
+                rectH={hostRect.h}
+                media={activeItem}
+                worstByBox={worstByBox}
+                isHost={!drawMode}
+              />
+            </div>
+            {draft ? (
               <div
-                className="absolute inset-0 cursor-crosshair touch-none"
+                className="pointer-events-none absolute border border-dashed border-white/80"
+                style={{
+                  left: area.x + draft.x * area.w,
+                  top: area.y + draft.y * area.h,
+                  width: draft.w * area.w,
+                  height: draft.h * area.h,
+                }}
+              />
+            ) : null}
+            {drawMode ? (
+              <div
+                className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
                 onPointerDown={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  const area = containFit(
+                  const a = containFit(
                     activeItem.width,
                     activeItem.height,
                     r.width,
                     r.height,
                   );
-                  if (!area.w) return;
-                  const nx = (e.clientX - r.left - area.x) / area.w;
-                  const ny = (e.clientY - r.top - area.y) / area.h;
-                  dragStart.current = { x: nx, y: ny };
+                  if (!a.w) return;
+                  dragStart.current = {
+                    x: (e.clientX - r.left - a.x) / a.w,
+                    y: (e.clientY - r.top - a.y) / a.h,
+                  };
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }}
                 onPointerMove={(e) => {
                   if (!dragStart.current) return;
                   const r = e.currentTarget.getBoundingClientRect();
-                  const area = containFit(
+                  const a = containFit(
                     activeItem.width,
                     activeItem.height,
                     r.width,
                     r.height,
                   );
-                  if (!area.w) return;
+                  if (!a.w) return;
                   const clamp = (v: number) => Math.min(1, Math.max(0, v));
-                  const nx = clamp((e.clientX - r.left - area.x) / area.w);
-                  const ny = clamp((e.clientY - r.top - area.y) / area.h);
+                  const nx = clamp((e.clientX - r.left - a.x) / a.w);
+                  const ny = clamp((e.clientY - r.top - a.y) / a.h);
                   const s = dragStart.current;
                   setDraft({
                     id: "draft",
@@ -415,23 +453,8 @@ export function DisplayArea() {
               />
             ) : null}
           </div>
-          {/* Cycle label corners so tightly nested rects stay readable. */}
-          <span
-            className={
-              "absolute px-1 font-mono text-[10px] leading-4 whitespace-nowrap " +
-              [
-                "top-0 left-0 -translate-y-full pb-0.5",
-                "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
-                "bottom-0 left-0 translate-y-full pt-0.5",
-                "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
-              ][i % 4]
-            }
-            style={{ color: device.color }}
-          >
-            {device.label} · {Math.round(device.distanceCm)} cm
-          </span>
-        </div>
-      ))}
+        );
+      })()}
 
       {rects.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40">
