@@ -30,6 +30,7 @@ const specFromPreset = (p: DevicePreset): Omit<Device, "id" | "color" | "visible
   distanceCm: p.distanceCm,
   resolution: { ...p.resolution },
   aspect: { ...p.aspect },
+  curvatureR: p.curvatureR,
 });
 
 const seedDevice = (presetId: string, color: string): Device => {

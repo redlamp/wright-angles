@@ -2,6 +2,7 @@
 
 import {
   BoxIcon,
+  GaugeIcon,
   ImageIcon,
   InfoIcon,
   MonitorIcon,
@@ -64,6 +65,7 @@ export function Sidebar() {
     <div className="panel-frame fixed top-1/2 left-2 z-30 flex -translate-y-1/2 flex-col items-center gap-1 rounded-lg border border-border p-1">
       {panelButton("devices", "Device Manager", <MonitorIcon className="size-4" />)}
       {panelButton("media", "Media Library", <ImageIcon className="size-4" />)}
+      {panelButton("report", "Perception Report", <GaugeIcon className="size-4" />)}
       <div className="my-0.5 h-px w-6 bg-border" />
       <RailButton
         label="2D overlay view"

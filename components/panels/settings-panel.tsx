@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { SettingsIcon, ShieldCheckIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  DownloadIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  UploadIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useUiStore } from "@/stores/ui-store";
+import { downloadSetup, importSetupFile } from "@/lib/setup-io";
 import { FloatingPanel } from "./floating-panel";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import type { LengthUnit } from "@/lib/types";
 
-function SegmentedToggle<T extends string>({
+export function SegmentedToggle<T extends string>({
   value,
   options,
   onChange,
@@ -40,24 +49,90 @@ function SegmentedToggle<T extends string>({
   );
 }
 
+function Section({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function StorageUsage() {
+  const [usage, setUsage] = useState<{ used: number; quota: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    let alive = true;
+    navigator.storage
+      ?.estimate?.()
+      .then((e) => {
+        if (alive && e.usage !== undefined && e.quota !== undefined) {
+          setUsage({ used: e.usage, quota: e.quota });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!usage) return null;
+  const mb = (n: number) => (n / 1048576).toFixed(1);
+  const pct = usage.quota > 0 ? (usage.used / usage.quota) * 100 : 0;
+  return (
+    <div className="panel-inset space-y-1 rounded-md px-2.5 py-2">
+      <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+        <span>{mb(usage.used)} MB used</span>
+        <span>{mb(usage.quota)} MB available</span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-foreground/50"
+          style={{ width: `${Math.max(1, Math.min(100, pct))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPanel() {
   const unit = useSettingsStore((s) => s.unit);
   const setUnit = useSettingsStore((s) => s.setUnit);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const sceneTheme = useSettingsStore((s) => s.sceneTheme);
+  const setSceneTheme = useSettingsStore((s) => s.setSceneTheme);
+  const showBands = useSettingsStore((s) => s.showLegibilityBands);
+  const setShowBands = useSettingsStore((s) => s.setShowLegibilityBands);
+  const setOnboarded = useSettingsStore((s) => s.setOnboarded);
   const resetDevices = useDeviceStore((s) => s.resetAll);
   const wipeMedia = useMediaStore((s) => s.wipeAll);
   const [armed, setArmed] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const wipeEverything = async () => {
     await wipeMedia();
     resetDevices();
     try {
-      localStorage.removeItem("wright-angles:devices");
-      localStorage.removeItem("wright-angles:settings");
-      localStorage.removeItem("wright-angles:ui");
+      for (const k of [
+        "wright-angles:devices",
+        "wright-angles:settings",
+        "wright-angles:ui",
+        "wright-angles:viewer",
+      ]) {
+        localStorage.removeItem(k);
+      }
     } catch {
-      // localStorage unavailable — stores were reset in memory anyway.
+      // localStorage unavailable — in-memory stores were reset anyway.
     }
     useUiStore.persist.rehydrate();
     setArmed(false);
@@ -69,13 +144,54 @@ export function SettingsPanel() {
       title="Settings"
       icon={SettingsIcon}
       defaultPosition={{ x: 64, y: 420 }}
-      width={280}
+      width={300}
     >
-      <div className="space-y-3 p-3">
-        <div className="space-y-1">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Units
-          </span>
+      <div className="max-h-[calc(100vh-8rem)] space-y-3 overflow-y-auto p-3">
+        <Section label="Setup">
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={downloadSetup}
+            >
+              <DownloadIcon className="size-3.5" /> Export
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => importRef.current?.click()}
+            >
+              <UploadIcon className="size-3.5" /> Import
+            </Button>
+          </div>
+          <input
+            ref={importRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              void importSetupFile(f).then(setImportError);
+            }}
+          />
+          {importError ? (
+            <p className="text-[10px] text-destructive">{importError}</p>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-full justify-start text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setOnboarded(false)}
+          >
+            <SparklesIcon className="size-3.5" /> Run setup assistant again
+          </Button>
+        </Section>
+
+        <Section label="Units">
           <SegmentedToggle<LengthUnit>
             value={unit}
             options={[
@@ -84,21 +200,42 @@ export function SettingsPanel() {
             ]}
             onChange={setUnit}
           />
-        </div>
+        </Section>
 
-        <div className="space-y-1">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Theme
-          </span>
+        <Section label="Theme">
           <SegmentedToggle
             value={theme}
             options={[
+              { value: "system", label: "System" },
               { value: "dark", label: "Dark" },
               { value: "light", label: "Light" },
             ]}
             onChange={setTheme}
           />
-        </div>
+        </Section>
+
+        <Section label="3D scene">
+          <SegmentedToggle
+            value={sceneTheme}
+            options={[
+              { value: "follow", label: "Match UI" },
+              { value: "dark", label: "Dark" },
+              { value: "light", label: "Light" },
+            ]}
+            onChange={setSceneTheme}
+          />
+        </Section>
+
+        <Section label="Readouts">
+          <label className="flex h-8 items-center justify-between text-xs">
+            Legibility bands (ISO 16′ / 20′)
+            <Switch checked={showBands} onCheckedChange={setShowBands} />
+          </label>
+        </Section>
+
+        <Section label="Storage">
+          <StorageUsage />
+        </Section>
 
         <div className="panel-inset flex items-start gap-2 rounded-md px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
           <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" />

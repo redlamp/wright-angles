@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { MediaItem } from "@/lib/types";
+import type { HighlightBox, MediaItem } from "@/lib/types";
 import {
   idbClearMedia,
   idbDeleteMedia,
@@ -14,6 +14,16 @@ const newId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
+/** Re-write an item's metadata beside its stored blob(s). */
+function persistMeta(get: () => { items: MediaItem[] }, id: string) {
+  const item = get().items.find((i) => i.id === id);
+  if (!item) return;
+  void idbGetAllMedia().then((records) => {
+    const rec = records.find((r) => r.meta.id === id);
+    if (rec) void idbPutMedia(id, { ...rec, meta: item });
+  });
+}
+
 /** Intrinsic pixel size of an image blob. */
 function probeImage(blob: Blob): Promise<{ width: number; height: number }> {
   return createImageBitmap(blob).then((bmp) => {
@@ -23,24 +33,177 @@ function probeImage(blob: Blob): Promise<{ width: number; height: number }> {
   });
 }
 
+/**
+ * Video metadata + a poster frame. Hard 10s timeout with teardown on
+ * every path — an element that never fires events must not leak or hang
+ * the import loop.
+ */
+function probeVideo(blob: Blob): Promise<{
+  width: number;
+  height: number;
+  duration: number;
+  poster: Blob;
+}> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    v.playsInline = true;
+    const cleanup = () => {
+      clearTimeout(timer);
+      v.removeAttribute("src");
+      v.load();
+      URL.revokeObjectURL(url);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("video probe timeout"));
+    }, 10_000);
+    v.onloadedmetadata = () => {
+      v.currentTime = Math.min(1, (v.duration || 0) / 2);
+    };
+    v.onseeked = () => {
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      c.getContext("2d")!.drawImage(v, 0, 0);
+      const { videoWidth, videoHeight, duration } = v;
+      c.toBlob(
+        (poster) => {
+          cleanup();
+          if (poster) {
+            resolve({ width: videoWidth, height: videoHeight, duration, poster });
+          } else {
+            reject(new Error("poster capture failed"));
+          }
+        },
+        "image/jpeg",
+        0.8,
+      );
+    };
+    v.onerror = () => {
+      cleanup();
+      reject(new Error("video load error"));
+    };
+    v.src = url;
+  });
+}
+
 interface MediaState {
   items: MediaItem[];
-  /** Runtime-only object URLs, keyed by media id. Revoked on remove. */
+  /**
+   * Runtime-only object URLs for thumbnails/stills (poster frame for
+   * videos), keyed by media id. Revoked on remove.
+   */
   objectUrls: Record<string, string>;
+  /** Playable object URLs for video items only. */
+  videoUrls: Record<string, string>;
   activeId: string | null;
   hydrated: boolean;
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
   addFiles: (files: FileList | File[]) => Promise<void>;
+  /** Create a built-in test image (rendered to canvas, stored like any import). */
+  addGenerated: (kind: GeneratedKind) => Promise<void>;
+  rename: (id: string, name: string) => void;
+  addBox: (mediaId: string, box: HighlightBox) => void;
+  updateBox: (
+    mediaId: string,
+    boxId: string,
+    patch: Partial<HighlightBox>,
+  ) => void;
+  removeBox: (mediaId: string, boxId: string) => void;
   remove: (id: string) => Promise<void>;
   setActive: (id: string | null) => void;
   setReferenceHeight: (id: string, referenceHeight: number) => void;
   wipeAll: () => Promise<void>;
 }
 
+export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
+
+export const GENERATED_KINDS: { kind: GeneratedKind; label: string }[] = [
+  { kind: "smpte-bars", label: "Color bars" },
+  { kind: "grid", label: "Alignment grid" },
+  { kind: "gradient", label: "Gradient card" },
+  { kind: "solid", label: "Solid gray" },
+];
+
+/** Draw a 1920×1080 test image. Pure canvas; no assets. */
+function drawGenerated(kind: GeneratedKind): HTMLCanvasElement {
+  const W = 1920;
+  const H = 1080;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d")!;
+  if (kind === "smpte-bars") {
+    const bars = [
+      "#c0c0c0", "#c0c000", "#00c0c0", "#00c000",
+      "#c000c0", "#c00000", "#0000c0",
+    ];
+    const w = W / bars.length;
+    bars.forEach((col, i) => {
+      g.fillStyle = col;
+      g.fillRect(i * w, 0, w + 1, H * 0.75);
+    });
+    const lower = ["#0000c0", "#131313", "#c000c0", "#131313", "#00c0c0", "#131313", "#c0c0c0"];
+    const lw = W / lower.length;
+    lower.forEach((col, i) => {
+      g.fillStyle = col;
+      g.fillRect(i * lw, H * 0.75, lw + 1, H * 0.125);
+    });
+    const grays = 12;
+    for (let i = 0; i < grays; i++) {
+      const v = Math.round((i / (grays - 1)) * 255);
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.fillRect((i * W) / grays, H * 0.875, W / grays + 1, H * 0.125);
+    }
+  } else if (kind === "grid") {
+    g.fillStyle = "#1c1c1c";
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = "#3d3d3d";
+    g.lineWidth = 1;
+    for (let x = 0; x <= W; x += 60) {
+      g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); g.stroke();
+    }
+    for (let y = 0; y <= H; y += 60) {
+      g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); g.stroke();
+    }
+    g.strokeStyle = "#7a7a7a";
+    g.lineWidth = 2;
+    g.strokeRect(1, 1, W - 2, H - 2);
+    g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H); g.stroke();
+    g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+    g.beginPath(); g.arc(W / 2, H / 2, H / 3, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = "#e5e5e5";
+    g.font = "500 40px sans-serif";
+    g.fillText("1920 × 1080", 40, 70);
+  } else if (kind === "gradient") {
+    const grad = g.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#b23a3a");
+    grad.addColorStop(1, "#3ab26e");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = "#fff";
+    const sizes = [48, 36, 28, 22, 17, 13];
+    let y = 100;
+    for (const s of sizes) {
+      g.font = `600 ${s}px sans-serif`;
+      g.fillText(`${s}px — The quick brown fox jumps over the lazy dog`, 60, y);
+      y += s * 1.8;
+    }
+  } else {
+    g.fillStyle = "#808080";
+    g.fillRect(0, 0, W, H);
+  }
+  return c;
+}
+
 export const useMediaStore = create<MediaState>()((set, get) => ({
   items: [],
   objectUrls: {},
+  videoUrls: {},
   activeId: null,
   hydrated: false,
 
@@ -49,15 +212,24 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     try {
       const records = await idbGetAllMedia();
       const urls: Record<string, string> = {};
+      const vids: Record<string, string> = {};
       const items = records
         .map((r) => {
-          urls[r.meta.id] = URL.createObjectURL(r.blob);
-          return r.meta;
+          // Records from before video support lack `kind`.
+          const meta: MediaItem = { ...r.meta, kind: r.meta.kind ?? "image" };
+          if (meta.kind === "video") {
+            urls[meta.id] = URL.createObjectURL(r.poster ?? r.blob);
+            vids[meta.id] = URL.createObjectURL(r.blob);
+          } else {
+            urls[meta.id] = URL.createObjectURL(r.blob);
+          }
+          return meta;
         })
         .sort((a, b) => a.addedAt - b.addedAt);
       set((s) => ({
         items,
         objectUrls: urls,
+        videoUrls: vids,
         hydrated: true,
         activeId: s.activeId ?? items[0]?.id ?? null,
       }));
@@ -69,7 +241,9 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   addFiles: async (files) => {
-    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const list = Array.from(files).filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
+    );
     if (list.length > 0 && navigator.storage?.persist) {
       // Ask the browser not to evict the library under storage pressure.
       // Fire-and-forget: denial just means default (best-effort) durability.
@@ -77,40 +251,144 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     }
     for (const file of list) {
       try {
-        const { width, height } = await probeImage(file);
-        const meta: MediaItem = {
-          id: newId(),
-          name: file.name,
-          type: file.type,
-          width,
-          height,
-          referenceHeight: height,
-          addedAt: Date.now(),
-        };
-        await idbPutMedia(meta.id, { meta, blob: file });
-        const url = URL.createObjectURL(file);
-        set((s) => ({
-          items: [...s.items, meta],
-          objectUrls: { ...s.objectUrls, [meta.id]: url },
-          activeId: s.activeId ?? meta.id,
-        }));
+        if (file.type.startsWith("video/")) {
+          const { width, height, duration, poster } = await probeVideo(file);
+          const meta: MediaItem = {
+            id: newId(),
+            name: file.name,
+            type: file.type,
+            kind: "video",
+            duration,
+            width,
+            height,
+            referenceHeight: height,
+            addedAt: Date.now(),
+          };
+          await idbPutMedia(meta.id, { meta, blob: file, poster });
+          set((s) => ({
+            items: [...s.items, meta],
+            objectUrls: {
+              ...s.objectUrls,
+              [meta.id]: URL.createObjectURL(poster),
+            },
+            videoUrls: {
+              ...s.videoUrls,
+              [meta.id]: URL.createObjectURL(file),
+            },
+            activeId: s.activeId ?? meta.id,
+          }));
+        } else {
+          const { width, height } = await probeImage(file);
+          const meta: MediaItem = {
+            id: newId(),
+            name: file.name,
+            type: file.type,
+            kind: "image",
+            width,
+            height,
+            referenceHeight: height,
+            addedAt: Date.now(),
+          };
+          await idbPutMedia(meta.id, { meta, blob: file });
+          const url = URL.createObjectURL(file);
+          set((s) => ({
+            items: [...s.items, meta],
+            objectUrls: { ...s.objectUrls, [meta.id]: url },
+            activeId: s.activeId ?? meta.id,
+          }));
+        }
       } catch {
-        // Not decodable as an image — skip silently.
+        // Not decodable as an image/video — skip silently.
       }
     }
+  },
+
+  addGenerated: async (kind) => {
+    const canvas = drawGenerated(kind);
+    const blob = await new Promise<Blob | null>((r) =>
+      canvas.toBlob(r, "image/png"),
+    );
+    if (!blob) return;
+    const label = GENERATED_KINDS.find((k) => k.kind === kind)?.label ?? kind;
+    const meta: MediaItem = {
+      id: newId(),
+      name: `${label} (generated)`,
+      type: "image/png",
+      kind: "image",
+      width: canvas.width,
+      height: canvas.height,
+      referenceHeight: canvas.height,
+      addedAt: Date.now(),
+    };
+    await idbPutMedia(meta.id, { meta, blob });
+    const url = URL.createObjectURL(blob);
+    set((s) => ({
+      items: [...s.items, meta],
+      objectUrls: { ...s.objectUrls, [meta.id]: url },
+      activeId: s.activeId ?? meta.id,
+    }));
+  },
+
+  rename: (id, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    set((s) => ({
+      items: s.items.map((i) => (i.id === id ? { ...i, name: trimmed } : i)),
+    }));
+    persistMeta(get, id);
+  },
+
+  addBox: (mediaId, box) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId ? { ...i, boxes: [...(i.boxes ?? []), box] } : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
+  },
+
+  updateBox: (mediaId, boxId, patch) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId
+          ? {
+              ...i,
+              boxes: (i.boxes ?? []).map((b) =>
+                b.id === boxId ? { ...b, ...patch } : b,
+              ),
+            }
+          : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
+  },
+
+  removeBox: (mediaId, boxId) => {
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === mediaId
+          ? { ...i, boxes: (i.boxes ?? []).filter((b) => b.id !== boxId) }
+          : i,
+      ),
+    }));
+    persistMeta(get, mediaId);
   },
 
   remove: async (id) => {
     await idbDeleteMedia(id);
     set((s) => {
-      const url = s.objectUrls[id];
-      if (url) URL.revokeObjectURL(url);
+      for (const map of [s.objectUrls, s.videoUrls]) {
+        if (map[id]) URL.revokeObjectURL(map[id]);
+      }
       const objectUrls = { ...s.objectUrls };
+      const videoUrls = { ...s.videoUrls };
       delete objectUrls[id];
+      delete videoUrls[id];
       const items = s.items.filter((i) => i.id !== id);
       return {
         items,
         objectUrls,
+        videoUrls,
         activeId:
           s.activeId === id ? (items[0]?.id ?? null) : s.activeId,
       };
@@ -123,20 +401,17 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set((s) => ({
       items: s.items.map((i) => (i.id === id ? { ...i, referenceHeight } : i)),
     }));
-    // Persist the changed metadata alongside its blob.
-    const item = get().items.find((i) => i.id === id);
-    if (!item) return;
-    void idbGetAllMedia().then((records) => {
-      const rec = records.find((r) => r.meta.id === id);
-      if (rec) void idbPutMedia(id, { meta: item, blob: rec.blob });
-    });
+    persistMeta(get, id);
   },
 
   wipeAll: async () => {
     await idbClearMedia();
-    for (const url of Object.values(get().objectUrls)) {
+    for (const url of [
+      ...Object.values(get().objectUrls),
+      ...Object.values(get().videoUrls),
+    ]) {
       URL.revokeObjectURL(url);
     }
-    set({ items: [], objectUrls: {}, activeId: null });
+    set({ items: [], objectUrls: {}, videoUrls: {}, activeId: null });
   },
 }));

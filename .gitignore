@@ -45,3 +45,6 @@ wiki/.obsidian/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local test images (copyrighted press material, never committed)
+/public/reference/

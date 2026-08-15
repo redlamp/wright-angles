@@ -13,6 +13,8 @@ const VERSION = 1;
 export interface MediaRecord {
   meta: MediaItem;
   blob: Blob;
+  /** Still frame for video items, used as the library thumbnail. */
+  poster?: Blob;
 }
 
 function openDb(): Promise<IDBDatabase> {

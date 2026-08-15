@@ -44,6 +44,17 @@ export interface Device {
   /** Key color used for outlines/keylines everywhere this device is drawn. */
   color: string;
   visible: boolean;
+  /**
+   * Screen-center height from the floor in cm (3D view). Undefined means
+   * "aligned to the viewer's eye height" — the angular math assumes a
+   * centered gaze either way; elevation is a scene-realism control.
+   */
+  elevationCm?: number;
+  /**
+   * Curvature radius in mm using the industry convention (1000R = 1m
+   * radius; smaller = curvier). Undefined/0 = flat panel.
+   */
+  curvatureR?: number;
 }
 
 /** A preset is a Device minus per-instance state. */
@@ -51,12 +62,28 @@ export type DevicePreset = Omit<Device, "id" | "visible" | "color"> & {
   presetId: string;
 };
 
+/**
+ * A measurement rectangle drawn over a media item, in coordinates
+ * normalized to the media's intrinsic size (0–1), so it lands on the
+ * same content across devices and resolutions.
+ */
+export interface HighlightBox {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MediaItem {
   id: string;
   name: string;
   /** MIME type of the stored blob. */
   type: string;
-  /** Intrinsic pixel size of the image. */
+  kind: "image" | "video";
+  /** Video duration in seconds. */
+  duration?: number;
+  /** Intrinsic pixel size of the content. */
   width: number;
   height: number;
   /**
@@ -65,6 +92,8 @@ export interface MediaItem {
    */
   referenceHeight: number;
   addedAt: number;
+  /** Measurement boxes drawn over this item. */
+  boxes?: HighlightBox[];
 }
 
 export type LengthUnit = "in" | "cm";

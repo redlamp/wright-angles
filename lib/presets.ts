@@ -157,6 +157,7 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     distanceCm: 70,
     resolution: { w: 5120, h: 1440 },
     aspect: { w: 32, h: 9 },
+    curvatureR: 1000,
   },
 
   // TVs
@@ -197,11 +198,13 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     aspect: { w: 16, h: 9 },
   },
   {
+    // The modal US TV size; default distance is the Lechner 2.7m
+    // (wiki/research/tv-market-sizes-and-distances.md).
     presetId: "tv-65-4k",
     label: "65″ 4K TV",
     category: "tv",
     diagonalIn: 65,
-    distanceCm: 300,
+    distanceCm: 270,
     resolution: { w: 3840, h: 2160 },
     aspect: { w: 16, h: 9 },
   },
@@ -235,6 +238,24 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     aspect: { w: 16, h: 9 },
   },
 ];
+
+/**
+ * Full-device body dimensions for known handhelds, keyed by `deviceName`
+ * (devices are instances, so product identity is the stable key). Used by
+ * the 3D view to draw the chassis around the screen so display size vs
+ * device size reads. Manufacturer spec sheets, cm.
+ */
+export const HANDHELD_BODIES: Record<
+  string,
+  { bodyWCm: number; bodyHCm: number; depthCm: number }
+> = {
+  "Nintendo Switch": { bodyWCm: 23.9, bodyHCm: 10.2, depthCm: 1.4 },
+  "Nintendo Switch OLED": { bodyWCm: 24.2, bodyHCm: 10.2, depthCm: 1.4 },
+  "Nintendo Switch Lite": { bodyWCm: 20.8, bodyHCm: 9.1, depthCm: 1.4 },
+  "Nintendo Switch 2": { bodyWCm: 27.2, bodyHCm: 11.6, depthCm: 1.4 },
+  "Valve Steam Deck": { bodyWCm: 29.8, bodyHCm: 11.7, depthCm: 4.9 },
+  "Valve Steam Deck OLED": { bodyWCm: 29.8, bodyHCm: 11.7, depthCm: 4.9 },
+};
 
 /**
  * Key-color cycle auto-assigned to new devices (user-adjustable). Saturated

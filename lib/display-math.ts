@@ -60,6 +60,29 @@ export function subtenseDeg(sizeCm: number, distanceCm: number): number {
 
 export const degToArcmin = (deg: number) => deg * 60;
 
+/**
+ * Horizontal subtense of a curved panel wrapping a cylinder of radius R,
+ * viewer on the panel's axis of symmetry. The physical width is the arc
+ * length; the edges sit at chord = R·sin(w/2R), pulled sagitta =
+ * R·(1−cos(w/2R)) closer to the viewer. For a 49″ 1000R panel at desk
+ * distance this is a real difference, not a rounding error.
+ */
+export function curvedSubtenseDeg(
+  arcWidthCm: number,
+  distanceCm: number,
+  curvatureRadiusCm?: number,
+): number {
+  if (!curvatureRadiusCm || curvatureRadiusCm <= 0) {
+    return subtenseDeg(arcWidthCm, distanceCm);
+  }
+  const R = curvatureRadiusCm;
+  const half = arcWidthCm / (2 * R);
+  const chordHalf = R * Math.sin(half);
+  const sagitta = R * (1 - Math.cos(half));
+  const z = Math.max(1e-6, distanceCm - sagitta);
+  return 2 * Math.atan(chordHalf / z) * DEG_PER_RAD;
+}
+
 export const subtenseArcmin = (sizeCm: number, distanceCm: number) =>
   degToArcmin(subtenseDeg(sizeCm, distanceCm));
 
@@ -71,7 +94,11 @@ export function sizeForArcmin(arcmin: number, distanceCm: number): number {
 /** Full angular description of a device as seen by its viewer. */
 export function deviceAngles(device: Device) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
-  const hDeg = subtenseDeg(widthCm, device.distanceCm);
+  const hDeg = curvedSubtenseDeg(
+    widthCm,
+    device.distanceCm,
+    device.curvatureR ? device.curvatureR / 10 : undefined,
+  );
   const vDeg = subtenseDeg(heightCm, device.distanceCm);
   const diagDeg = subtenseDeg(inToCm(device.diagonalIn), device.distanceCm);
   return {
@@ -131,14 +158,19 @@ export function simulatedSizeOnHostPx(target: Device, host: Device) {
   const t = physicalSizeCm(target.diagonalIn, target.aspect);
   const h = physicalSizeCm(host.diagonalIn, host.aspect);
 
-  const solve = (targetSizeCm: number) => {
-    const thetaRad =
-      2 * Math.atan(targetSizeCm / (2 * target.distanceCm));
-    return 2 * host.distanceCm * Math.tan(thetaRad / 2);
-  };
+  const solve = (thetaDeg: number) =>
+    2 * host.distanceCm * Math.tan((thetaDeg / DEG_PER_RAD) / 2);
 
-  const widthCmOnHost = solve(t.widthCm);
-  const heightCmOnHost = solve(t.heightCm);
+  // Width honors the target's curvature; height treats the panel as flat
+  // (vertical curvature is negligible on real displays).
+  const widthCmOnHost = solve(
+    curvedSubtenseDeg(
+      t.widthCm,
+      target.distanceCm,
+      target.curvatureR ? target.curvatureR / 10 : undefined,
+    ),
+  );
+  const heightCmOnHost = solve(subtenseDeg(t.heightCm, target.distanceCm));
   const pitchW = h.widthCm / host.resolution.w;
   const pitchH = h.heightCm / host.resolution.h;
 
@@ -166,6 +198,56 @@ export function imageScaleOnHost(
 }
 
 /**
+ * Apparent-size ratio between two viewing situations: how wide `target`
+ * looks to its viewer relative to how wide `host` looks to its viewer.
+ * 0.45 means "appears at 45% of the host's apparent width".
+ */
+export function apparentWidthRatio(target: Device, host: Device): number {
+  const h = deviceAngles(host).horizontalDeg;
+  return h > 0 ? deviceAngles(target).horizontalDeg / h : 0;
+}
+
+/**
+ * Angular size of a feature authored `px` tall at `referenceHeight`
+ * (e.g. 24px in a 1080p HUD) when that content runs fullscreen on
+ * `device` — the "will my font ship legible" number.
+ */
+export function contentPxToArcmin(
+  px: number,
+  referenceHeight: number,
+  device: Device,
+): number {
+  if (referenceHeight <= 0) return 0;
+  return pixelsToArcmin(
+    (px * device.resolution.h) / referenceHeight,
+    device,
+  );
+}
+
+/**
+ * Angular height of a highlight box (normalized height `nh` of a media
+ * item shown fullscreen-contain on `device`), plus its size in the
+ * media's own source pixels.
+ */
+export function boxMetricsOnDevice(
+  nh: number,
+  media: { width: number; height: number },
+  device: Device,
+) {
+  // Contain-fit the media into the device's pixel grid.
+  const scale = Math.min(
+    device.resolution.w / media.width,
+    device.resolution.h / media.height,
+  );
+  const devicePx = nh * media.height * scale;
+  return {
+    devicePx,
+    arcmin: pixelsToArcmin(devicePx, device),
+    mm: pixelsToMm(devicePx, device),
+  };
+}
+
+/**
  * Human acuity reference points, in arc minutes.
  * 20/20 vision resolves ~1 arcmin of detail; comfortable body text is
  * usually quoted at 18–22 arcmin cap height, with ~15 as a floor for
@@ -173,6 +255,8 @@ export function imageScaleOnHost(
  */
 export const ACUITY = {
   detailLimitArcmin: 1,
-  minCriticalTextArcmin: 15,
+  /** ISO 9241-303 clause 5.5 minimum character height. */
+  minCriticalTextArcmin: 16,
+  /** ISO 9241-303 required capability band (20–22′). */
   comfortableTextArcmin: 20,
 } as const;
