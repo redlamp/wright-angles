@@ -16,9 +16,9 @@ import { physicalSizeCm } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
-import { eyeHeightCm, useViewerStore } from "@/stores/viewer-store";
+import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
-import DeviceRect from "./device-rect";
+import DeviceRect, { type LabelPlacement } from "./device-rect";
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
@@ -89,6 +89,97 @@ function headOnFovDeg(thisDevice: Device, displayMode: DisplayMode): number {
   return Math.min(120, Math.max(5, fov));
 }
 
+/**
+ * Deterministic de-overlap for the per-device text labels. Devices with
+ * similar sizes/distances (nested handhelds at 36/40cm) land their name and
+ * floor-distance labels on top of each other; this walks the visible set
+ * sorted by distance, chain-clusters anchors that fall within roughly a
+ * label height of each other, and hands each member a stable offset:
+ * names alternate to the left/right rect edge (like the 2D view's corner
+ * cycling) and stack upward past pairs; floor labels alternate sides of the
+ * drop line and stagger height. Pure and order-stable — recomputed only
+ * when devices/scenario/eye height change, never per frame.
+ */
+function computeLabelPlacements(
+  visible: Device[],
+  scenario: Scenario,
+  eyeH: number,
+): Map<string, LabelPlacement> {
+  interface Info {
+    id: string;
+    z: number;
+    topY: number;
+    halfW: number;
+    nameSize: number;
+  }
+  const infos: Info[] = visible
+    .map((d) => {
+      const { widthCm, heightCm } = physicalSizeCm(d.diagonalIn, d.aspect);
+      const centerY = d.elevation?.[scenario] ?? eyeH;
+      return {
+        id: d.id,
+        z: d.distanceCm,
+        // Name-label anchor height (rect top + 3), at the tween's target.
+        topY: centerY + heightCm / 2 + 3,
+        halfW: widthCm / 2,
+        // Mirrors DeviceRect's name font sizing.
+        nameSize: Math.min(12, Math.max(4, heightCm * 0.14)),
+      };
+    })
+    .sort((a, b) => a.z - b.z);
+
+  const out = new Map<string, LabelPlacement>();
+  for (const i of infos)
+    out.set(i.id, { nameX: 0, nameLift: 0, distX: 0, distLift: 0 });
+
+  // Name labels: anchors near each other in the (y, z) plane collide.
+  let cluster: Info[] = [];
+  const flushNames = () => {
+    if (cluster.length > 1) {
+      cluster.forEach((m, idx) => {
+        const p = out.get(m.id)!;
+        p.nameX = (idx % 2 === 0 ? -1 : 1) * m.halfW;
+        p.nameLift = Math.floor(idx / 2) * (m.nameSize + 2);
+      });
+    }
+    cluster = [];
+  };
+  for (const info of infos) {
+    const prev = cluster[cluster.length - 1];
+    if (
+      prev &&
+      Math.hypot(info.z - prev.z, info.topY - prev.topY) >
+        1.5 * Math.max(prev.nameSize, info.nameSize)
+    ) {
+      flushNames();
+    }
+    cluster.push(info);
+  }
+  flushNames();
+
+  // Floor labels all sit ~5cm above the floor on their drop lines, so only
+  // the distance separates them; a "360 cm" readout is ~18cm wide.
+  let floor: Info[] = [];
+  const flushFloor = () => {
+    if (floor.length > 1) {
+      floor.forEach((m, idx) => {
+        const p = out.get(m.id)!;
+        p.distX = (idx % 2 === 0 ? -1 : 1) * 12;
+        p.distLift = Math.floor(idx / 2) * 7;
+      });
+    }
+    floor = [];
+  };
+  for (const info of infos) {
+    const prev = floor[floor.length - 1];
+    if (prev && info.z - prev.z > 18) flushFloor();
+    floor.push(info);
+  }
+  flushFloor();
+
+  return out;
+}
+
 /** Smoothed FPS, written to the HUD's DOM node at ~2Hz — no setState. */
 function FpsProbe() {
   const ema = useRef(0);
@@ -143,6 +234,12 @@ export default function SceneView({
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
   const displayMode = useSettingsStore((s) => s.displayMode);
+  const displayFill = useSettingsStore((s) => s.displayFill);
+
+  const labelPlacements = useMemo(
+    () => computeLabelPlacements(visible, scenario, eyeH),
+    [visible, scenario, eyeH],
+  );
 
   // Orbit framing captured once; OrbitControls owns the camera after entry.
   const [orbitPose] = useState<CameraPose>(() => ({
@@ -162,6 +259,8 @@ export default function SceneView({
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const showProjection = useViewerStore((s) => s.showProjectionLines);
 
   // The GL canvas element, captured in onCreated for the export action.
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
@@ -189,6 +288,14 @@ export default function SceneView({
         device={d}
         centerY={d.elevation?.[scenario] ?? eyeH}
         palette={palette}
+        displayFill={displayFill}
+        labels={labelPlacements.get(d.id)}
+        eyeY={eyeH}
+        showProjection={showProjection}
+        selected={selectedId === d.id}
+        onSelect={() =>
+          setSelectedId((cur) => (cur === d.id ? null : d.id))
+        }
         media={
           tex && activeItem
             ? { texture: tex, width: activeItem.width, height: activeItem.height }
@@ -201,6 +308,7 @@ export default function SceneView({
     <div className="relative h-full w-full">
       <Canvas
         dpr={[1, 2]}
+        onPointerMissed={() => setSelectedId(null)}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.
         gl={{ preserveDrawingBuffer: true }}

@@ -10,30 +10,30 @@ automation (the Chrome window was hidden, which suspends WebGL frames).
 
 ## Setup / calibration
 
-- [ ] App loads dark, Anodised-style; Device Manager and sidebar present.
-- [ ] Set This Device to your actual panel (49″ 5120×1440 G9 preset is in
+- [x] App loads dark, Anodised-style; Device Manager and sidebar present.
+- [x] Set This Device to your actual panel (49″ 5120×1440 G9 preset is in
       Add device → Monitors) and your real distance (~70cm).
-- [ ] Unit toggle (Settings) flips size/distance readouts cm ⇄ in.
+- [x] Unit toggle (Settings) flips size/distance readouts cm ⇄ in.
 
 ## Device Manager
 
-- [ ] Collapsed rows still adjust distance via slider (Miro requirement).
-- [ ] Expand a device: size slider + field, aspect dropdown, resolution
+- [x] Collapsed rows still adjust distance via slider (Miro requirement).
+- [x] Expand a device: size slider + field, aspect dropdown, resolution
       chips, key color, delete all work.
 - [ ] Arcmin readout updates live as you drag distance (the rosetta
       stone line: H′ × V′, px/°, ′/px, ppi).
 - [ ] Add device menu groups presets (handhelds/phones/monitors/TVs);
       added devices get distinct auto colors.
-- [ ] Eye toggles hide/show rects in both views.
-- [ ] Reload: devices, positions, and settings persist (localStorage).
+- [x] Eye toggles hide/show rects in both views.
+- [x] Reload: devices, positions, and settings persist (localStorage).
 
 ## Media Library
 
-- [ ] Drag an image anywhere on the window → drop scrim → appears in
+- [x] Drag an image anywhere on the window → drop scrim → appears in
       library (also: click-to-browse in the panel).
 - [ ] Reference size defaults to native height; changing it rescales the
       overlay content (1080p capture on 1440p device scales up).
-- [ ] Reload: images persist (IndexedDB). Remove works.
+- [x] Reload: images persist (IndexedDB). Remove works.
 
 ## 2D overlay — the core
 
@@ -47,15 +47,15 @@ automation (the Chrome window was hidden, which suspends WebGL frames).
 
 ## 3D view ⚠
 
-- [ ] Geometry verified: figure, dashed sight line, true-scale rects at
+- [x] Geometry verified: figure, dashed sight line, true-scale rects at
       distance, drop lines. **Check: device name + distance labels** —
       drei/troika text didn't paint under automation; likely fine when
       the tab is actually visible. If labels are missing, tell Claude.
-- [ ] Orbit/zoom feel OK; initial framing sensible for your device set.
+- [x] Orbit/zoom feel OK; initial framing sensible for your device set.
 
 ## Deploy (needs your go-ahead)
 
-- [ ] Workflow + Pages config are ready; first deploy happens when you
+- [x] Workflow + Pages config are ready; first deploy happens when you
       say to merge dev → main. Then check
       https://redlamp.github.io/wright-angles/ (and /dev slot).
 

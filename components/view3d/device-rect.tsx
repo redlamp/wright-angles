@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { BackSide, DoubleSide, MathUtils, type Group, type Texture } from "three";
+import {
+  BackSide,
+  BufferAttribute,
+  DoubleSide,
+  MathUtils,
+  type BufferGeometry,
+  type Group,
+  type Texture,
+} from "three";
 import { useFrame } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
+import type { DisplayFill } from "@/stores/settings-store";
 import { physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
@@ -34,16 +43,42 @@ function dropLen(y: number, heightCm: number): number {
   return Math.abs(len) < 1e-3 ? 1e-3 : len;
 }
 
+/** Rewrite the 4 eye→corner segments in the rect's local space. */
+function updateProjection(
+  geom: BufferGeometry | null,
+  eye: [number, number, number],
+  corners: [number, number, number][],
+) {
+  if (!geom) return;
+  let attr = geom.getAttribute("position") as BufferAttribute | undefined;
+  if (!attr || attr.count !== corners.length * 2) {
+    attr = new BufferAttribute(new Float32Array(corners.length * 2 * 3), 3);
+    geom.setAttribute("position", attr);
+  }
+  const a = attr.array as Float32Array;
+  corners.forEach((c, i) => {
+    const o = i * 6;
+    a[o] = eye[0];
+    a[o + 1] = eye[1];
+    a[o + 2] = eye[2];
+    a[o + 3] = c[0];
+    a[o + 4] = c[1];
+    a[o + 5] = c[2];
+  });
+  attr.needsUpdate = true;
+}
+
 function applyCenterY(
   rect: Group | null,
   drop: Group | null,
   label: Group | null,
   y: number,
   heightCm: number,
+  distLift: number,
 ) {
   if (rect) rect.position.y = y;
   if (drop) drop.scale.y = dropLen(y, heightCm);
-  if (label) label.position.y = -y + 5;
+  if (label) label.position.y = -y + 5 + distLift;
 }
 
 /**
@@ -55,6 +90,23 @@ export interface ScreenMedia {
   width: number;
   height: number;
 }
+
+/**
+ * De-overlap offsets for this device's two text labels, computed once in
+ * scene-view from all visible devices (it knows the whole set; this
+ * component only knows itself). All values are cm; zeros = the default
+ * centered placement.
+ */
+export interface LabelPlacement {
+  /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
+  nameX: number;
+  nameLift: number;
+  /** Floor distance label: side offset off the drop line + height stagger. */
+  distX: number;
+  distLift: number;
+}
+
+const ZERO_LABELS: LabelPlacement = { nameX: 0, nameLift: 0, distX: 0, distLift: 0 };
 
 /**
  * One device drawn true-to-scale (1 unit = 1cm): an outlined rect facing the
@@ -79,18 +131,71 @@ export default function DeviceRect({
   centerY,
   palette,
   media,
+  displayFill,
+  labels,
+  eyeY,
+  showProjection,
+  selected,
+  onSelect,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
   centerY: number;
   palette: ScenePalette;
   media?: ScreenMedia | null;
+  /**
+   * Empty-device fill setting, passed down from scene-view (this component
+   * stays store-free). Mirrors the 2D view: "device-color" fills the empty
+   * panel — and backs the letterbox bars behind media — with device.color
+   * instead of black.
+   */
+  displayFill: DisplayFill;
+  /** Label de-overlap offsets from scene-view; omitted = centered. */
+  labels?: LabelPlacement;
+  /** Viewer eye height (cm) — the origin of the projection lines. */
+  eyeY: number;
+  /** Show this rect's eye-to-corner projection lines faintly. */
+  showProjection?: boolean;
+  /** Selected in the scene: projection lines render at full strength. */
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
+  const lp = labels ?? ZERO_LABELS;
+
+  // Curvature radius in cm; concave toward the viewer, so the center of
+  // curvature sits on the viewer side at local z = -R.
+  const R = device.curvatureR ? device.curvatureR / 10 : 0;
+  const curved = R > 0;
+
+  // Eye→corner projection endpoints in local space (curved panels use
+  // their actual arc-end corners).
+  const projCorners = useMemo<[number, number, number][]>(() => {
+    const hw = widthCm / 2;
+    const hh = heightCm / 2;
+    if (!curved) {
+      return [
+        [-hw, -hh, 0],
+        [hw, -hh, 0],
+        [hw, hh, 0],
+        [-hw, hh, 0],
+      ];
+    }
+    const arc = widthCm / R;
+    const x = R * Math.sin(arc / 2);
+    const z = -R + R * Math.cos(arc / 2);
+    return [
+      [-x, -hh, z],
+      [x, -hh, z],
+      [x, hh, z],
+      [-x, hh, z],
+    ];
+  }, [widthCm, heightCm, curved, R]);
 
   const rectRef = useRef<Group>(null);
   const dropRef = useRef<Group>(null);
   const labelRef = useRef<Group>(null);
+  const projRef = useRef<BufferGeometry>(null);
 
   // Height tween state, same pattern as viewer-figure's pose tween: the
   // live value in a ref, an anim record capturing where the flight started.
@@ -113,13 +218,22 @@ export default function DeviceRect({
         t >= 1 ? centerY : MathUtils.lerp(a.from, centerY, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
     }
-    applyCenterY(rectRef.current, dropRef.current, labelRef.current, curY.current, heightCm);
+    applyCenterY(
+      rectRef.current,
+      dropRef.current,
+      labelRef.current,
+      curY.current,
+      heightCm,
+      lp.distLift,
+    );
+    if (showProjection || selected) {
+      updateProjection(
+        projRef.current,
+        [0, eyeY - curY.current, -device.distanceCm],
+        projCorners,
+      );
+    }
   });
-
-  // Curvature radius in cm; concave toward the viewer, so the center of
-  // curvature sits on the viewer side at local z = -R.
-  const R = device.curvatureR ? device.curvatureR / 10 : 0;
-  const curved = R > 0;
 
   const outline = useMemo<[number, number, number][]>(() => {
     const hw = widthCm / 2;
@@ -154,6 +268,9 @@ export default function DeviceRect({
     return pts;
   }, [widthCm, heightCm, curved, R]);
 
+  // Letterbox backing behind media content, matching the 2D view's fill.
+  const backing = displayFill === "device-color" ? device.color : "#000000";
+
   const body =
     device.show3dBody !== false && device.deviceName
       ? HANDHELD_BODIES[device.deviceName]
@@ -164,8 +281,34 @@ export default function DeviceRect({
   const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
 
   return (
-    <group ref={rectRef} position={[0, centerY, device.distanceCm]}>
-      <Line points={outline} color={device.color} lineWidth={2} />
+    <group
+      ref={rectRef}
+      position={[0, centerY, device.distanceCm]}
+      onClick={
+        onSelect
+          ? (e) => {
+              e.stopPropagation();
+              onSelect();
+            }
+          : undefined
+      }
+    >
+      <Line
+        points={outline}
+        color={device.color}
+        lineWidth={selected ? 3 : 2}
+      />
+      {showProjection || selected ? (
+        <lineSegments>
+          <bufferGeometry ref={projRef} />
+          <lineBasicMaterial
+            color={device.color}
+            transparent
+            opacity={selected ? 0.85 : 0.22}
+            depthWrite={false}
+          />
+        </lineSegments>
+      ) : null}
 
       {body ? (
         // Full chassis behind the screen so device-vs-screen size reads.
@@ -187,7 +330,7 @@ export default function DeviceRect({
                 args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
                   -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
               />
-              <meshBasicMaterial color="#000000" side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
             </mesh>
             <mesh>
               <cylinderGeometry
@@ -201,7 +344,7 @@ export default function DeviceRect({
           <>
             <mesh position={[0, 0, -0.15]}>
               <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color="#000000" side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
             </mesh>
             <mesh position={[0, 0, -0.3]}>
               <planeGeometry args={[fit.w, fit.h]} />
@@ -210,7 +353,10 @@ export default function DeviceRect({
           </>
         )
       ) : (
-        /* Faint fill so nested rects still read where outlines overlap. */
+        /* Empty panel: solid key-color fill when the setting asks for it,
+           else a faint fill so nested rects still read where outlines
+           overlap. depthWrite stays off either way so nesting never
+           z-fights. */
         <mesh position={curved ? [0, 0, -R] : [0, 0, 0]}>
           {curved ? (
             <cylinderGeometry
@@ -222,7 +368,7 @@ export default function DeviceRect({
           <meshBasicMaterial
             color={device.color}
             transparent
-            opacity={0.06}
+            opacity={displayFill === "device-color" ? 0.9 : 0.06}
             side={DoubleSide}
             depthWrite={false}
           />
@@ -230,7 +376,7 @@ export default function DeviceRect({
       )}
 
       {SHOW_LABELS ? (
-        <Billboard position={[0, heightCm / 2 + 3, 0]}>
+        <Billboard position={[lp.nameX, heightCm / 2 + 3 + lp.nameLift, 0]}>
           <Text
             fontSize={nameSize}
             color={device.color}
@@ -255,17 +401,20 @@ export default function DeviceRect({
             [0, 0, 0],
             [0, -1, 0],
           ]}
-          color={palette.label}
+          color={device.color}
           lineWidth={1}
           transparent
           opacity={0.45}
         />
       </group>
       {SHOW_LABELS ? (
-        <Billboard ref={labelRef} position={[0, -centerY + 5, 0]}>
+        <Billboard
+          ref={labelRef}
+          position={[lp.distX, -centerY + 5 + lp.distLift, 0]}
+        >
           <Text
             fontSize={5}
-            color={palette.label}
+            color={device.color}
             anchorX="center"
             anchorY="bottom"
           >

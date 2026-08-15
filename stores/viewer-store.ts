@@ -35,8 +35,11 @@ interface ViewerState {
   scenario: Scenario;
   /** Full body height in cm. */
   heightCm: number;
+  /** Eye-to-corner projection lines for every visible display (3D). */
+  showProjectionLines: boolean;
   setScenario: (s: Scenario) => void;
   setHeightCm: (h: number) => void;
+  setShowProjectionLines: (v: boolean) => void;
 }
 
 export const useViewerStore = create<ViewerState>()(
@@ -44,6 +47,9 @@ export const useViewerStore = create<ViewerState>()(
     (set) => ({
       scenario: "desk",
       heightCm: 175,
+      showProjectionLines: false,
+      setShowProjectionLines: (showProjectionLines) =>
+        set({ showProjectionLines }),
       setScenario: (scenario) => set({ scenario }),
       setHeightCm: (heightCm) =>
         set({ heightCm: Math.min(220, Math.max(120, heightCm)) }),

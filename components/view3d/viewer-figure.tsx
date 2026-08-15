@@ -23,7 +23,9 @@ const HIP_X = 7.5;
 const HIP_Y = -3;
 const THIGH = 44; // hip→knee joint span
 const SHOULDER_X = 17;
-const SHOULDER_Y = 40;
+// Acromion sits ~21cm below the eyes (root-local 69) on a 175cm frame —
+// aligned with the torso capsule's shoulder dome, not its mid-cylinder.
+const SHOULDER_Y = 47;
 const UPPER = 26; // shoulder→elbow
 const FORE = 22; // elbow→wrist
 
@@ -77,7 +79,8 @@ function makePose(scenario: Scenario, heightCm: number): Pose {
       kneeRot: 0,
       // Straight leg down: hip − thigh − lowerLen lands the ankle at 4cm.
       lowerLen: rootY / s + HIP_Y - THIGH - 4, // = 44
-      wrist: { x: 19, y: -7, z: 2 },
+      // Hangs just short of full arm length from the raised shoulder.
+      wrist: { x: 19, y: -1, z: 2 },
       pole: { x: 0.3, y: -0.2, z: -1 },
     };
   }
@@ -99,7 +102,12 @@ function makePose(scenario: Scenario, heightCm: number): Pose {
       pole: { x: 0.1, y: -1, z: -0.3 },
     };
   }
-  // Couch: hands together ~35cm in front of the eyes, holding a handheld.
+  // Couch: relaxed handheld hold. Elbows drop to the sides (pole mostly
+  // -y), hands a bit apart at the device's grips, ~13cm below the eye line
+  // and ~32cm out, so the forearms rake up toward the screen ~40° from
+  // vertical — the natural Switch/Deck angle. The device rect itself stays
+  // upright and on the sight line: tilting it would contradict the
+  // face-on angular math the readouts are built on.
   return {
     scale: s,
     rootY,
@@ -108,8 +116,8 @@ function makePose(scenario: Scenario, heightCm: number): Pose {
     hipRot: -Math.PI / 2,
     kneeRot: Math.PI / 2,
     lowerLen,
-    wrist: { x: 4.5, y: 59, z: 2 + 35 / s },
-    pole: { x: 0.8, y: -0.6, z: -0.1 },
+    wrist: { x: 5.5, y: 56, z: 2 + 32 / s },
+    pole: { x: 0.5, y: -1, z: -0.3 },
   };
 }
 
