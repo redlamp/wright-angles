@@ -3,7 +3,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type PanelId = "devices" | "media" | "report" | "info" | "settings";
+export type PanelId =
+  | "devices"
+  | "media"
+  | "report"
+  | "table"
+  | "info"
+  | "settings";
 export type ViewMode = "2d" | "3d";
 
 interface UiState {
@@ -40,6 +46,7 @@ export const useUiStore = create<UiState>()(
         devices: true,
         media: false,
         report: false,
+        table: false,
         info: false,
         settings: false,
       },

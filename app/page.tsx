@@ -13,6 +13,7 @@ import { DeviceManagerPanel } from "@/components/panels/device-manager";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
 import { MediaLibraryPanel } from "@/components/panels/media-library";
 import { PerceptionReportPanel } from "@/components/panels/perception-report";
+import { ComparisonTablePanel } from "@/components/panels/comparison-table";
 import { InfoPanel } from "@/components/panels/info-panel";
 import { SettingsPanel } from "@/components/panels/settings-panel";
 import { Onboarding } from "@/components/onboarding";
@@ -136,6 +137,7 @@ export default function Home() {
           <DeviceDetailWindows />
           <MediaLibraryPanel />
           <PerceptionReportPanel />
+          <ComparisonTablePanel />
           <InfoPanel />
           <SettingsPanel />
           <Onboarding />

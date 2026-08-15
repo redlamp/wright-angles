@@ -235,7 +235,7 @@ export function PerceptionReportPanel() {
             </div>
             <p className="font-mono text-[10px] text-muted-foreground">
               On your screen: {hostArcmin.toFixed(0)}′. Bands per ISO
-              9241-303: ≥16′ minimum, ≥20′ comfortable.
+              9241-303 (cap height): ≥16′ minimum, ≥20′ comfortable.
             </p>
           </div>
         ) : null}
