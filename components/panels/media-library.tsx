@@ -17,6 +17,11 @@ import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
+import {
+  GifView,
+  SyncedVideo,
+  TransportControls,
+} from "@/components/media-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -342,6 +347,7 @@ function NameField({ item }: { item: MediaItem }) {
 /** Keyed by item id at the callsite so the armed state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
+  const videoUrl = useMediaStore((s) => s.videoUrls[item.id]);
   const remove = useMediaStore((s) => s.remove);
   const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
   const [armed, setArmed] = useState(false);
@@ -351,13 +357,25 @@ function DetailCard({ item }: { item: MediaItem }) {
     <div className="space-y-2.5 p-2.5">
       <SectionLabel>Active media</SectionLabel>
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={objectUrl}
-          alt={item.name}
-          className="size-full object-contain"
-        />
+        {item.kind === "video" && videoUrl ? (
+          <SyncedVideo src={videoUrl} className="size-full object-contain" />
+        ) : item.type === "image/gif" ? (
+          <GifView
+            url={objectUrl}
+            alt={item.name}
+            className="size-full object-contain"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={objectUrl}
+            alt={item.name}
+            className="size-full object-contain"
+          />
+        )}
       </div>
+
+      <TransportControls />
 
       <NameField key={item.id} item={item} />
 

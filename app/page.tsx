@@ -19,6 +19,11 @@ import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
 import { useUiStore } from "@/stores/ui-store";
 import { useResolvedTheme } from "@/lib/use-theme";
+import {
+  disposeEngine,
+  ensureEngine,
+  isAnimatedItem,
+} from "@/lib/playback-engine";
 
 const SceneView = dynamic(() => import("@/components/view3d/scene-view"), {
   ssr: false,
@@ -55,6 +60,23 @@ export default function Home() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  // The playback engine follows the active media item.
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const videoUrls = useMediaStore((s) => s.videoUrls);
+  const objectUrls = useMediaStore((s) => s.objectUrls);
+  useEffect(() => {
+    const item = items.find((i) => i.id === activeId) ?? null;
+    if (item && isAnimatedItem(item)) {
+      void ensureEngine(
+        item,
+        item.kind === "video" ? videoUrls[item.id] : objectUrls[item.id],
+      );
+    } else {
+      disposeEngine();
+    }
+  }, [items, activeId, videoUrls, objectUrls]);
 
   useEffect(() => {
     document.documentElement.classList.remove("dark", "light");

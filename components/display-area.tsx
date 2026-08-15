@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, PencilRulerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GifView, SyncedVideo } from "@/components/media-view";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -467,12 +468,13 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl ? (
-              <video
+              <SyncedVideo
                 src={activeVideoUrl}
-                autoPlay
-                muted
-                loop
-                playsInline
+                className="size-full object-contain select-none"
+              />
+            ) : activeItem?.type === "image/gif" && activeUrl ? (
+              <GifView
+                url={activeUrl}
                 className="size-full object-contain select-none"
               />
             ) : activeUrl ? (

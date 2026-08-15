@@ -8,9 +8,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { RepeatWrapping, SRGBColorSpace, TextureLoader, type Texture } from "three";
+import {
+  CanvasTexture,
+  RepeatWrapping,
+  SRGBColorSpace,
+  TextureLoader,
+  VideoTexture,
+  type Texture,
+} from "three";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
-import { Line, OrbitControls, useVideoTexture } from "@react-three/drei";
+import { Line, OrbitControls } from "@react-three/drei";
+import { getEngine, type GifEngine } from "@/lib/playback-engine";
+import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device } from "@/lib/types";
 import { physicalSizeCm } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
@@ -30,6 +39,11 @@ import { SCENE_PALETTES } from "./scene-palette";
  * sees back faces. Mirror U once on the shared texture so content reads
  * correctly from the viewer's side (instead of rotating every screen).
  */
+/** Module-level so the react-compiler lint permits the mutation. */
+function markTextureDirty(tex: Texture) {
+  tex.needsUpdate = true;
+}
+
 function initScreenTexture(tex: Texture) {
   tex.colorSpace = SRGBColorSpace;
   tex.wrapS = RepeatWrapping;
@@ -54,15 +68,38 @@ function ImageScreens({
   return <>{children(tex)}</>;
 }
 
-function VideoScreens({
-  url,
+/** Screens driven by the playback engine's master video element. */
+function EngineVideoScreens({
+  video,
   children,
 }: {
-  url: string;
+  video: HTMLVideoElement;
   children: (tex: Texture) => ReactNode;
 }) {
-  const tex = useVideoTexture(url, { muted: true, loop: true });
+  const tex = useMemo(() => new VideoTexture(video), [video]);
   useScreenTexture(tex);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return <>{children(tex)}</>;
+}
+
+/** Screens mirroring the GIF engine's frame canvas. */
+function EngineGifScreens({
+  engine,
+  children,
+}: {
+  engine: GifEngine;
+  children: (tex: Texture) => ReactNode;
+}) {
+  const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
+  useScreenTexture(tex);
+  useEffect(() => () => tex.dispose(), [tex]);
+  const lastStamp = useRef(-1);
+  useFrame(() => {
+    if (engine.stamp !== lastStamp.current) {
+      lastStamp.current = engine.stamp;
+      markTextureDirty(tex);
+    }
+  });
   return <>{children(tex)}</>;
 }
 
@@ -223,9 +260,11 @@ export default function SceneView({
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const objectUrls = useMediaStore((s) => s.objectUrls);
-  const videoUrls = useMediaStore((s) => s.videoUrls);
   const activeItem = items.find((i) => i.id === activeId) ?? null;
-  const videoUrl = activeItem?.kind === "video" ? videoUrls[activeItem.id] : undefined;
+  // Animated media renders from the shared playback engine (video element
+  // or GIF frame canvas); re-resolve when it (re)initializes.
+  usePlaybackStore((s) => s.engineNonce);
+  const engine = getEngine();
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
@@ -351,12 +390,14 @@ export default function SceneView({
 
         {/* Fallback keeps the plain rects up while a texture loads. */}
         <Suspense fallback={rects(null)}>
-          {activeItem && (videoUrl || imageUrl) ? (
-            videoUrl ? (
-              <VideoScreens url={videoUrl}>{rects}</VideoScreens>
-            ) : (
-              <ImageScreens url={imageUrl!}>{rects}</ImageScreens>
-            )
+          {activeItem && engine?.kind === "video" ? (
+            <EngineVideoScreens video={engine.video}>
+              {rects}
+            </EngineVideoScreens>
+          ) : activeItem && engine?.kind === "gif" ? (
+            <EngineGifScreens engine={engine}>{rects}</EngineGifScreens>
+          ) : activeItem && imageUrl ? (
+            <ImageScreens url={imageUrl}>{rects}</ImageScreens>
           ) : (
             rects(null)
           )}
