@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { BackSide, DoubleSide, type Texture } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { BackSide, DoubleSide, MathUtils, type Group, type Texture } from "three";
+import { useFrame } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import { physicalSizeCm } from "@/lib/display-math";
@@ -10,6 +11,40 @@ import { HANDHELD_BODIES } from "@/lib/presets";
 import type { ScenePalette } from "./scene-palette";
 
 const SHOW_LABELS = true;
+
+/** Matches the viewer figure's pose tween so stance changes move in sync. */
+const TWEEN_S = 0.5;
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+/**
+ * Module-level mutator (react-compiler lint forbids property assignment on
+ * hook-returned objects inside components). Places everything that depends
+ * on the animated center height: the rect group itself, the drop-line group
+ * (a unit line anchored at the rect bottom whose scale.y is the drop length
+ * to the floor), and the floor label 5cm above the floor.
+ */
+/**
+ * Rect-bottom → floor span for the drop line's scale.y. The epsilon keeps
+ * the matrix invertible when the rect bottom sits exactly on the floor;
+ * sign is preserved so a below-floor bottom draws upward.
+ */
+function dropLen(y: number, heightCm: number): number {
+  const len = y - heightCm / 2;
+  return Math.abs(len) < 1e-3 ? 1e-3 : len;
+}
+
+function applyCenterY(
+  rect: Group | null,
+  drop: Group | null,
+  label: Group | null,
+  y: number,
+  heightCm: number,
+) {
+  if (rect) rect.position.y = y;
+  if (drop) drop.scale.y = dropLen(y, heightCm);
+  if (label) label.position.y = -y + 5;
+}
 
 /**
  * The active media item's texture, loaded once at scene level and shared by
@@ -23,10 +58,16 @@ export interface ScreenMedia {
 
 /**
  * One device drawn true-to-scale (1 unit = 1cm): an outlined rect facing the
- * viewer at its viewing distance, centered at elevationCm (or the viewer's
- * eye height when unset), plus a drop line to the floor with the distance
- * readout. Rotation stays face-on even when off the sight line — elevation
- * is scene realism, not gaze math.
+ * viewer at its viewing distance, centered at `centerY` (resolved by the
+ * parent from the device's per-scenario elevation or the viewer's eye
+ * height), plus a drop line to the floor with the distance readout.
+ * Rotation stays face-on even when off the sight line — elevation is scene
+ * realism, not gaze math.
+ *
+ * When `centerY` changes (stance change, elevation edit) the rect group's Y
+ * tweens toward it (~0.5s ease in-out, matching the figure's pose tween)
+ * imperatively in useFrame — retargetable mid-flight, no setState per
+ * frame. The drop line and its floor label track the moving rect.
  *
  * Screens with curvatureR render as a cylinder segment (radius R, arc length
  * = physical width) concave toward the viewer. All screen surfaces face +Z,
@@ -35,17 +76,45 @@ export interface ScreenMedia {
  */
 export default function DeviceRect({
   device,
-  eyeHeight,
+  centerY,
   palette,
   media,
 }: {
   device: Device;
-  eyeHeight: number;
+  /** Target screen-center height (cm); the rendered Y tweens toward it. */
+  centerY: number;
   palette: ScenePalette;
   media?: ScreenMedia | null;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
-  const centerY = device.elevationCm ?? eyeHeight;
+
+  const rectRef = useRef<Group>(null);
+  const dropRef = useRef<Group>(null);
+  const labelRef = useRef<Group>(null);
+
+  // Height tween state, same pattern as viewer-figure's pose tween: the
+  // live value in a ref, an anim record capturing where the flight started.
+  const curY = useRef(centerY);
+  const anim = useRef<{ from: number; start: number | null } | null>(null);
+  const prevTarget = useRef(centerY);
+  useEffect(() => {
+    if (prevTarget.current !== centerY) {
+      anim.current = { from: curY.current, start: null };
+      prevTarget.current = centerY;
+    }
+  }, [centerY]);
+
+  useFrame((state) => {
+    const a = anim.current;
+    if (a) {
+      if (a.start === null) a.start = state.clock.elapsedTime;
+      const t = Math.min(1, (state.clock.elapsedTime - a.start) / TWEEN_S);
+      curY.current =
+        t >= 1 ? centerY : MathUtils.lerp(a.from, centerY, easeInOutCubic(t));
+      if (t >= 1) anim.current = null;
+    }
+    applyCenterY(rectRef.current, dropRef.current, labelRef.current, curY.current, heightCm);
+  });
 
   // Curvature radius in cm; concave toward the viewer, so the center of
   // curvature sits on the viewer side at local z = -R.
@@ -95,7 +164,7 @@ export default function DeviceRect({
   const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
 
   return (
-    <group position={[0, centerY, device.distanceCm]}>
+    <group ref={rectRef} position={[0, centerY, device.distanceCm]}>
       <Line points={outline} color={device.color} lineWidth={2} />
 
       {body ? (
@@ -173,18 +242,27 @@ export default function DeviceRect({
         </Billboard>
       ) : null}
 
-      <Line
-        points={[
-          [0, -heightCm / 2, 0],
-          [0, -centerY, 0],
-        ]}
-        color={palette.label}
-        lineWidth={1}
-        transparent
-        opacity={0.45}
-      />
+      {/* Unit-length drop line anchored at the rect bottom; applyCenterY
+          scales it down to the floor as the rect animates. lineWidth is in
+          screen px, so scale.y doesn't fatten it. */}
+      <group
+        ref={dropRef}
+        position={[0, -heightCm / 2, 0]}
+        scale={[1, dropLen(centerY, heightCm), 1]}
+      >
+        <Line
+          points={[
+            [0, 0, 0],
+            [0, -1, 0],
+          ]}
+          color={palette.label}
+          lineWidth={1}
+          transparent
+          opacity={0.45}
+        />
+      </group>
       {SHOW_LABELS ? (
-        <Billboard position={[0, -centerY + 5, 0]}>
+        <Billboard ref={labelRef} position={[0, -centerY + 5, 0]}>
           <Text
             fontSize={5}
             color={palette.label}

@@ -10,9 +10,10 @@ export const FPS_NODE_ID = "scene-fps-readout";
 /**
  * Compact scenario + viewer-height controls overlaid on the 3D scene, plus
  * a tiny FPS readout updated imperatively from inside the canvas — no
- * per-frame React state.
+ * per-frame React state. `onExport` (from scene-view, which owns the GL
+ * canvas) captures the current framing as a PNG download.
  */
-export default function SceneHud() {
+export default function SceneHud({ onExport }: { onExport?: () => void }) {
   const scenario = useViewerStore((s) => s.scenario);
   const setScenario = useViewerStore((s) => s.setScenario);
   const heightCm = useViewerStore((s) => s.heightCm);
@@ -23,6 +24,15 @@ export default function SceneHud() {
       <div className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-[10px] tabular-nums text-muted-foreground">
         <span id={FPS_NODE_ID} /> fps
       </div>
+      {onExport ? (
+        <button
+          type="button"
+          className="panel-frame absolute right-3 top-3 z-10 select-none rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          onClick={onExport}
+        >
+          Export view
+        </button>
+      ) : null}
       <div className="panel-frame absolute bottom-3 left-1/2 z-10 w-72 -translate-x-1/2 rounded-lg border border-border p-2 text-xs">
         <div className="panel-inset flex h-7 items-center gap-0.5 rounded-md p-0.5">
           {SCENARIOS.map((o) => (

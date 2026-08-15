@@ -163,13 +163,31 @@ export default function SceneView({
   };
   const [controlsOn, setControlsOn] = useState(false);
 
+  // The GL canvas element, captured in onCreated for the export action.
+  const canvasElRef = useRef<HTMLCanvasElement | null>(null);
+  const exportPng = () => {
+    const canvas = canvasElRef.current;
+    if (!canvas) return;
+    // preserveDrawingBuffer keeps the last rendered frame readable, so this
+    // captures the current camera framing as-is.
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `wright-angles-3d-${new Date().toISOString().slice(0, 10)}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  };
+
   // The media texture is loaded ONCE here and shared by every rect.
   const rects = (tex: Texture | null) =>
     visible.map((d) => (
       <DeviceRect
         key={d.id}
         device={d}
-        eyeHeight={eyeH}
+        centerY={d.elevation?.[scenario] ?? eyeH}
         palette={palette}
         media={
           tex && activeItem
@@ -183,6 +201,9 @@ export default function SceneView({
     <div className="relative h-full w-full">
       <Canvas
         dpr={[1, 2]}
+        // Keep the drawn frame readable so the HUD's "export view" action
+        // can capture the canvas as a PNG.
+        gl={{ preserveDrawingBuffer: true }}
         camera={{
           position: headOnPose.position,
           fov: headOnPose.fov,
@@ -190,8 +211,9 @@ export default function SceneView({
           far: 20000,
         }}
         onCreated={({ gl, invalidate }) => {
-          // Recover from GPU resets instead of going permanently black.
           const el = gl.domElement;
+          canvasElRef.current = el;
+          // Recover from GPU resets instead of going permanently black.
           el.addEventListener("webglcontextlost", (e) => e.preventDefault());
           el.addEventListener("webglcontextrestored", () => invalidate());
         }}
@@ -252,7 +274,7 @@ export default function SceneView({
           />
         ) : null}
       </Canvas>
-      <SceneHud />
+      <SceneHud onExport={exportPng} />
     </div>
   );
 }
