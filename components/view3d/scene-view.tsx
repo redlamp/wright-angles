@@ -16,7 +16,7 @@ import {
   VideoTexture,
   type Texture,
 } from "three";
-import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -93,6 +93,23 @@ function EngineVideoScreens({
   const tex = useMemo(() => new VideoTexture(video), [video]);
   useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
+  // Demand frameloop: request a render per decoded video frame — no
+  // frames while paused, native cadence while playing.
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    let handle = 0;
+    let alive = true;
+    const onFrame = () => {
+      if (!alive) return;
+      invalidate();
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => {
+      alive = false;
+      video.cancelVideoFrameCallback(handle);
+    };
+  }, [video, invalidate]);
   return <>{children(tex)}</>;
 }
 
@@ -109,13 +126,17 @@ function EngineGifScreens({
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
   useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
-  const lastStamp = useRef(-1);
-  useFrame(() => {
-    if (engine.stamp !== lastStamp.current) {
-      lastStamp.current = engine.stamp;
-      markTextureDirty(tex);
-    }
-  });
+  // Demand frameloop: each decoded GIF frame marks the texture dirty and
+  // requests exactly one render.
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(
+    () =>
+      engine.subscribe(() => {
+        markTextureDirty(tex);
+        invalidate();
+      }),
+    [engine, tex, invalidate],
+  );
   return <>{children(tex)}</>;
 }
 
@@ -376,7 +397,12 @@ export default function SceneView({
   return (
     <div className="relative h-full w-full">
       <Canvas
-        dpr={[1, 2]}
+        // Render only when something changed: tweens/camera/video/GIF all
+        // self-invalidate, and R3F invalidates on React scene commits.
+        // On a 240Hz panel the old always-loop redrew a static scene
+        // continuously — the single biggest GPU cost in the app.
+        frameloop="demand"
+        dpr={[1, 1.5]}
         onPointerMissed={() => setSelectedId(null)}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.

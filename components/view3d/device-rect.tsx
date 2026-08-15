@@ -249,6 +249,8 @@ export default function DeviceRect({
       curY.current =
         t >= 1 ? centerY : MathUtils.lerp(a.from, centerY, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
+      // Keep frames coming while the height tweens (demand frameloop).
+      state.invalidate();
     }
     applyCenterY(
       rectRef.current,

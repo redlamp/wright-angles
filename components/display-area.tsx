@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, PencilRulerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GifView, SyncedVideo } from "@/components/media-view";
+import { GifView, VideoMirror } from "@/components/media-view";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -548,19 +548,12 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl && activeItem ? (
-              activeItem.crop ? (
-                <CropFrame item={activeItem} w={w} h={h}>
-                  <SyncedVideo
-                    src={activeVideoUrl}
-                    className="size-full select-none"
-                  />
-                </CropFrame>
-              ) : (
-                <SyncedVideo
-                  src={activeVideoUrl}
-                  className="size-full object-contain select-none"
-                />
-              )
+              // One master decode; each rect mirrors it (crop applied at
+              // draw time, so no wrapper needed).
+              <VideoMirror
+                item={activeItem}
+                className="size-full object-contain select-none"
+              />
             ) : activeItem?.type === "image/gif" && activeUrl ? (
               activeItem.crop ? (
                 <CropFrame item={activeItem} w={w} h={h}>
