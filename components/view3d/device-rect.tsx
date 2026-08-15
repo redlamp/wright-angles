@@ -486,17 +486,18 @@ export default function DeviceRect({
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
           ) : null}
-          {/* Point-label convention: right of the node, center-left
-              anchored with padding, screen-facing; the 45° screen-space
-              diagonal keeps neighboring labels collision-free. */}
+          {/* Per Taylor's markup (2026-08-15 screenshots): the label
+              hangs just below-right of the node, sloping 30° south-east
+              in screen space, text reading along the slope. Parallel
+              diagonals keep neighbors legible; static offsets only. */}
           <Billboard position={[0, 1.2, 0]}>
             <Text
               fontSize={5}
               color={device.color}
               anchorX="left"
-              anchorY="middle"
-              position={[2.4, 1.2, 0]}
-              rotation={[0, 0, Math.PI / 4]}
+              anchorY="top"
+              position={[1.8, -1.6, 0]}
+              rotation={[0, 0, -Math.PI / 6]}
             >
               {`${Math.round(device.distanceCm)} cm`}
             </Text>
