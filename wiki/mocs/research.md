@@ -13,3 +13,4 @@
 - [[platform-accessibility-guidelines]] — XAG 102 contrast (4.5:1/3:1/7:1), 5% TV safe areas, 200% scaling across Xbox/WCAG/Android, no public Sony spec
 - [[tv-market-sizes-and-distances]] — 65" modal US TV, avg shipped size crossed 50" in 2023, Lechner 9 ft, THX 40° vs SMPTE 30°
 - [[handheld-device-dimensions]] — body-vs-screen table for Switch/Switch 2/Deck/Ally/Legion Go/phones; handhelds are 41–57% screen vs ~90% for phones
+- [[label-placement-decluttering]] — cartographic principles (Imhof, 8-position model), automatic algorithms (greedy/annealing/force-directed), 3D approaches (Mapbox/deck.gl/Cesium), leader lines; Phase 1/2 plan for screen-space collision detection
