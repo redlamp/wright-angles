@@ -1,11 +1,21 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { RepeatWrapping, SRGBColorSpace, TextureLoader, type Texture } from "three";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { Line, OrbitControls, useVideoTexture } from "@react-three/drei";
+import type { Device } from "@/lib/types";
+import { physicalSizeCm } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
+import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
 import { eyeHeightCm, useViewerStore } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
 import DeviceRect from "./device-rect";
@@ -54,6 +64,29 @@ function VideoScreens({
   const tex = useVideoTexture(url, { muted: true, loop: true });
   useScreenTexture(tex);
   return <>{children(tex)}</>;
+}
+
+/**
+ * Vertical fov that makes the head-on camera see exactly what the 2D view
+ * shows in this window: the window height mapped through the 2D scale into
+ * device pixels, then through the panel's pixel pitch into physical size,
+ * subtended from the viewing distance. This is what makes the 2D↔3D swap
+ * land without a visual jump.
+ */
+function headOnFovDeg(thisDevice: Device, displayMode: DisplayMode): number {
+  if (typeof window === "undefined") return 40;
+  const res = thisDevice.resolution;
+  const k =
+    displayMode === "viewport"
+      ? window.screen.width / res.w
+      : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+  if (!k) return 40;
+  const visibleDevicePx = window.innerHeight / k;
+  const { heightCm } = physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect);
+  const physH = (visibleDevicePx / res.h) * heightCm;
+  const fov =
+    2 * Math.atan(physH / 2 / thisDevice.distanceCm) * (180 / Math.PI);
+  return Math.min(120, Math.max(5, fov));
 }
 
 /** Smoothed FPS, written to the HUD's DOM node at ~2Hz — no setState. */
@@ -109,15 +142,24 @@ export default function SceneView({
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
+  const displayMode = useSettingsStore((s) => s.displayMode);
+
   // Orbit framing captured once; OrbitControls owns the camera after entry.
   const [orbitPose] = useState<CameraPose>(() => ({
     position: [-farZ * 1.7, eyeH + farZ * 0.9, -farZ * 0.45],
     target: [0, eyeH * 0.75, farZ * 0.55],
+    fov: 40,
   }));
-  // Head-on pose tracks the live eye height so the exit lines up with 2D.
+  // Head-on pose tracks the live eye height and the 2D view's actual
+  // visible angle so both ends of the transition line up with 2D.
+  const fov = useMemo(
+    () => headOnFovDeg(thisDevice, displayMode),
+    [thisDevice, displayMode],
+  );
   const headOnPose: CameraPose = {
     position: [0, eyeH, 0],
     target: [0, eyeH, farZ],
+    fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
 
@@ -141,7 +183,12 @@ export default function SceneView({
     <div className="relative h-full w-full">
       <Canvas
         dpr={[1, 2]}
-        camera={{ position: headOnPose.position, fov: 40, near: 1, far: 20000 }}
+        camera={{
+          position: headOnPose.position,
+          fov: headOnPose.fov,
+          near: 1,
+          far: 20000,
+        }}
         onCreated={({ gl, invalidate }) => {
           // Recover from GPU resets instead of going permanently black.
           const el = gl.domElement;

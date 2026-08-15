@@ -91,7 +91,7 @@ export default function Home() {
       onDrop={onDrop}
     >
       {!mounted ? null : show3d ? (
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 duration-300 animate-in fade-in">
           <SceneView
             exiting={exiting3d}
             onExited={() => {
@@ -101,7 +101,9 @@ export default function Home() {
           />
         </div>
       ) : (
-        <DisplayArea />
+        <div className="absolute inset-0 duration-300 animate-in fade-in">
+          <DisplayArea />
+        </div>
       )}
 
       {mounted ? (

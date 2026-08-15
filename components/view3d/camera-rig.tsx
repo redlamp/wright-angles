@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Vector3 } from "three";
+import { Vector3, type PerspectiveCamera } from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 
 export interface CameraPose {
   position: [number, number, number];
   target: [number, number, number];
+  /** Vertical fov (deg). Head-on matches the 2D view's visible angle. */
+  fov: number;
 }
 
 const ENTER_S = 1.1;
@@ -15,12 +17,21 @@ const EXIT_S = 0.9;
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+/** Module-level so the react-compiler lint permits the camera mutation. */
+function applyFov(camera: unknown, fov: number) {
+  const pc = camera as PerspectiveCamera;
+  pc.fov = fov;
+  pc.updateProjectionMatrix();
+}
+
 interface Anim {
   mode: "enter" | "exit";
   fromPos: Vector3;
   fromTarget: Vector3;
   toPos: Vector3;
   toTarget: Vector3;
+  fromFov: number;
+  toFov: number;
   /** Set on the first animated frame so tab-hidden mounts don't skip ahead. */
   start: number | null;
   duration: number;
@@ -63,12 +74,15 @@ export default function CameraRig({
     camera.position.set(...h.position);
     lookTarget.current.set(...h.target);
     camera.lookAt(lookTarget.current);
+    applyFov(camera, h.fov);
     anim.current = {
       mode: "enter",
       fromPos: new Vector3(...h.position),
       fromTarget: new Vector3(...h.target),
       toPos: new Vector3(...o.position),
       toTarget: new Vector3(...o.target),
+      fromFov: h.fov,
+      toFov: o.fov,
       start: null,
       duration: ENTER_S,
     };
@@ -89,6 +103,8 @@ export default function CameraRig({
         fromTarget,
         toPos: new Vector3(...h.position),
         toTarget: new Vector3(...h.target),
+        fromFov: (camera as PerspectiveCamera).fov,
+        toFov: h.fov,
         start: null,
         duration: EXIT_S,
       };
@@ -101,6 +117,8 @@ export default function CameraRig({
         fromTarget: lookTarget.current.clone(),
         toPos: new Vector3(...o.position),
         toTarget: new Vector3(...o.target),
+        fromFov: (camera as PerspectiveCamera).fov,
+        toFov: o.fov,
         start: null,
         duration: ENTER_S,
       };
@@ -116,6 +134,7 @@ export default function CameraRig({
     camera.position.lerpVectors(a.fromPos, a.toPos, e);
     lookTarget.current.lerpVectors(a.fromTarget, a.toTarget, e);
     camera.lookAt(lookTarget.current);
+    applyFov(camera, a.fromFov + (a.toFov - a.fromFov) * e);
     if (t >= 1) {
       const mode = a.mode;
       anim.current = null;

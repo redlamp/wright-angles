@@ -15,6 +15,7 @@ import {
   COMMON_ASPECTS,
   COMMON_RESOLUTIONS,
   DEVICE_PRESETS,
+  HANDHELD_BODIES,
 } from "@/lib/presets";
 import {
   CM_PER_IN,
@@ -315,6 +316,20 @@ function DeviceEditor({
           </p>
         )}
       </div>
+
+      {device.deviceName && HANDHELD_BODIES[device.deviceName] ? (
+        <label className="flex h-8 items-center justify-between text-xs">
+          <span className="text-muted-foreground">
+            3D device body ({device.deviceName})
+          </span>
+          <Switch
+            checked={device.show3dBody !== false}
+            onCheckedChange={(on) =>
+              onPatch({ show3dBody: on ? undefined : false })
+            }
+          />
+        </label>
+      ) : null}
 
       <div className="flex items-end justify-between gap-2">
         <label className="space-y-1">

@@ -85,7 +85,10 @@ export default function DeviceRect({
     return pts;
   }, [widthCm, heightCm, curved, R]);
 
-  const body = device.deviceName ? HANDHELD_BODIES[device.deviceName] : undefined;
+  const body =
+    device.show3dBody !== false && device.deviceName
+      ? HANDHELD_BODIES[device.deviceName]
+      : undefined;
   const fit = media ? containFit(media.width, media.height, widthCm, heightCm) : null;
 
   // Name label scales with the rect so a phone at 36cm doesn't drown in text.

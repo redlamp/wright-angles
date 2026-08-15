@@ -30,7 +30,20 @@ function useScreenViewport() {
   } | null>(null);
 
   useEffect(() => {
+    // Adaptive cadence: idle at 2Hz, but the moment the window moves,
+    // poll at ~30fps until it has been still for a beat. There is no
+    // window-move event, so change detection IS the drag sensor.
+    const IDLE_MS = 500;
+    const FAST_MS = 33;
+    const SETTLE_MS = 700;
+    let timer = 0;
+    let lastMoveAt = -Infinity;
+    let stopped = false;
+
     const read = () => {
+      if (stopped) return;
+      // Resize also calls read; clearing first keeps a single timer chain.
+      window.clearTimeout(timer);
       const chromeX = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
       const chromeY = Math.max(
         0,
@@ -46,21 +59,30 @@ function useScreenViewport() {
         screenW: s.width,
         screenH: s.height,
       };
-      setVp((prev) =>
-        prev &&
-        prev.clientX === next.clientX &&
-        prev.clientY === next.clientY &&
-        prev.screenW === next.screenW &&
-        prev.screenH === next.screenH
-          ? prev
-          : next,
-      );
+      let moved = false;
+      setVp((prev) => {
+        if (
+          prev &&
+          prev.clientX === next.clientX &&
+          prev.clientY === next.clientY &&
+          prev.screenW === next.screenW &&
+          prev.screenH === next.screenH
+        ) {
+          return prev;
+        }
+        moved = prev !== null;
+        return next;
+      });
+      if (moved) lastMoveAt = performance.now();
+      const fast = performance.now() - lastMoveAt < SETTLE_MS;
+      timer = window.setTimeout(read, fast ? FAST_MS : IDLE_MS);
     };
+
     read();
-    const id = window.setInterval(read, 500);
     window.addEventListener("resize", read);
     return () => {
-      window.clearInterval(id);
+      stopped = true;
+      window.clearTimeout(timer);
       window.removeEventListener("resize", read);
     };
   }, []);

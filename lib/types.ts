@@ -55,6 +55,8 @@ export interface Device {
    * radius; smaller = curvier). Undefined/0 = flat panel.
    */
   curvatureR?: number;
+  /** Show the device's 3D body/chassis model when one exists. Default on. */
+  show3dBody?: boolean;
 }
 
 /** A preset is a Device minus per-instance state. */
