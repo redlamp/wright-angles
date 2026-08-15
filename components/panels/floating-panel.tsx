@@ -22,6 +22,8 @@ interface FloatingPanelProps {
   icon: LucideIcon;
   defaultPosition: { x: number; y: number };
   width?: number;
+  /** Resize cap; "none" allows growing to the viewport edge. */
+  maxWidth?: number | "none";
   /** Extra controls rendered in the header, before the close button. */
   headerActions?: React.ReactNode;
   children: React.ReactNode;
@@ -33,6 +35,7 @@ export function FloatingPanel({
   icon: Icon,
   defaultPosition,
   width: defaultWidth = 320,
+  maxWidth,
   headerActions,
   children,
 }: FloatingPanelProps) {
@@ -52,7 +55,13 @@ export function FloatingPanel({
     startPosX: number;
   } | null>(null);
 
-  const clampW = (w: number) => Math.min(MAX_W, Math.max(MIN_W, w));
+  const clampW = (w: number) => {
+    const cap =
+      maxWidth === "none"
+        ? window.innerWidth - 16
+        : (maxWidth ?? MAX_W);
+    return Math.min(cap, Math.max(MIN_W, w));
+  };
 
   const onResizeDown = (e: React.PointerEvent, edge: "left" | "right") => {
     resize.current = {

@@ -1078,6 +1078,7 @@ export function MediaLibraryPanel() {
       icon={ImageIcon}
       defaultPosition={{ x: 420, y: 16 }}
       width={520}
+      maxWidth="none"
       headerActions={
         <div className="panel-inset mr-1 flex items-center gap-0.5 rounded-md p-0.5">
           {(
