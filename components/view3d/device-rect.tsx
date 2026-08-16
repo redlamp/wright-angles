@@ -309,14 +309,10 @@ export default function DeviceRect({
   // Letterbox backing behind media content, matching the 2D view's fill.
   const backing = displayFill === "device-color" ? device.color : "#000000";
 
-  // Floor label: lifted so the 30°-rotated text's lowest glyph stays
-  // above the ground plane (a below-node anchor put it underground,
-  // where the opaque floor hid it entirely). Left-middle anchor drops
-  // w·sin30 + (capHeight/2)·cos30 below its position.
   const distLabel = `${Math.round(device.distanceCm)} cm`;
-  const distLabelLift = distLabel.length * 5 * 0.55 * 0.5 + 1.25;
-  // Drawn over scene geometry (feet, furniture) — it's a readout, not
-  // an object in the room.
+  // Drawn over scene geometry (feet, furniture, even the floor) — it's
+  // a readout, not an object in the room. That's also what lets the
+  // label anchor directly on the node without the ground hiding it.
   const distTextRef = useRef<{
     material?: { depthTest: boolean };
     renderOrder?: number;
@@ -517,18 +513,25 @@ export default function DeviceRect({
               hangs just below-right of the node, sloping 30° south-east
               in screen space, text reading along the slope. Parallel
               diagonals keep neighbors legible; static offsets only. */}
+          {/* Flash model: a clip whose registration point (text left
+              edge, vertical center) anchors ON the node; the 30° slope
+              rotates about that point. De-collision moves the text's
+              local Y inside the rotated clip, so neighboring parallel
+              labels separate perpendicular to the slope with an even
+              buffer. */}
           <Billboard position={[0, 1.2, 0]}>
-            <Text
-              ref={distTextRef}
-              fontSize={5}
-              color={device.color}
-              anchorX="left"
-              anchorY="middle"
-              position={[2.2 + lp.distX, distLabelLift + lp.distLift, 0]}
-              rotation={[0, 0, -Math.PI / 6]}
-            >
-              {distLabel}
-            </Text>
+            <group rotation={[0, 0, -Math.PI / 6]}>
+              <Text
+                ref={distTextRef}
+                fontSize={5}
+                color={device.color}
+                anchorX="left"
+                anchorY="middle"
+                position={[2.2, lp.distLift, 0]}
+              >
+                {distLabel}
+              </Text>
+            </group>
           </Billboard>
         </group>
       ) : null}
