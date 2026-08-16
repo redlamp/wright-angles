@@ -11,8 +11,8 @@ export type Scenario = "standing" | "desk" | "couch";
 
 export const SCENARIOS: { id: Scenario; label: string }[] = [
   { id: "standing", label: "Standing" },
-  { id: "desk", label: "At a desk" },
   { id: "couch", label: "On a couch" },
+  { id: "desk", label: "At a desk" },
 ];
 
 /**
