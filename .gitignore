@@ -48,6 +48,3 @@ next-env.d.ts
 
 # Local test images (copyrighted press material, never committed)
 /public/reference/
-
-# Prototype-only CC0 model assets (see wiki/notes/prototype-figure-rig.md)
-/public/prototype/

@@ -1,7 +1,7 @@
 ---
 tags:
   - domain/3d-scene
-  - status/open
+  - status/superseded
   - origin/taylor
 ---
 
@@ -67,11 +67,16 @@ in the glTF: copy `T_Hair_1_Normal.png` → `T_Hair_1_Normal_png.png`,
 - Rig rest pose is a T-pose; "standing" aims the arms down so the
   comparison with the mannequin is fair.
 
-## Decision pending (Taylor)
+## Decision (Taylor, 2026-08-15 late)
 
-Adopt the UBC body (retarget our pose/IK onto its bones, tint with scene
-palette, likely ship the flat-clay look) — or stay procedural. If
-adopted: vendor a stripped GLB (geometry + skin, no 8 MB texture set) so
-the repo/deploy stays light, and delete this prototype route. If
-rejected: delete route + assets + this note's status flips to
-superseded.
+**Rejected** — "not wild about this model, seems very cartoonish. I'd
+rather have something that's more accurate and generic." Kept the
+procedural mannequin and gave it a lit `MeshStandardMaterial` (smooth
+shading, roughness 0.9) with a figure-only hemisphere + key light rig in
+scene-view, so the part forms read without changing the silhouette.
+Prototype route, component, and local assets deleted the same night.
+
+If a model swap ever comes back: the findings above still hold (CC0
+sourcing, UE-rig drivability, eye-line pinning), but the body would need
+neutral proportions — the free Quaternius tier only has the muscular
+Superhero build.
