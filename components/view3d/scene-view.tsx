@@ -274,21 +274,32 @@ function applySightY(group: Group | null, y: number) {
  */
 function EyeTween({
   target,
+  scenario,
   eyeRef,
   sightRef,
 }: {
   target: number;
+  scenario: Scenario;
   eyeRef: React.MutableRefObject<number>;
   sightRef: React.RefObject<Group | null>;
 }) {
   const anim = useRef<{ from: number; start: number | null } | null>(null);
   const prev = useRef(target);
+  const prevScenario = useRef(scenario);
   useEffect(() => {
     if (prev.current !== target) {
-      anim.current = { from: eyeRef.current, start: null };
+      // Tween on stance changes only; height-slider edits snap so the
+      // sight line and projections track the drag without lag.
+      if (prevScenario.current !== scenario) {
+        anim.current = { from: eyeRef.current, start: null };
+      } else {
+        anim.current = null;
+        eyeRef.current = target;
+      }
       prev.current = target;
     }
-  }, [target, eyeRef]);
+    prevScenario.current = scenario;
+  }, [target, scenario, eyeRef]);
   useFrame((state) => {
     const a = anim.current;
     if (a) {
@@ -342,6 +353,7 @@ export default function SceneView({
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const scenario = useViewerStore((s) => s.scenario);
+  const inputType = useViewerStore((s) => s.inputType);
   const heightCm = useViewerStore((s) => s.heightCm);
   const palette = SCENE_PALETTES[useSceneTheme()];
   const visible = [thisDevice, ...devices].filter((d) => d.visible);
@@ -429,6 +441,7 @@ export default function SceneView({
         key={d.id}
         device={d}
         centerY={d.elevation?.[scenario] ?? eyeH}
+        poseKey={scenario}
         palette={palette}
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}
@@ -491,10 +504,24 @@ export default function SceneView({
             lights exist purely to shade the figure's forms. */}
         <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
         <directionalLight position={[-140, 220, -90]} intensity={1.3} />
-        <ViewerFigure scenario={scenario} heightCm={heightCm} palette={palette} />
-        <ScenarioProps scenario={scenario} palette={palette} />
+        <ViewerFigure
+          scenario={scenario}
+          inputType={inputType}
+          heightCm={heightCm}
+          palette={palette}
+        />
+        <ScenarioProps
+          scenario={scenario}
+          inputType={inputType}
+          palette={palette}
+        />
 
-        <EyeTween target={eyeH} eyeRef={liveEye} sightRef={sightRef} />
+        <EyeTween
+          target={eyeH}
+          scenario={scenario}
+          eyeRef={liveEye}
+          sightRef={sightRef}
+        />
         <group ref={sightRef} position={[0, eyeH, 0]}>
           <Line
             points={[

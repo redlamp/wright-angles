@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react";
 import { MathUtils, MeshBasicMaterial, type Group } from "three";
 import { useFrame } from "@react-three/fiber";
-import type { Scenario } from "@/stores/viewer-store";
+import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
-import { SEAT_Y } from "./viewer-figure";
+import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
 
 /** Matches the viewer figure's pose tween so furniture moves in sync. */
 const TWEEN_S = 0.5;
@@ -27,11 +27,26 @@ const makeMatSet = (): MatSet => ({
 });
 const DESK_MATS = makeMatSet();
 const COUCH_MATS = makeMatSet();
+const STAND_MATS = makeMatSet();
+
+/** Which furniture set a scenario × input combination calls for. */
+export type FurnitureKind = "desk" | "couch" | "standdesk" | "none";
+
+export function furnitureFor(
+  scenario: Scenario,
+  inputType: InputType,
+): FurnitureKind {
+  if (scenario === "desk") return "desk";
+  if (scenario === "couch") return "couch";
+  // Standing: mouse & keyboard needs a surface — a standing desk.
+  return inputType === "keyboard" ? "standdesk" : "none";
+}
 
 /** Enter/exit progress per furniture set; 1 = fully shown. */
 interface FurnitureProgress {
   desk: number;
   couch: number;
+  standdesk: number;
 }
 
 /**
@@ -54,13 +69,15 @@ function applyFurniture(group: Group | null, mats: MatSet, p: number) {
 
 function stepFurniture(
   progress: FurnitureProgress,
-  active: Scenario,
+  active: FurnitureKind,
   step: number,
   deskGroup: Group | null,
   couchGroup: Group | null,
+  standGroup: Group | null,
 ): boolean {
   const prevDesk = progress.desk;
   const prevCouch = progress.couch;
+  const prevStand = progress.standdesk;
   progress.desk = MathUtils.clamp(
     progress.desk + (active === "desk" ? step : -step),
     0,
@@ -71,10 +88,20 @@ function stepFurniture(
     0,
     1,
   );
+  progress.standdesk = MathUtils.clamp(
+    progress.standdesk + (active === "standdesk" ? step : -step),
+    0,
+    1,
+  );
   applyFurniture(deskGroup, DESK_MATS, progress.desk);
   applyFurniture(couchGroup, COUCH_MATS, progress.couch);
+  applyFurniture(standGroup, STAND_MATS, progress.standdesk);
   // Whether anything is still mid-transition (drives demand-frameloop).
-  return progress.desk !== prevDesk || progress.couch !== prevCouch;
+  return (
+    progress.desk !== prevDesk ||
+    progress.couch !== prevCouch ||
+    progress.standdesk !== prevStand
+  );
 }
 
 /** Desk chair with its seat top at SEAT_Y.desk; backrest behind the figure. */
@@ -124,6 +151,29 @@ function Desk({ mats }: { mats: MatSet }) {
   );
 }
 
+/** Standing desk: tall top at STAND_DESK_TOP, no chair. */
+function StandingDesk({ mats }: { mats: MatSet }) {
+  const top = STAND_DESK_TOP;
+  return (
+    <group>
+      <mesh material={mats.furniture} position={[0, top - 2, 58]}>
+        <boxGeometry args={[130, 4, 62]} />
+      </mesh>
+      {[-1, 1].map((sx) =>
+        [-1, 1].map((sz) => (
+          <mesh
+            key={`${sx}${sz}`}
+            material={mats.furniture}
+            position={[sx * 58, (top - 4) / 2, 58 + sz * 26]}
+          >
+            <boxGeometry args={[5, top - 4, 5]} />
+          </mesh>
+        )),
+      )}
+    </group>
+  );
+}
+
 /** Low couch with its seat top at SEAT_Y.couch. */
 function Couch({ mats }: { mats: MatSet }) {
   const seatTop = SEAT_Y.couch;
@@ -153,24 +203,29 @@ function Couch({ mats }: { mats: MatSet }) {
  */
 export default function ScenarioProps({
   scenario,
+  inputType,
   palette,
 }: {
   scenario: Scenario;
+  inputType: InputType;
   palette: ScenePalette;
 }) {
   useEffect(() => {
-    DESK_MATS.furniture.color.set(palette.furniture);
-    COUCH_MATS.furniture.color.set(palette.furniture);
-    DESK_MATS.soft.color.set(palette.soft);
-    COUCH_MATS.soft.color.set(palette.soft);
+    for (const mats of [DESK_MATS, COUCH_MATS, STAND_MATS]) {
+      mats.furniture.color.set(palette.furniture);
+      mats.soft.color.set(palette.soft);
+    }
   }, [palette]);
 
+  const active = furnitureFor(scenario, inputType);
   const deskRef = useRef<Group>(null);
   const couchRef = useRef<Group>(null);
-  // Mount shows the current scenario fully, no entrance animation.
+  const standRef = useRef<Group>(null);
+  // Mount shows the current combination fully, no entrance animation.
   const progress = useRef<FurnitureProgress>({
-    desk: scenario === "desk" ? 1 : 0,
-    couch: scenario === "couch" ? 1 : 0,
+    desk: active === "desk" ? 1 : 0,
+    couch: active === "couch" ? 1 : 0,
+    standdesk: active === "standdesk" ? 1 : 0,
   });
 
   useFrame((state, delta) => {
@@ -179,10 +234,11 @@ export default function ScenarioProps({
     // its end in one step. Clamp to a normal frame's worth.
     const moving = stepFurniture(
       progress.current,
-      scenario,
+      active,
       Math.min(delta, 1 / 30) / TWEEN_S,
       deskRef.current,
       couchRef.current,
+      standRef.current,
     );
     // Keep frames coming while the crossfade runs (demand frameloop).
     if (moving) state.invalidate();
@@ -198,6 +254,9 @@ export default function ScenarioProps({
       </group>
       <group ref={couchRef}>
         <Couch mats={COUCH_MATS} />
+      </group>
+      <group ref={standRef}>
+        <StandingDesk mats={STAND_MATS} />
       </group>
     </>
   );
