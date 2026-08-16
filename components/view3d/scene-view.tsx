@@ -14,6 +14,7 @@ import {
   SRGBColorSpace,
   TextureLoader,
   VideoTexture,
+  type Group,
   type Texture,
 } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
@@ -254,6 +255,53 @@ function computeLabelPlacements(
   return out;
 }
 
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+/** Module-level so the react-compiler lint permits the mutation. */
+function applySightY(group: Group | null, y: number) {
+  if (group) group.position.y = y;
+}
+
+/**
+ * Tweens the shared eye height toward its target in sync with the
+ * figure's pose tween (same 0.5s ease), moving the sight line and
+ * feeding every rect's projection origin via the shared ref.
+ */
+function EyeTween({
+  target,
+  eyeRef,
+  sightRef,
+}: {
+  target: number;
+  eyeRef: React.MutableRefObject<number>;
+  sightRef: React.RefObject<Group | null>;
+}) {
+  const anim = useRef<{ from: number; start: number | null } | null>(null);
+  const prev = useRef(target);
+  useEffect(() => {
+    if (prev.current !== target) {
+      anim.current = { from: eyeRef.current, start: null };
+      prev.current = target;
+    }
+  }, [target, eyeRef]);
+  useFrame((state) => {
+    const a = anim.current;
+    if (a) {
+      if (a.start === null) a.start = state.clock.elapsedTime;
+      const t = Math.min(1, (state.clock.elapsedTime - a.start) / 0.5);
+      eyeRef.current =
+        t >= 1
+          ? target
+          : a.from + (target - a.from) * easeInOutCubic(t);
+      if (t >= 1) anim.current = null;
+      state.invalidate();
+    }
+    applySightY(sightRef.current, eyeRef.current);
+  });
+  return null;
+}
+
 /** Smoothed FPS, written to the HUD's DOM node at ~2Hz — no setState. */
 function FpsProbe() {
   const ema = useRef(0);
@@ -341,6 +389,10 @@ export default function SceneView({
   const [controlsOn, setControlsOn] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [nodeDragging, setNodeDragging] = useState(false);
+  // Live (tweened) eye height shared by the sight line and every rect's
+  // projection origin, so they glide with the figure on stance changes.
+  const liveEye = useRef(eyeH);
+  const sightRef = useRef<Group>(null);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const showProjection = useViewerStore((s) => s.showProjectionLines);
@@ -373,7 +425,7 @@ export default function SceneView({
         palette={palette}
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}
-        eyeY={eyeH}
+        eyeYRef={liveEye}
         projectTo={farZ + 5}
         showProjection={showProjection}
         selected={selectedId === d.id}
@@ -431,17 +483,20 @@ export default function SceneView({
         <ViewerFigure scenario={scenario} heightCm={heightCm} palette={palette} />
         <ScenarioProps scenario={scenario} palette={palette} />
 
-        <Line
-          points={[
-            [0, eyeH, 0],
-            [0, eyeH, farZ + 80],
-          ]}
-          color={palette.sight}
-          lineWidth={1.5}
-          dashed
-          dashSize={6}
-          gapSize={5}
-        />
+        <EyeTween target={eyeH} eyeRef={liveEye} sightRef={sightRef} />
+        <group ref={sightRef} position={[0, eyeH, 0]}>
+          <Line
+            points={[
+              [0, 0, 0],
+              [0, 0, farZ + 80],
+            ]}
+            color={palette.sight}
+            lineWidth={1.5}
+            dashed
+            dashSize={6}
+            gapSize={5}
+          />
+        </group>
 
         {/* Fallback keeps the plain rects up while a texture loads. */}
         <Suspense fallback={rects(null)}>

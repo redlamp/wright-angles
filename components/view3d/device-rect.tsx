@@ -147,7 +147,7 @@ export default function DeviceRect({
   media,
   displayFill,
   labels,
-  eyeY,
+  eyeYRef,
   projectTo,
   showProjection,
   selected,
@@ -169,8 +169,11 @@ export default function DeviceRect({
   displayFill: DisplayFill;
   /** Label de-overlap offsets from scene-view; omitted = centered. */
   labels?: LabelPlacement;
-  /** Viewer eye height (cm) — the origin of the projection lines. */
-  eyeY: number;
+  /**
+   * Live (tweened) viewer eye height — the origin of the projection
+   * lines; a ref so it glides with the figure without re-renders.
+   */
+  eyeYRef: React.MutableRefObject<number>;
   /** World z the projection rays extend to (the farthest display). */
   projectTo: number;
   /** Show this rect's eye-to-corner projection lines faintly. */
@@ -262,7 +265,7 @@ export default function DeviceRect({
     if (showProjection || selected) {
       updateProjection(
         projRef.current,
-        [0, eyeY - curY.current, -device.distanceCm],
+        [0, eyeYRef.current - curY.current, -device.distanceCm],
         projCorners,
         device.distanceCm,
         projectTo,
@@ -305,6 +308,26 @@ export default function DeviceRect({
 
   // Letterbox backing behind media content, matching the 2D view's fill.
   const backing = displayFill === "device-color" ? device.color : "#000000";
+
+  // Floor label: lifted so the 30°-rotated text's lowest glyph stays
+  // above the ground plane (a below-node anchor put it underground,
+  // where the opaque floor hid it entirely). Left-middle anchor drops
+  // w·sin30 + (capHeight/2)·cos30 below its position.
+  const distLabel = `${Math.round(device.distanceCm)} cm`;
+  const distLabelLift = distLabel.length * 5 * 0.55 * 0.5 + 1.25;
+  // Drawn over scene geometry (feet, furniture) — it's a readout, not
+  // an object in the room.
+  const distTextRef = useRef<{
+    material?: { depthTest: boolean };
+    renderOrder?: number;
+  } | null>(null);
+  useEffect(() => {
+    const t = distTextRef.current;
+    if (t?.material) {
+      t.material.depthTest = false;
+      t.renderOrder = 20;
+    }
+  }, [distLabel]);
 
   const body =
     device.show3dBody !== false && device.deviceName
@@ -496,14 +519,15 @@ export default function DeviceRect({
               diagonals keep neighbors legible; static offsets only. */}
           <Billboard position={[0, 1.2, 0]}>
             <Text
+              ref={distTextRef}
               fontSize={5}
               color={device.color}
               anchorX="left"
-              anchorY="top"
-              position={[1.8, -1.6, 0]}
+              anchorY="middle"
+              position={[2.2 + lp.distX, distLabelLift + lp.distLift, 0]}
               rotation={[0, 0, -Math.PI / 6]}
             >
-              {`${Math.round(device.distanceCm)} cm`}
+              {distLabel}
             </Text>
           </Billboard>
         </group>
