@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import {
-  MathUtils,
-  MeshStandardMaterial,
-  Vector3,
-  type Group,
-  type Mesh,
-  type Object3D,
-} from "three";
+import { MathUtils, MeshBasicMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
@@ -22,16 +15,7 @@ export const SEAT_Y: Record<Exclude<Scenario, "standing">, number> = {
   couch: 40,
 };
 
-// Flat-shaded and LIT (unlike everything else in the scene) so the
-// planar Asaro-style masses actually read — an unlit material renders
-// facets as one uniform silhouette. The figure lights in scene-view
-// only affect this material; all other meshes are basic/unlit.
-const FIGURE_MAT = new MeshStandardMaterial({
-  color: "#b6b6b6",
-  flatShading: true,
-  roughness: 1,
-  metalness: 0,
-});
+const FIGURE_MAT = new MeshBasicMaterial({ color: "#b6b6b6" });
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -224,7 +208,7 @@ function applyPose(
   pose: Pose,
   root: Group,
   torso: Mesh,
-  head: Object3D,
+  head: Mesh,
   sides: Record<1 | -1, SideRefs>,
 ) {
   root.scale.setScalar(pose.scale);
@@ -266,7 +250,7 @@ export default function ViewerFigure({
 
   const rootRef = useRef<Group>(null);
   const torsoRef = useRef<Mesh>(null);
-  const headRef = useRef<Group>(null);
+  const headRef = useRef<Mesh>(null);
   const sides = useRef<Record<1 | -1, SideRefs>>({ [-1]: newSide(), [1]: newSide() });
 
   const cur = useRef<Pose>(target);
@@ -305,32 +289,9 @@ export default function ViewerFigure({
       <mesh material={FIGURE_MAT} position={[0, 56, 0]}>
         <capsuleGeometry args={[3.5, 6, 4, 12]} />
       </mesh>
-      {/* Asaro-style head: planar masses instead of a ball — faceted
-          cranium, tapered jaw wedge with a flat face forward, and a
-          brow/nose plane. Eyes stay on the +69 contract line. */}
-      <group ref={headRef} position={[0, 69, 0]}>
-        <mesh
-          material={FIGURE_MAT}
-          position={[0, 2.4, -0.6]}
-          scale={[0.95, 1.12, 1.08]}
-        >
-          <icosahedronGeometry args={[8.4, 1]} />
-        </mesh>
-        <mesh
-          material={FIGURE_MAT}
-          position={[0, -4.4, 1.4]}
-          rotation={[0.1, Math.PI / 5, 0]}
-        >
-          <cylinderGeometry args={[6.1, 2.9, 8.5, 5]} />
-        </mesh>
-        <mesh
-          material={FIGURE_MAT}
-          position={[0, -1, 7.6]}
-          rotation={[0.32, 0, 0]}
-        >
-          <boxGeometry args={[2.6, 5.2, 3.4]} />
-        </mesh>
-      </group>
+      <mesh ref={headRef} material={FIGURE_MAT} position={[0, 69, 0]}>
+        <sphereGeometry args={[10.5, 24, 16]} />
+      </mesh>
       {([-1, 1] as const).map((side) => (
         <group key={side}>
           <group
