@@ -102,7 +102,10 @@ function applyLabelLift(
   if (!group) return;
   _projA.set(0, 1.2, deviceZ).project(camera);
   _projB.set(0, 1.2, deviceZ + 40).project(camera);
-  const f = MathUtils.clamp((_projB.x - _projA.x) * 6, -1, 1);
+  // Steep tanh: hold ~full separation until within a few degrees of
+  // edge-on, then swap quickly — the sign must flip somewhere, but the
+  // window where labels approach each other stays tiny.
+  const f = Math.tanh((_projB.x - _projA.x) * 40);
   group.position.y = baseLift * f;
 }
 
