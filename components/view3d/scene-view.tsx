@@ -375,9 +375,12 @@ export default function SceneView({
   );
 
   // Orbit framing captured once; OrbitControls owns the camera after entry.
+  // Framed so the vertical span (floor labels → screen tops) centers:
+  // lower camera and a floor-ward target keep labels off the bottom
+  // edge without dead sky above.
   const [orbitPose] = useState<CameraPose>(() => ({
-    position: [-farZ * 1.7, eyeH + farZ * 0.9, -farZ * 0.45],
-    target: [0, eyeH * 0.75, farZ * 0.55],
+    position: [-farZ * 1.7, eyeH * 0.7 + farZ * 0.55, -farZ * 0.45],
+    target: [0, eyeH * 0.5, farZ * 0.55],
     fov: 40,
   }));
   // Head-on pose tracks the live eye height and the 2D view's actual
