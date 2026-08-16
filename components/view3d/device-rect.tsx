@@ -12,7 +12,7 @@ import {
   type Group,
   type Texture,
 } from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
@@ -107,6 +107,15 @@ function applyLabelLift(
   // window where labels approach each other stays tiny.
   const f = Math.tanh((_projB.x - _projA.x) * 40);
   group.position.y = baseLift * f;
+}
+
+/**
+ * Drag-affordance cursor for the distance handles. Set on the body (not
+ * the canvas) so the fist survives a captured drag wandering over HUD
+ * elements; empty string restores the default.
+ */
+function setBodyCursor(cursor: string) {
+  document.body.style.cursor = cursor;
 }
 
 function applyCenterY(
@@ -307,6 +316,51 @@ export default function DeviceRect({
       );
     }
   });
+
+  // Shared by the node's hit sphere AND the distance text, so both drag
+  // the viewing distance and both advertise it: open hand on hover,
+  // closed fist while dragging. The grab cursor is a promise — anything
+  // showing it must actually drag.
+  const dragHandlers = onDistanceDrag
+    ? {
+        onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation();
+          setBodyCursor("grab");
+        },
+        onPointerOut: (e: ThreeEvent<PointerEvent>) => {
+          // Keep the fist while a captured drag passes outside the target.
+          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
+            setBodyCursor("");
+          }
+        },
+        onPointerDown: (e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation();
+          (e.target as Element).setPointerCapture(e.pointerId);
+          onDragState?.(true);
+          setBodyCursor("grabbing");
+        },
+        onPointerMove: (e: ThreeEvent<PointerEvent>) => {
+          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
+            return;
+          }
+          // Project the pointer ray onto the floor plane (y = 0);
+          // its world z IS the new viewing distance.
+          const t = -e.ray.origin.y / e.ray.direction.y;
+          if (t > 0) {
+            const z = e.ray.origin.z + e.ray.direction.z * t;
+            onDistanceDrag(Math.round(Math.min(9999, Math.max(10, z))));
+          }
+        },
+        onPointerUp: (e: ThreeEvent<PointerEvent>) => {
+          (e.target as Element).releasePointerCapture?.(e.pointerId);
+          onDragState?.(false);
+          // Back to the open hand; if the pointer ended off-target, the
+          // pointerout that follows the release clears it entirely.
+          setBodyCursor("grab");
+        },
+        onClick: (e: ThreeEvent<MouseEvent>) => e.stopPropagation(),
+      }
+    : null;
 
   const outline = useMemo<[number, number, number][]>(() => {
     const hw = widthCm / 2;
@@ -511,36 +565,8 @@ export default function DeviceRect({
           </mesh>
           {/* Oversized invisible hit target: the node doubles as a drag
               handle for the viewing distance along the sight line. */}
-          {onDistanceDrag ? (
-            <mesh
-              position={[0, 1.2, 0]}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                (e.target as Element).setPointerCapture(e.pointerId);
-                onDragState?.(true);
-              }}
-              onPointerMove={(e) => {
-                if (
-                  !(e.target as Element).hasPointerCapture?.(e.pointerId)
-                ) {
-                  return;
-                }
-                // Project the pointer ray onto the floor plane (y = 0);
-                // its world z IS the new viewing distance.
-                const t = -e.ray.origin.y / e.ray.direction.y;
-                if (t > 0) {
-                  const z = e.ray.origin.z + e.ray.direction.z * t;
-                  onDistanceDrag(
-                    Math.round(Math.min(9999, Math.max(10, z))),
-                  );
-                }
-              }}
-              onPointerUp={(e) => {
-                (e.target as Element).releasePointerCapture?.(e.pointerId);
-                onDragState?.(false);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          {dragHandlers ? (
+            <mesh position={[0, 1.2, 0]} {...dragHandlers}>
               <sphereGeometry args={[5, 8, 6]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
@@ -566,6 +592,7 @@ export default function DeviceRect({
                   anchorX="left"
                   anchorY="middle"
                   position={[6, 0, 0]}
+                  {...(dragHandlers ?? {})}
                 >
                   {distLabel}
                 </Text>

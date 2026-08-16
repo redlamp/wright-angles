@@ -95,6 +95,21 @@ automation can't verify WebGL or feel).
 - [ ] 3D: rect heights tween on stance change; furniture animates
       in/out; natural handheld hold angle; PNG export from the HUD.
 
+## Round 4 — figure + distance-handle affordances (2026-08-15 night)
+
+- [ ] Figure reads as an Asaro-style planar mannequin: faceted cranium,
+      jaw wedge, nose plane; flat-shaded masses visible from every
+      orbit angle (the figure is the only lit thing in the scene).
+- [ ] Eyes/sight line still land on the eye-height contract in all
+      three stances — head rebuild must not shift the sight line.
+- [ ] Hovering a floor distance node OR its distance text shows the
+      open-hand (grab) cursor; while dragging it turns into the fist
+      (grabbing); leaving either restores the default arrow.
+- [ ] The distance text itself drags the viewing distance, same as the
+      node (a grab cursor is a promise — the text keeps it).
+- [ ] Cursor never sticks: releasing a drag off-target, or the pointer
+      exiting the canvas mid-hover, returns the normal cursor.
+
 ## Suggested next (not yet built — rank these)
 
 - [ ] Browser-zoom ≠ 100% detection + warning badge (1:1 silently wrong).
