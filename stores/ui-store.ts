@@ -3,7 +3,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type PanelId = "devices" | "media" | "report" | "info" | "settings";
+export type PanelId =
+  | "devices"
+  | "media"
+  | "report"
+  | "table"
+  | "info"
+  | "settings";
 export type ViewMode = "2d" | "3d";
 
 interface UiState {
@@ -12,6 +18,9 @@ interface UiState {
   panelPositions: Partial<Record<PanelId, { x: number; y: number }>>;
   /** User-resized panel widths in px. */
   panelWidths: Partial<Record<PanelId, number>>;
+  /** User-resized panel content heights in px (height-resizable panels). */
+  panelHeights: Partial<Record<PanelId, number>>;
+  setPanelHeight: (id: PanelId, height: number) => void;
   viewMode: ViewMode;
   togglePanel: (id: PanelId) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
@@ -23,6 +32,9 @@ interface UiState {
   /** Media Library two-column split, left column percent (25–75). */
   mediaSplitPct: number;
   setMediaSplitPct: (pct: number) => void;
+  /** Media Library layout: single column or library+detail columns. */
+  mediaColumns: 1 | 2;
+  setMediaColumns: (cols: 1 | 2) => void;
   /** Device whose detail flyout is open beside the Device Manager. */
   openDetailId: string | null;
   /** Pinned device-detail windows and their positions. */
@@ -40,6 +52,7 @@ export const useUiStore = create<UiState>()(
         devices: true,
         media: false,
         report: false,
+        table: false,
         info: false,
         settings: false,
       },
@@ -58,12 +71,19 @@ export const useUiStore = create<UiState>()(
         set((s) => ({
           panelWidths: { ...s.panelWidths, [id]: width },
         })),
+      panelHeights: {},
+      setPanelHeight: (id, height) =>
+        set((s) => ({
+          panelHeights: { ...s.panelHeights, [id]: height },
+        })),
       setViewMode: (viewMode) => set({ viewMode }),
       panOffset: { x: 0, y: 0 },
       setPanOffset: (panOffset) => set({ panOffset }),
       mediaSplitPct: 50,
       setMediaSplitPct: (pct) =>
         set({ mediaSplitPct: Math.min(75, Math.max(25, pct)) }),
+      mediaColumns: 2,
+      setMediaColumns: (mediaColumns) => set({ mediaColumns }),
       openDetailId: null,
       pinnedDetails: {},
       openDetail: (openDetailId) => set({ openDetailId }),

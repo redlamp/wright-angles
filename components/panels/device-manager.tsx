@@ -151,6 +151,15 @@ function AngleReadout({ device }: { device: Device }) {
       <div>
         {a.ppd.toFixed(1)} px/° · {a.arcminPerPx.toFixed(2)}′/px ·{" "}
         {a.ppi.toFixed(0)} ppi
+        {a.ppd < 60 ? (
+          <span
+            className="text-[#f5a524]"
+            title="Below the ~60 PPD retina threshold — pixels are resolvable at this distance"
+          >
+            {" "}
+            · sub-retina
+          </span>
+        ) : null}
       </div>
       {showBands ? (
         <div className="border-t border-border pt-1">

@@ -6,11 +6,15 @@ import {
   BufferAttribute,
   DoubleSide,
   MathUtils,
+  Vector3,
   type BufferGeometry,
+  type Camera,
   type Group,
+  type Material,
+  type Object3D,
   type Texture,
 } from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
@@ -80,6 +84,58 @@ function updateProjection(
   attr.needsUpdate = true;
 }
 
+/**
+ * Camera-aware de-collision. The base offsets assume "farther projects
+ * screen-right"; this measures the actual on-screen direction of the
+ * depth axis each frame by projecting two points of the sight line,
+ * and scales the offset by it. Viewing from the other side of the
+ * human flips the factor (labels invert); edge-on it passes through
+ * zero, so the swap is always a glide. Module-level temps avoid
+ * per-frame allocation.
+ */
+const _projA = new Vector3();
+const _projB = new Vector3();
+function applyLabelLift(
+  group: Group | null,
+  baseLift: number,
+  camera: Camera,
+  deviceZ: number,
+) {
+  if (!group) return;
+  _projA.set(0, 1.2, deviceZ).project(camera);
+  _projB.set(0, 1.2, deviceZ + 40).project(camera);
+  // Steep tanh: hold ~full separation until within a few degrees of
+  // edge-on, then swap quickly — the sign must flip somewhere, but the
+  // window where labels approach each other stays tiny.
+  const f = Math.tanh((_projB.x - _projA.x) * 40);
+  group.position.y = baseLift * f;
+}
+
+/**
+ * Drag-affordance cursor for the distance handles. Set on the body (not
+ * the canvas) so the fist survives a captured drag wandering over HUD
+ * elements; empty string restores the default.
+ */
+function setBodyCursor(cursor: string) {
+  document.body.style.cursor = cursor;
+}
+
+/**
+ * Distance labels draw over scene geometry (feet, furniture, even the
+ * floor) — they're readouts, not objects in the room. Applied via the
+ * Text's onSync so it survives troika re-syncs (label changes, outline
+ * settings), which rebuild materials AFTER a mount effect would have
+ * run; the traverse also catches the outline sub-mesh.
+ */
+function raiseDistLabel(text: Object3D) {
+  text.traverse((o) => {
+    o.renderOrder = 20;
+    const m = (o as { material?: Material | Material[] }).material;
+    if (!m) return;
+    for (const mat of Array.isArray(m) ? m : [m]) mat.depthTest = false;
+  });
+}
+
 function applyCenterY(
   rect: Group | null,
   drop: Group | null,
@@ -95,7 +151,9 @@ function applyCenterY(
 
 /**
  * The active media item's texture, loaded once at scene level and shared by
- * every rect. Width/height are the content's intrinsic pixels (for fit).
+ * every rect. Width/height are the content's EFFECTIVE pixels — the crop
+ * window when one is set, else intrinsic — so letterbox fit matches what
+ * the texture's repeat/offset actually shows (see initScreenTexture).
  */
 export interface ScreenMedia {
   texture: Texture;
@@ -141,11 +199,12 @@ const ZERO_LABELS: LabelPlacement = { nameX: 0, nameLift: 0, distX: 0, distLift:
 export default function DeviceRect({
   device,
   centerY,
+  poseKey,
   palette,
   media,
   displayFill,
   labels,
-  eyeY,
+  eyeYRef,
   projectTo,
   showProjection,
   selected,
@@ -156,6 +215,11 @@ export default function DeviceRect({
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
   centerY: number;
+  /**
+   * Changes when the stance does; a centerY change WITH a poseKey change
+   * tweens, one without (the height slider) snaps.
+   */
+  poseKey?: string;
   palette: ScenePalette;
   media?: ScreenMedia | null;
   /**
@@ -167,8 +231,11 @@ export default function DeviceRect({
   displayFill: DisplayFill;
   /** Label de-overlap offsets from scene-view; omitted = centered. */
   labels?: LabelPlacement;
-  /** Viewer eye height (cm) — the origin of the projection lines. */
-  eyeY: number;
+  /**
+   * Live (tweened) viewer eye height — the origin of the projection
+   * lines; a ref so it glides with the figure without re-renders.
+   */
+  eyeYRef: React.MutableRefObject<number>;
   /** World z the projection rays extend to (the farthest display). */
   projectTo: number;
   /** Show this rect's eye-to-corner projection lines faintly. */
@@ -232,12 +299,21 @@ export default function DeviceRect({
   const curY = useRef(centerY);
   const anim = useRef<{ from: number; start: number | null } | null>(null);
   const prevTarget = useRef(centerY);
+  const prevPoseKey = useRef(poseKey);
   useEffect(() => {
     if (prevTarget.current !== centerY) {
-      anim.current = { from: curY.current, start: null };
+      // Tween when the stance (poseKey) changed; height-slider edits
+      // snap so the rect tracks the drag without trailing it.
+      if (prevPoseKey.current !== poseKey) {
+        anim.current = { from: curY.current, start: null };
+      } else {
+        anim.current = null;
+        curY.current = centerY;
+      }
       prevTarget.current = centerY;
     }
-  }, [centerY]);
+    prevPoseKey.current = poseKey;
+  }, [centerY, poseKey]);
 
   useFrame((state) => {
     const a = anim.current;
@@ -247,6 +323,8 @@ export default function DeviceRect({
       curY.current =
         t >= 1 ? centerY : MathUtils.lerp(a.from, centerY, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
+      // Keep frames coming while the height tweens (demand frameloop).
+      state.invalidate();
     }
     applyCenterY(
       rectRef.current,
@@ -255,16 +333,67 @@ export default function DeviceRect({
       curY.current,
       heightCm,
     );
+    applyLabelLift(
+      distLiftRef.current,
+      lp.distLift,
+      state.camera,
+      device.distanceCm,
+    );
     if (showProjection || selected) {
       updateProjection(
         projRef.current,
-        [0, eyeY - curY.current, -device.distanceCm],
+        [0, eyeYRef.current - curY.current, -device.distanceCm],
         projCorners,
         device.distanceCm,
         projectTo,
       );
     }
   });
+
+  // Shared by the node's hit sphere AND the distance text, so both drag
+  // the viewing distance and both advertise it: open hand on hover,
+  // closed fist while dragging. The grab cursor is a promise — anything
+  // showing it must actually drag.
+  const dragHandlers = onDistanceDrag
+    ? {
+        onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation();
+          setBodyCursor("grab");
+        },
+        onPointerOut: (e: ThreeEvent<PointerEvent>) => {
+          // Keep the fist while a captured drag passes outside the target.
+          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
+            setBodyCursor("");
+          }
+        },
+        onPointerDown: (e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation();
+          (e.target as Element).setPointerCapture(e.pointerId);
+          onDragState?.(true);
+          setBodyCursor("grabbing");
+        },
+        onPointerMove: (e: ThreeEvent<PointerEvent>) => {
+          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
+            return;
+          }
+          // Project the pointer ray onto the floor plane (y = 0);
+          // its world z IS the new viewing distance.
+          const t = -e.ray.origin.y / e.ray.direction.y;
+          if (t > 0) {
+            const z = e.ray.origin.z + e.ray.direction.z * t;
+            onDistanceDrag(Math.round(Math.min(9999, Math.max(10, z))));
+          }
+        },
+        onPointerUp: (e: ThreeEvent<PointerEvent>) => {
+          (e.target as Element).releasePointerCapture?.(e.pointerId);
+          onDragState?.(false);
+          // Back to the open hand; if the pointer ended off-target, the
+          // pointerout that follows the release clears it entirely.
+          setBodyCursor("grab");
+        },
+        onClick: (e: ThreeEvent<MouseEvent>) => e.stopPropagation(),
+      }
+    : null;
 
   const outline = useMemo<[number, number, number][]>(() => {
     const hw = widthCm / 2;
@@ -301,6 +430,9 @@ export default function DeviceRect({
 
   // Letterbox backing behind media content, matching the 2D view's fill.
   const backing = displayFill === "device-color" ? device.color : "#000000";
+
+  const distLabel = `${Math.round(device.distanceCm)} cm`;
+  const distLiftRef = useRef<Group>(null);
 
   const body =
     device.show3dBody !== false && device.deviceName
@@ -416,6 +548,10 @@ export default function DeviceRect({
             color={device.color}
             anchorX="center"
             anchorY="bottom"
+            outlineColor="#000000"
+            outlineOpacity={0.5}
+            outlineOffsetX="3%"
+            outlineOffsetY="3%"
           >
             {device.label}
           </Text>
@@ -452,36 +588,8 @@ export default function DeviceRect({
           </mesh>
           {/* Oversized invisible hit target: the node doubles as a drag
               handle for the viewing distance along the sight line. */}
-          {onDistanceDrag ? (
-            <mesh
-              position={[0, 1.2, 0]}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                (e.target as Element).setPointerCapture(e.pointerId);
-                onDragState?.(true);
-              }}
-              onPointerMove={(e) => {
-                if (
-                  !(e.target as Element).hasPointerCapture?.(e.pointerId)
-                ) {
-                  return;
-                }
-                // Project the pointer ray onto the floor plane (y = 0);
-                // its world z IS the new viewing distance.
-                const t = -e.ray.origin.y / e.ray.direction.y;
-                if (t > 0) {
-                  const z = e.ray.origin.z + e.ray.direction.z * t;
-                  onDistanceDrag(
-                    Math.round(Math.min(9999, Math.max(10, z))),
-                  );
-                }
-              }}
-              onPointerUp={(e) => {
-                (e.target as Element).releasePointerCapture?.(e.pointerId);
-                onDragState?.(false);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          {dragHandlers ? (
+            <mesh position={[0, 1.2, 0]} {...dragHandlers}>
               <sphereGeometry args={[5, 8, 6]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
@@ -490,17 +598,33 @@ export default function DeviceRect({
               hangs just below-right of the node, sloping 30° south-east
               in screen space, text reading along the slope. Parallel
               diagonals keep neighbors legible; static offsets only. */}
+          {/* Flash model: a clip whose registration point (text left
+              edge, vertical center) anchors ON the node; the 30° slope
+              rotates about that point. De-collision moves the text's
+              local Y inside the rotated clip, so neighboring parallel
+              labels separate perpendicular to the slope with an even
+              buffer. */}
           <Billboard position={[0, 1.2, 0]}>
-            <Text
-              fontSize={5}
-              color={device.color}
-              anchorX="left"
-              anchorY="top"
-              position={[1.8, -1.6, 0]}
-              rotation={[0, 0, -Math.PI / 6]}
-            >
-              {`${Math.round(device.distanceCm)} cm`}
-            </Text>
+            <group rotation={[0, 0, -Math.PI / 6]}>
+              {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
+              <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
+                <Text
+                  fontSize={5}
+                  color={device.color}
+                  anchorX="left"
+                  anchorY="middle"
+                  position={[6, 0, 0]}
+                  outlineColor="#000000"
+                  outlineOpacity={0.5}
+                  outlineOffsetX="3%"
+                  outlineOffsetY="3%"
+                  onSync={raiseDistLabel}
+                  {...(dragHandlers ?? {})}
+                >
+                  {distLabel}
+                </Text>
+              </group>
+            </group>
           </Billboard>
         </group>
       ) : null}

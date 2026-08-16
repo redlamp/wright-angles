@@ -79,6 +79,17 @@ export interface HighlightBox {
   h: number;
 }
 
+/**
+ * Crop window over a media item, normalized 0–1 against the intrinsic
+ * image (y-down, like image pixels). Absent = full frame.
+ */
+export interface MediaCrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MediaItem {
   id: string;
   name: string;
@@ -98,6 +109,12 @@ export interface MediaItem {
   addedAt: number;
   /** Measurement boxes drawn over this item. */
   boxes?: HighlightBox[];
+  /**
+   * Optional crop applied everywhere the item is displayed (2D rects, 3D
+   * textures, previews, export). Boxes stay normalized to the FULL
+   * intrinsic image so they never shift when the crop changes.
+   */
+  crop?: MediaCrop;
 }
 
 export type LengthUnit = "in" | "cm";

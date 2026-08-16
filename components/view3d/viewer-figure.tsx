@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { MathUtils, MeshBasicMaterial, Vector3, type Group, type Mesh } from "three";
+import { MathUtils, MeshStandardMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
-import type { Scenario } from "@/stores/viewer-store";
+import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
 
 /** Height the figure is authored at; the whole body scales by heightCm/175. */
@@ -15,7 +15,21 @@ export const SEAT_Y: Record<Exclude<Scenario, "standing">, number> = {
   couch: 40,
 };
 
-const FIGURE_MAT = new MeshBasicMaterial({ color: "#b6b6b6" });
+/**
+ * Standing-desk work surface (world cm). Fixed like the seat heights —
+ * near elbow height for the authored 175cm frame.
+ */
+export const STAND_DESK_TOP = 108;
+
+// Lit (unlike everything else in the scene) so the capsules and boxes
+// shade and their forms read; the figure lights in scene-view exist
+// solely for this material. Smooth shading on purpose — Taylor rejected
+// the faceted look (2026-08-15): "more accurate and generic".
+const FIGURE_MAT = new MeshStandardMaterial({
+  color: "#b6b6b6",
+  roughness: 0.9,
+  metalness: 0,
+});
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -64,60 +78,77 @@ interface Pose {
 /**
  * Eye-height contract (matches the viewer store): standing eyes at 164·s ≈
  * 0.936·H; seated eyes at seat + 79·s ≈ seat + 0.45·H, with the pelvis 10cm
- * above the seat plane.
+ * above the seat plane. The scenario sets the body (legs/torso/root); the
+ * input type sets the arms — every scenario × input combination is valid.
  */
-function makePose(scenario: Scenario, heightCm: number): Pose {
+function makePose(
+  scenario: Scenario,
+  input: InputType,
+  heightCm: number,
+): Pose {
   const s = heightCm / AUTHORED_CM;
-  if (scenario === "standing") {
-    const rootY = 95 * s;
+  const standing = scenario === "standing";
+  const rootY = standing ? 95 * s : SEAT_Y[scenario] + 10 * s;
+  const body = standing
+    ? {
+        scale: s,
+        rootY,
+        torsoZ: 0,
+        headZ: 0,
+        hipRot: 0,
+        kneeRot: 0,
+        // Straight leg down: hip − thigh − lowerLen lands the ankle at 4cm.
+        lowerLen: rootY / s + HIP_Y - THIGH - 4, // = 44
+      }
+    : {
+        scale: s,
+        rootY,
+        // Couch sinks the viewer into a slight recline.
+        torsoZ: scenario === "couch" ? -1 : 0,
+        headZ: scenario === "couch" ? 1.5 : 0,
+        hipRot: -Math.PI / 2,
+        kneeRot: Math.PI / 2,
+        // Thigh forward, lower leg vertical: ankle lands at ~4cm.
+        lowerLen: MathUtils.clamp(rootY / s - 7, 20, 60),
+      };
+
+  if (input === "handheld") {
+    // Raised two-hand hold: hands at the device grips ~13cm below the
+    // eye line and ~32cm out, forearms raking up toward the screen —
+    // the natural Switch/Deck angle. The device rect itself stays
+    // upright on the sight line: tilting it would contradict the
+    // face-on angular math the readouts are built on.
     return {
-      scale: s,
-      rootY,
-      torsoZ: 0,
-      headZ: 0,
-      hipRot: 0,
-      kneeRot: 0,
-      // Straight leg down: hip − thigh − lowerLen lands the ankle at 4cm.
-      lowerLen: rootY / s + HIP_Y - THIGH - 4, // = 44
-      // Hangs just short of full arm length from the raised shoulder.
-      wrist: { x: 19, y: -1, z: 2 },
-      pole: { x: 0.3, y: -0.2, z: -1 },
+      ...body,
+      wrist: { x: 5.5, y: 56, z: 2 + 32 / s },
+      pole: { x: 0.5, y: -1, z: -0.3 },
     };
   }
-  const seatY = SEAT_Y[scenario];
-  const rootY = seatY + 10 * s;
-  // Thigh forward, lower leg vertical: ankle lands at ~4cm (foot height).
-  const lowerLen = MathUtils.clamp(rootY / s - 7, 20, 60);
-  if (scenario === "desk") {
-    // Hands forward over the keyboard: desk top is at world y=74.
+  if (input === "gamepad") {
+    // Relaxed controller hold: elbows at the sides, hands together
+    // just below the sternum — the couch-gamer default.
     return {
-      scale: s,
-      rootY,
-      torsoZ: 0,
-      headZ: 0,
-      hipRot: -Math.PI / 2,
-      kneeRot: Math.PI / 2,
-      lowerLen,
-      wrist: { x: 9, y: (77 - rootY) / s, z: 38 / s },
-      pole: { x: 0.1, y: -1, z: -0.3 },
+      ...body,
+      wrist: { x: 6, y: 42, z: 2 + 26 / s },
+      pole: { x: 0.4, y: -1, z: -0.4 },
     };
   }
-  // Couch: relaxed handheld hold. Elbows drop to the sides (pole mostly
-  // -y), hands a bit apart at the device's grips, ~13cm below the eye line
-  // and ~32cm out, so the forearms rake up toward the screen ~40° from
-  // vertical — the natural Switch/Deck angle. The device rect itself stays
-  // upright and on the sight line: tilting it would contradict the
-  // face-on angular math the readouts are built on.
+  // Mouse & keyboard: hands on the work surface for this scenario —
+  // desk top, standing-desk top, or a keyboard on the lap on the couch.
+  const surfaceY =
+    scenario === "desk"
+      ? 77
+      : standing
+        ? STAND_DESK_TOP + 3
+        : SEAT_Y.couch + 16;
   return {
-    scale: s,
-    rootY,
-    torsoZ: -1,
-    headZ: 1.5,
-    hipRot: -Math.PI / 2,
-    kneeRot: Math.PI / 2,
-    lowerLen,
-    wrist: { x: 5.5, y: 56, z: 2 + 32 / s },
-    pole: { x: 0.5, y: -1, z: -0.3 },
+    ...body,
+    wrist: {
+      x: 9,
+      y: (surfaceY - rootY) / s,
+      z: (scenario === "couch" ? 24 : 38) / s,
+    },
+    pole: { x: 0.1, y: -1, z: -0.3 },
   };
 }
 
@@ -229,16 +260,18 @@ function applyPose(
 }
 
 /**
- * Stylized low-poly human at the origin facing +Z. Unlit on purpose — the
- * scene has no lighting rig. Posed imperatively in useFrame so scenario
+ * Stylized low-poly human at the origin facing +Z, lit by the figure-only
+ * lights in scene-view. Posed imperatively in useFrame so scenario
  * changes tween (~0.5s ease in-out) instead of snapping.
  */
 export default function ViewerFigure({
   scenario,
+  inputType,
   heightCm,
   palette,
 }: {
   scenario: Scenario;
+  inputType: InputType;
   heightCm: number;
   palette: ScenePalette;
 }) {
@@ -246,7 +279,10 @@ export default function ViewerFigure({
     FIGURE_MAT.color.set(palette.figure);
   }, [palette]);
 
-  const target = useMemo(() => makePose(scenario, heightCm), [scenario, heightCm]);
+  const target = useMemo(
+    () => makePose(scenario, inputType, heightCm),
+    [scenario, inputType, heightCm],
+  );
 
   const rootRef = useRef<Group>(null);
   const torsoRef = useRef<Mesh>(null);
@@ -256,12 +292,22 @@ export default function ViewerFigure({
   const cur = useRef<Pose>(target);
   const anim = useRef<{ from: Pose; start: number | null } | null>(null);
   const prevTarget = useRef(target);
+  const poseKey = `${scenario}/${inputType}`;
+  const prevPoseKey = useRef(poseKey);
   useEffect(() => {
     if (prevTarget.current !== target) {
-      anim.current = { from: cur.current, start: null };
+      // Tween between stances/input holds; height-slider edits snap so
+      // the figure tracks the drag instead of trailing it by the tween.
+      if (prevPoseKey.current !== poseKey) {
+        anim.current = { from: cur.current, start: null };
+      } else {
+        anim.current = null;
+        cur.current = target;
+      }
       prevTarget.current = target;
     }
-  }, [target]);
+    prevPoseKey.current = poseKey;
+  }, [target, poseKey]);
 
   useFrame((state) => {
     const a = anim.current;
@@ -270,6 +316,8 @@ export default function ViewerFigure({
       const t = Math.min(1, (state.clock.elapsedTime - a.start) / TWEEN_S);
       cur.current = t >= 1 ? target : lerpPose(a.from, target, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
+      // Keep frames coming while tweening (demand frameloop).
+      state.invalidate();
     }
     if (rootRef.current && torsoRef.current && headRef.current) {
       applyPose(cur.current, rootRef.current, torsoRef.current, headRef.current, sides.current);

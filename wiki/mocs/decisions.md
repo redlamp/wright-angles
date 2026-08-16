@@ -4,3 +4,4 @@
 - [[decision-stack-nextjs-r3f]] — Next.js 16 + Bun + Tailwind v4 + shadcn + R3F *(adopted)*
 - [[decision-github-pages-deploy]] — GH Pages static export from `main`, gated env config *(adopted)*
 - [[decision-local-only-media]] — media never leaves the machine; IndexedDB + localStorage *(adopted)*
+- [[design-active-media-gateway]] — Active Media as the measuring/monitoring gateway; content in, verdicts out *(draft)*

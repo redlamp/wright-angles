@@ -8,6 +8,7 @@ import {
   MonitorIcon,
   SettingsIcon,
   SquareIcon,
+  Table2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
@@ -66,6 +67,7 @@ export function Sidebar() {
       {panelButton("devices", "Device Manager", <MonitorIcon className="size-4" />)}
       {panelButton("media", "Media Library", <ImageIcon className="size-4" />)}
       {panelButton("report", "Perception Report", <GaugeIcon className="size-4" />)}
+      {panelButton("table", "Comparison Table", <Table2Icon className="size-4" />)}
       <div className="my-0.5 h-px w-6 bg-border" />
       <RailButton
         label="2D overlay view"

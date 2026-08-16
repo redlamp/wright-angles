@@ -14,14 +14,16 @@ import {
   SRGBColorSpace,
   TextureLoader,
   VideoTexture,
+  type Group,
   type Texture,
 } from "three";
-import { Canvas, useFrame, useLoader } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
-import type { Device } from "@/lib/types";
+import type { Device, MediaCrop } from "@/lib/types";
 import { physicalSizeCm } from "@/lib/display-math";
+import { effectiveDims } from "@/lib/media-crop";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
@@ -44,62 +46,98 @@ function markTextureDirty(tex: Texture) {
   tex.needsUpdate = true;
 }
 
-function initScreenTexture(tex: Texture) {
+/**
+ * The crop composes with the U-mirror via repeat/offset (sampled uv' =
+ * uv·repeat + offset). Three's UV origin is bottom-left while the crop is
+ * y-down, so the crop's vertical window [y, y+h] sits at v ∈
+ * [1−y−h, 1−y]: repeat.y = h, offset.y = 1−y−h. Mirrored U must run
+ * right-to-left across the window [x, x+w]: u' = (x+w) − u·w, i.e.
+ * repeat.x = −w, offset.x = x+w (no crop: −1 / 1, exactly today's mirror).
+ */
+function initScreenTexture(tex: Texture, crop?: MediaCrop) {
+  const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
   tex.colorSpace = SRGBColorSpace;
   tex.wrapS = RepeatWrapping;
-  tex.repeat.x = -1;
-  tex.offset.x = 1;
+  tex.repeat.set(-c.w, c.h);
+  tex.offset.set(c.x + c.w, 1 - c.y - c.h);
   tex.needsUpdate = true;
 }
 
-function useScreenTexture(tex: Texture) {
-  useEffect(() => initScreenTexture(tex), [tex]);
+function useScreenTexture(tex: Texture, crop?: MediaCrop) {
+  useEffect(() => initScreenTexture(tex, crop), [tex, crop]);
 }
 
 function ImageScreens({
   url,
+  crop,
   children,
 }: {
   url: string;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useLoader(TextureLoader, url);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   return <>{children(tex)}</>;
 }
 
 /** Screens driven by the playback engine's master video element. */
 function EngineVideoScreens({
   video,
+  crop,
   children,
 }: {
   video: HTMLVideoElement;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useMemo(() => new VideoTexture(video), [video]);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
+  // Demand frameloop: request a render per decoded video frame — no
+  // frames while paused, native cadence while playing.
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    let handle = 0;
+    let alive = true;
+    const onFrame = () => {
+      if (!alive) return;
+      invalidate();
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => {
+      alive = false;
+      video.cancelVideoFrameCallback(handle);
+    };
+  }, [video, invalidate]);
   return <>{children(tex)}</>;
 }
 
 /** Screens mirroring the GIF engine's frame canvas. */
 function EngineGifScreens({
   engine,
+  crop,
   children,
 }: {
   engine: GifEngine;
+  crop?: MediaCrop;
   children: (tex: Texture) => ReactNode;
 }) {
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  useScreenTexture(tex);
+  useScreenTexture(tex, crop);
   useEffect(() => () => tex.dispose(), [tex]);
-  const lastStamp = useRef(-1);
-  useFrame(() => {
-    if (engine.stamp !== lastStamp.current) {
-      lastStamp.current = engine.stamp;
-      markTextureDirty(tex);
-    }
-  });
+  // Demand frameloop: each decoded GIF frame marks the texture dirty and
+  // requests exactly one render.
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(
+    () =>
+      engine.subscribe(() => {
+        markTextureDirty(tex);
+        invalidate();
+      }),
+    [engine, tex, invalidate],
+  );
   return <>{children(tex)}</>;
 }
 
@@ -196,25 +234,87 @@ function computeLabelPlacements(
 
   // Floor labels all sit ~5cm above the floor on their drop lines, so only
   // the distance separates them; a "360 cm" readout is ~18cm wide.
-  let floor: Info[] = [];
-  const flushFloor = () => {
-    if (floor.length > 1) {
-      floor.forEach((m, idx) => {
-        const p = out.get(m.id)!;
-        p.distX = (idx % 2 === 0 ? -1 : 1) * 12;
-        p.distLift = Math.floor(idx / 2) * 7;
-      });
+  // Floor labels: need-based ramp. Each label sums pairwise pressure
+  // from neighbors within RANGE — zero when clear, growing linearly as
+  // the gap closes. Nearer-than-neighbor pushes down (negative),
+  // farther pushes up, so isolated labels sit exactly on their node
+  // and crowded ones separate only as much as they must. The sign is
+  // re-oriented per frame from the camera side (device-rect).
+  const RANGE = 25;
+  const MAX_LIFT = 4;
+  for (const a of infos) {
+    let need = 0;
+    for (const b of infos) {
+      if (a === b) continue;
+      const gap = Math.abs(a.z - b.z);
+      if (gap < RANGE) {
+        need += (a.z < b.z ? -1 : 1) * (1 - gap / RANGE);
+      }
     }
-    floor = [];
-  };
-  for (const info of infos) {
-    const prev = floor[floor.length - 1];
-    if (prev && info.z - prev.z > 18) flushFloor();
-    floor.push(info);
+    const p = out.get(a.id)!;
+    p.distX = 0;
+    p.distLift = Math.max(-1.6, Math.min(1.6, need)) * MAX_LIFT;
   }
-  flushFloor();
 
   return out;
+}
+
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+/** Module-level so the react-compiler lint permits the mutation. */
+function applySightY(group: Group | null, y: number) {
+  if (group) group.position.y = y;
+}
+
+/**
+ * Tweens the shared eye height toward its target in sync with the
+ * figure's pose tween (same 0.5s ease), moving the sight line and
+ * feeding every rect's projection origin via the shared ref.
+ */
+function EyeTween({
+  target,
+  scenario,
+  eyeRef,
+  sightRef,
+}: {
+  target: number;
+  scenario: Scenario;
+  eyeRef: React.MutableRefObject<number>;
+  sightRef: React.RefObject<Group | null>;
+}) {
+  const anim = useRef<{ from: number; start: number | null } | null>(null);
+  const prev = useRef(target);
+  const prevScenario = useRef(scenario);
+  useEffect(() => {
+    if (prev.current !== target) {
+      // Tween on stance changes only; height-slider edits snap so the
+      // sight line and projections track the drag without lag.
+      if (prevScenario.current !== scenario) {
+        anim.current = { from: eyeRef.current, start: null };
+      } else {
+        anim.current = null;
+        eyeRef.current = target;
+      }
+      prev.current = target;
+    }
+    prevScenario.current = scenario;
+  }, [target, scenario, eyeRef]);
+  useFrame((state) => {
+    const a = anim.current;
+    if (a) {
+      if (a.start === null) a.start = state.clock.elapsedTime;
+      const t = Math.min(1, (state.clock.elapsedTime - a.start) / 0.5);
+      eyeRef.current =
+        t >= 1
+          ? target
+          : a.from + (target - a.from) * easeInOutCubic(t);
+      if (t >= 1) anim.current = null;
+      state.invalidate();
+    }
+    applySightY(sightRef.current, eyeRef.current);
+  });
+  return null;
 }
 
 /** Smoothed FPS, written to the HUD's DOM node at ~2Hz — no setState. */
@@ -253,6 +353,7 @@ export default function SceneView({
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const scenario = useViewerStore((s) => s.scenario);
+  const inputType = useViewerStore((s) => s.inputType);
   const heightCm = useViewerStore((s) => s.heightCm);
   const palette = SCENE_PALETTES[useSceneTheme()];
   const visible = [thisDevice, ...devices].filter((d) => d.visible);
@@ -268,6 +369,10 @@ export default function SceneView({
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
+  // Crop: rects letterbox against the effective (cropped) dims; the crop
+  // window itself is applied on the shared texture's repeat/offset.
+  const mediaCrop = activeItem?.crop;
+  const mediaDims = activeItem ? effectiveDims(activeItem) : null;
 
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
@@ -281,9 +386,12 @@ export default function SceneView({
   );
 
   // Orbit framing captured once; OrbitControls owns the camera after entry.
+  // Framed so the vertical span (floor labels → screen tops) centers:
+  // lower camera and a floor-ward target keep labels off the bottom
+  // edge without dead sky above.
   const [orbitPose] = useState<CameraPose>(() => ({
-    position: [-farZ * 1.7, eyeH + farZ * 0.9, -farZ * 0.45],
-    target: [0, eyeH * 0.75, farZ * 0.55],
+    position: [-farZ * 1.7, eyeH * 0.7 + farZ * 0.55, -farZ * 0.45],
+    target: [0, eyeH * 0.5, farZ * 0.55],
     fov: 40,
   }));
   // Head-on pose tracks the live eye height and the 2D view's actual
@@ -300,6 +408,10 @@ export default function SceneView({
   const [controlsOn, setControlsOn] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [nodeDragging, setNodeDragging] = useState(false);
+  // Live (tweened) eye height shared by the sight line and every rect's
+  // projection origin, so they glide with the figure on stance changes.
+  const liveEye = useRef(eyeH);
+  const sightRef = useRef<Group>(null);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const showProjection = useViewerStore((s) => s.showProjectionLines);
@@ -329,10 +441,11 @@ export default function SceneView({
         key={d.id}
         device={d}
         centerY={d.elevation?.[scenario] ?? eyeH}
+        poseKey={scenario}
         palette={palette}
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}
-        eyeY={eyeH}
+        eyeYRef={liveEye}
         projectTo={farZ + 5}
         showProjection={showProjection}
         selected={selectedId === d.id}
@@ -346,8 +459,8 @@ export default function SceneView({
         }
         onDragState={setNodeDragging}
         media={
-          tex && activeItem
-            ? { texture: tex, width: activeItem.width, height: activeItem.height }
+          tex && mediaDims
+            ? { texture: tex, width: mediaDims.width, height: mediaDims.height }
             : null
         }
       />
@@ -356,7 +469,12 @@ export default function SceneView({
   return (
     <div className="relative h-full w-full">
       <Canvas
-        dpr={[1, 2]}
+        // Render only when something changed: tweens/camera/video/GIF all
+        // self-invalidate, and R3F invalidates on React scene commits.
+        // On a 240Hz panel the old always-loop redrew a static scene
+        // continuously — the single biggest GPU cost in the app.
+        frameloop="demand"
+        dpr={[1, 1.5]}
         onPointerMissed={() => setSelectedId(null)}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.
@@ -382,31 +500,56 @@ export default function SceneView({
           <meshBasicMaterial color={palette.ground} />
         </mesh>
 
-        <ViewerFigure scenario={scenario} heightCm={heightCm} palette={palette} />
-        <ScenarioProps scenario={scenario} palette={palette} />
-
-        <Line
-          points={[
-            [0, eyeH, 0],
-            [0, eyeH, farZ + 80],
-          ]}
-          color={palette.sight}
-          lineWidth={1.5}
-          dashed
-          dashSize={6}
-          gapSize={5}
+        {/* Figure-only lighting: every other mesh is unlit, so these
+            lights exist purely to shade the figure's forms. */}
+        <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
+        <directionalLight position={[-140, 220, -90]} intensity={1.3} />
+        <ViewerFigure
+          scenario={scenario}
+          inputType={inputType}
+          heightCm={heightCm}
+          palette={palette}
         />
+        <ScenarioProps
+          scenario={scenario}
+          inputType={inputType}
+          palette={palette}
+        />
+
+        <EyeTween
+          target={eyeH}
+          scenario={scenario}
+          eyeRef={liveEye}
+          sightRef={sightRef}
+        />
+        <group ref={sightRef} position={[0, eyeH, 0]}>
+          <Line
+            points={[
+              [0, 0, 0],
+              [0, 0, farZ + 80],
+            ]}
+            color={palette.sight}
+            lineWidth={1.5}
+            dashed
+            dashSize={6}
+            gapSize={5}
+          />
+        </group>
 
         {/* Fallback keeps the plain rects up while a texture loads. */}
         <Suspense fallback={rects(null)}>
           {activeItem && engine?.kind === "video" ? (
-            <EngineVideoScreens video={engine.video}>
+            <EngineVideoScreens video={engine.video} crop={mediaCrop}>
               {rects}
             </EngineVideoScreens>
           ) : activeItem && engine?.kind === "gif" ? (
-            <EngineGifScreens engine={engine}>{rects}</EngineGifScreens>
+            <EngineGifScreens engine={engine} crop={mediaCrop}>
+              {rects}
+            </EngineGifScreens>
           ) : activeItem && imageUrl ? (
-            <ImageScreens url={imageUrl}>{rects}</ImageScreens>
+            <ImageScreens url={imageUrl} crop={mediaCrop}>
+              {rects}
+            </ImageScreens>
           ) : (
             rects(null)
           )}

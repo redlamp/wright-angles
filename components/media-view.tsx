@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { PauseIcon, PlayIcon, RepeatIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getEngine } from "@/lib/playback-engine";
+import { cropOf } from "@/lib/media-crop";
+import type { MediaItem } from "@/lib/types";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { Slider } from "@/components/ui/slider";
 
@@ -103,6 +105,60 @@ export function GifView({
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={url} alt={alt ?? ""} draggable={false} className={className} />;
   }
+  return <canvas ref={ref} className={className} />;
+}
+
+/**
+ * Video view that mirrors the playback engine's single master decode to
+ * a canvas (crop applied at draw time), instead of running one <video>
+ * decoder per device rect. requestVideoFrameCallback keeps mirrors in
+ * lockstep with the master and fires on seek-while-paused too.
+ */
+export function VideoMirror({
+  item,
+  className,
+}: {
+  item: MediaItem;
+  className?: string;
+}) {
+  usePlaybackStore((s) => s.engineNonce);
+  const engine = getEngine();
+  const video = engine?.kind === "video" ? engine.video : null;
+  const ref = useRef<HTMLCanvasElement>(null);
+  const crop = cropOf(item);
+  const { x: cx, y: cy, w: cw, h: ch } = crop;
+
+  useEffect(() => {
+    if (!video) return;
+    let alive = true;
+    let handle = 0;
+    const draw = () => {
+      const c = ref.current;
+      if (!c || !video.videoWidth) return;
+      const sx = cx * video.videoWidth;
+      const sy = cy * video.videoHeight;
+      const sw = Math.max(1, Math.round(cw * video.videoWidth));
+      const sh = Math.max(1, Math.round(ch * video.videoHeight));
+      if (c.width !== sw || c.height !== sh) {
+        c.width = sw;
+        c.height = sh;
+      }
+      c.getContext("2d")!.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+    };
+    const loop = () => {
+      if (!alive) return;
+      draw();
+      handle = video.requestVideoFrameCallback(loop);
+    };
+    draw();
+    handle = video.requestVideoFrameCallback(loop);
+    return () => {
+      alive = false;
+      video.cancelVideoFrameCallback(handle);
+    };
+  }, [video, cx, cy, cw, ch]);
+
+  if (!video) return null;
   return <canvas ref={ref} className={className} />;
 }
 

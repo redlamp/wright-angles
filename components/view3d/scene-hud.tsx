@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
+import { INPUT_TYPES, SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { Slider } from "@/components/ui/slider";
 
 /** The FPS span; scene-view's FpsProbe writes its textContent at ~2Hz. */
@@ -16,6 +16,8 @@ export const FPS_NODE_ID = "scene-fps-readout";
 export default function SceneHud({ onExport }: { onExport?: () => void }) {
   const scenario = useViewerStore((s) => s.scenario);
   const setScenario = useViewerStore((s) => s.setScenario);
+  const inputType = useViewerStore((s) => s.inputType);
+  const setInputType = useViewerStore((s) => s.setInputType);
   const heightCm = useViewerStore((s) => s.heightCm);
   const setHeightCm = useViewerStore((s) => s.setHeightCm);
 
@@ -46,6 +48,23 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                   : "text-muted-foreground hover:text-foreground",
               )}
               onClick={() => setScenario(o.id)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <div className="panel-inset mt-1 flex h-7 items-center gap-0.5 rounded-md p-0.5">
+          {INPUT_TYPES.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={cn(
+                "h-full flex-1 rounded-[5px] text-[11px] transition-colors",
+                o.id === inputType
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setInputType(o.id)}
             >
               {o.label}
             </button>
