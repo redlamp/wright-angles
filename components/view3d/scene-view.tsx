@@ -234,28 +234,27 @@ function computeLabelPlacements(
 
   // Floor labels all sit ~5cm above the floor on their drop lines, so only
   // the distance separates them; a "360 cm" readout is ~18cm wide.
-  let floor: Info[] = [];
-  const flushFloor = () => {
-    if (floor.length > 1) {
-      floor.forEach((m, idx) => {
-        const p = out.get(m.id)!;
-        // Inner-Y offsets inside the rotated label clip: nearest label
-        // steps DOWN, next steps up, alternating outward — parallel
-        // diagonals separated by just over one text height ("just
-        // enough" plus padding), ordered like their depth.
-        p.distX = 0;
-        p.distLift =
-          (idx % 2 === 0 ? -1 : 1) * (Math.floor(idx / 2) + 1) * 3.2;
-      });
+  // Floor labels: need-based ramp. Each label sums pairwise pressure
+  // from neighbors within RANGE — zero when clear, growing linearly as
+  // the gap closes. Nearer-than-neighbor pushes down (negative),
+  // farther pushes up, so isolated labels sit exactly on their node
+  // and crowded ones separate only as much as they must. The sign is
+  // re-oriented per frame from the camera side (device-rect).
+  const RANGE = 25;
+  const MAX_LIFT = 4;
+  for (const a of infos) {
+    let need = 0;
+    for (const b of infos) {
+      if (a === b) continue;
+      const gap = Math.abs(a.z - b.z);
+      if (gap < RANGE) {
+        need += (a.z < b.z ? -1 : 1) * (1 - gap / RANGE);
+      }
     }
-    floor = [];
-  };
-  for (const info of infos) {
-    const prev = floor[floor.length - 1];
-    if (prev && info.z - prev.z > 18) flushFloor();
-    floor.push(info);
+    const p = out.get(a.id)!;
+    p.distX = 0;
+    p.distLift = Math.max(-1.6, Math.min(1.6, need)) * MAX_LIFT;
   }
-  flushFloor();
 
   return out;
 }

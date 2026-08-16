@@ -6,7 +6,9 @@ import {
   BufferAttribute,
   DoubleSide,
   MathUtils,
+  Vector3,
   type BufferGeometry,
+  type Camera,
   type Group,
   type Texture,
 } from "three";
@@ -81,19 +83,27 @@ function updateProjection(
 }
 
 /**
- * Camera-aware de-collision: the inner-Y offset reinforces apparent
- * depth, inverting as the camera orbits past this device's distance
- * plane. tanh blends the inversion over ~±50cm of camera travel, so
- * the labels glide through the swap instead of jumping.
+ * Camera-aware de-collision. The base offsets assume "farther projects
+ * screen-right"; this measures the actual on-screen direction of the
+ * depth axis each frame by projecting two points of the sight line,
+ * and scales the offset by it. Viewing from the other side of the
+ * human flips the factor (labels invert); edge-on it passes through
+ * zero, so the swap is always a glide. Module-level temps avoid
+ * per-frame allocation.
  */
+const _projA = new Vector3();
+const _projB = new Vector3();
 function applyLabelLift(
   group: Group | null,
   baseLift: number,
-  camZ: number,
+  camera: Camera,
   deviceZ: number,
 ) {
   if (!group) return;
-  group.position.y = baseLift * Math.tanh((deviceZ - camZ) / 50);
+  _projA.set(0, 1.2, deviceZ).project(camera);
+  _projB.set(0, 1.2, deviceZ + 40).project(camera);
+  const f = MathUtils.clamp((_projB.x - _projA.x) * 6, -1, 1);
+  group.position.y = baseLift * f;
 }
 
 function applyCenterY(
@@ -281,7 +291,7 @@ export default function DeviceRect({
     applyLabelLift(
       distLiftRef.current,
       lp.distLift,
-      state.camera.position.z,
+      state.camera,
       device.distanceCm,
     );
     if (showProjection || selected) {
