@@ -241,10 +241,11 @@ function computeLabelPlacements(
         const p = out.get(m.id)!;
         // Inner-Y offsets inside the rotated label clip: nearest label
         // steps DOWN, next steps up, alternating outward — parallel
-        // diagonals with an even buffer, ordered like their depth.
+        // diagonals separated by just over one text height ("just
+        // enough" plus padding), ordered like their depth.
         p.distX = 0;
         p.distLift =
-          (idx % 2 === 0 ? -1 : 1) * (Math.floor(idx / 2) + 1) * 5;
+          (idx % 2 === 0 ? -1 : 1) * (Math.floor(idx / 2) + 1) * 3.2;
       });
     }
     floor = [];

@@ -82,9 +82,9 @@ function updateProjection(
 
 /**
  * Camera-aware de-collision: the inner-Y offset reinforces apparent
- * depth, so it inverts when the camera orbits past this device's
- * distance plane (what was "nearer, so lower" becomes "farther, so
- * higher" from the other side).
+ * depth, inverting as the camera orbits past this device's distance
+ * plane. tanh blends the inversion over ~±50cm of camera travel, so
+ * the labels glide through the swap instead of jumping.
  */
 function applyLabelLift(
   group: Group | null,
@@ -93,7 +93,7 @@ function applyLabelLift(
   deviceZ: number,
 ) {
   if (!group) return;
-  group.position.y = camZ > deviceZ ? -baseLift : baseLift;
+  group.position.y = baseLift * Math.tanh((deviceZ - camZ) / 50);
 }
 
 function applyCenterY(
