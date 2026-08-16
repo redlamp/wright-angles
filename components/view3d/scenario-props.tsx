@@ -174,10 +174,13 @@ export default function ScenarioProps({
   });
 
   useFrame((state, delta) => {
+    // Demand frameloop: the first frame after idle carries a huge delta
+    // (time since the last render), which would snap the crossfade to
+    // its end in one step. Clamp to a normal frame's worth.
     const moving = stepFurniture(
       progress.current,
       scenario,
-      delta / TWEEN_S,
+      Math.min(delta, 1 / 30) / TWEEN_S,
       deskRef.current,
       couchRef.current,
     );
