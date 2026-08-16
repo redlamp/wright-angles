@@ -72,6 +72,10 @@ export async function ensureEngine(
       claim.engine = engine;
       store.setAnimated(true);
       bumpEngineNonce();
+    } else if (current === claim) {
+      // Creation failed: release the claim so re-selecting the item
+      // retries instead of being swallowed by the same-id early return.
+      current = null;
     }
   }
   // No ImageDecoder support → GIFs stay native-animated in 2D, static
@@ -129,7 +133,6 @@ function createVideoEngine(url: string): VideoEngine {
 }
 
 interface GifFrame {
-  bitmap: ImageBitmap;
   startSec: number;
   durSec: number;
 }
@@ -162,24 +165,33 @@ async function createGifEngine(url: string): Promise<GifEngine | null> {
       return null;
     }
 
+    // Timeline pass only: read durations, retain NOTHING. Pre-decoding
+    // every frame into ImageBitmaps looks tempting but a 1080p 86-frame
+    // GIF is ~700MB of retained bitmaps — the allocation fails and the
+    // whole engine silently never existed. Frames are decoded on demand
+    // instead (~2ms each); memory stays at one frame.
     const frames: GifFrame[] = [];
     let t = 0;
+    let firstW = 0;
+    let firstH = 0;
     for (let i = 0; i < frameCount; i++) {
       const { image } = await decoder.decode({ frameIndex: i });
       // GIF frame delays arrive in microseconds; 0 means "browser
       // default", conventionally ~100ms.
       const durSec = image.duration ? image.duration / 1e6 : 0.1;
-      const bitmap = await createImageBitmap(image);
+      if (i === 0) {
+        firstW = image.displayWidth;
+        firstH = image.displayHeight;
+      }
       image.close();
-      frames.push({ bitmap, startSec: t, durSec });
+      frames.push({ startSec: t, durSec });
       t += durSec;
     }
-    decoder.close();
     const duration = t;
 
     const canvas = document.createElement("canvas");
-    canvas.width = frames[0].bitmap.width;
-    canvas.height = frames[0].bitmap.height;
+    canvas.width = firstW;
+    canvas.height = firstH;
     const g = canvas.getContext("2d")!;
 
     const listeners = new Set<() => void>();
@@ -190,6 +202,9 @@ async function createGifEngine(url: string): Promise<GifEngine | null> {
     let lastTs = 0;
     let lastReport = 0;
     let disposed = false;
+    // Monotonic guard so an out-of-order async decode never paints over
+    // a newer frame.
+    let drawSeq = 0;
 
     const drawAt = (timeSec: number) => {
       const wrapped = Math.min(timeSec, duration - 1e-4);
@@ -202,10 +217,21 @@ async function createGifEngine(url: string): Promise<GifEngine | null> {
       }
       if (idx !== frameIdx) {
         frameIdx = idx;
-        g.clearRect(0, 0, canvas.width, canvas.height);
-        g.drawImage(frames[idx].bitmap, 0, 0);
-        engine.stamp = ++stamp;
-        listeners.forEach((cb) => cb());
+        const seq = ++drawSeq;
+        decoder
+          .decode({ frameIndex: idx })
+          .then(({ image }) => {
+            if (!disposed && seq === drawSeq) {
+              g.clearRect(0, 0, canvas.width, canvas.height);
+              g.drawImage(image, 0, 0);
+              engine.stamp = ++stamp;
+              listeners.forEach((cb) => cb());
+            }
+            image.close();
+          })
+          .catch(() => {
+            // A dropped frame is preferable to a dead engine.
+          });
       }
     };
 
@@ -254,11 +280,14 @@ async function createGifEngine(url: string): Promise<GifEngine | null> {
         disposed = true;
         cancelAnimationFrame(raf);
         listeners.clear();
-        frames.forEach((f) => f.bitmap.close());
+        decoder.close();
       },
     };
     return engine;
-  } catch {
+  } catch (err) {
+    // Surface it: a silent null here once cost a "GIFs don't animate in
+    // 3D" bug report.
+    console.warn("GIF playback engine failed:", err);
     return null;
   }
 }
