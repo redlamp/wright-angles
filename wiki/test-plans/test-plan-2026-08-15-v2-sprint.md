@@ -109,6 +109,18 @@ automation can't verify WebGL or feel).
       node (a grab cursor is a promise — the text keeps it).
 - [ ] Cursor never sticks: releasing a drag off-target, or the pointer
       exiting the canvas mid-hover, returns the normal cursor.
+- [ ] Mannequin is shaded (smooth forms, not flat fills) in both scene
+      themes; silhouette unchanged from before.
+- [ ] Input types row (Handheld / Gamepad / Mouse & KB) under the
+      stance row: all 9 stance × input combos pose sensibly. Standing +
+      Mouse & KB raises a standing desk; other standing inputs have no
+      furniture; couch + Mouse & KB types on the lap.
+- [ ] Height slider tracks the thumb instantly (figure, sight line,
+      rects, labels); stance/input changes still tween at 0.5s.
+- [ ] Device name + distance labels carry a subtle 1px-style black drop
+      shadow; distance labels still render on top of ground, figure,
+      and furniture (regression: the shadow's troika re-sync dropped
+      the depthTest override until it moved into onSync).
 
 ## Suggested next (not yet built — rank these)
 

@@ -10,6 +10,8 @@ import {
   type BufferGeometry,
   type Camera,
   type Group,
+  type Material,
+  type Object3D,
   type Texture,
 } from "three";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
@@ -118,6 +120,22 @@ function setBodyCursor(cursor: string) {
   document.body.style.cursor = cursor;
 }
 
+/**
+ * Distance labels draw over scene geometry (feet, furniture, even the
+ * floor) — they're readouts, not objects in the room. Applied via the
+ * Text's onSync so it survives troika re-syncs (label changes, outline
+ * settings), which rebuild materials AFTER a mount effect would have
+ * run; the traverse also catches the outline sub-mesh.
+ */
+function raiseDistLabel(text: Object3D) {
+  text.traverse((o) => {
+    o.renderOrder = 20;
+    const m = (o as { material?: Material | Material[] }).material;
+    if (!m) return;
+    for (const mat of Array.isArray(m) ? m : [m]) mat.depthTest = false;
+  });
+}
+
 function applyCenterY(
   rect: Group | null,
   drop: Group | null,
@@ -181,6 +199,7 @@ const ZERO_LABELS: LabelPlacement = { nameX: 0, nameLift: 0, distX: 0, distLift:
 export default function DeviceRect({
   device,
   centerY,
+  poseKey,
   palette,
   media,
   displayFill,
@@ -196,6 +215,11 @@ export default function DeviceRect({
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
   centerY: number;
+  /**
+   * Changes when the stance does; a centerY change WITH a poseKey change
+   * tweens, one without (the height slider) snaps.
+   */
+  poseKey?: string;
   palette: ScenePalette;
   media?: ScreenMedia | null;
   /**
@@ -275,12 +299,21 @@ export default function DeviceRect({
   const curY = useRef(centerY);
   const anim = useRef<{ from: number; start: number | null } | null>(null);
   const prevTarget = useRef(centerY);
+  const prevPoseKey = useRef(poseKey);
   useEffect(() => {
     if (prevTarget.current !== centerY) {
-      anim.current = { from: curY.current, start: null };
+      // Tween when the stance (poseKey) changed; height-slider edits
+      // snap so the rect tracks the drag without trailing it.
+      if (prevPoseKey.current !== poseKey) {
+        anim.current = { from: curY.current, start: null };
+      } else {
+        anim.current = null;
+        curY.current = centerY;
+      }
       prevTarget.current = centerY;
     }
-  }, [centerY]);
+    prevPoseKey.current = poseKey;
+  }, [centerY, poseKey]);
 
   useFrame((state) => {
     const a = anim.current;
@@ -399,21 +432,7 @@ export default function DeviceRect({
   const backing = displayFill === "device-color" ? device.color : "#000000";
 
   const distLabel = `${Math.round(device.distanceCm)} cm`;
-  // Drawn over scene geometry (feet, furniture, even the floor) — it's
-  // a readout, not an object in the room. That's also what lets the
-  // label anchor directly on the node without the ground hiding it.
-  const distTextRef = useRef<{
-    material?: { depthTest: boolean };
-    renderOrder?: number;
-  } | null>(null);
   const distLiftRef = useRef<Group>(null);
-  useEffect(() => {
-    const t = distTextRef.current;
-    if (t?.material) {
-      t.material.depthTest = false;
-      t.renderOrder = 20;
-    }
-  }, [distLabel]);
 
   const body =
     device.show3dBody !== false && device.deviceName
@@ -529,6 +548,10 @@ export default function DeviceRect({
             color={device.color}
             anchorX="center"
             anchorY="bottom"
+            outlineColor="#000000"
+            outlineOpacity={0.5}
+            outlineOffsetX="3%"
+            outlineOffsetY="3%"
           >
             {device.label}
           </Text>
@@ -586,12 +609,16 @@ export default function DeviceRect({
               {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
               <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
                 <Text
-                  ref={distTextRef}
                   fontSize={5}
                   color={device.color}
                   anchorX="left"
                   anchorY="middle"
                   position={[6, 0, 0]}
+                  outlineColor="#000000"
+                  outlineOpacity={0.5}
+                  outlineOffsetX="3%"
+                  outlineOffsetY="3%"
+                  onSync={raiseDistLabel}
                   {...(dragHandlers ?? {})}
                 >
                   {distLabel}
