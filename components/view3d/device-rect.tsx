@@ -80,6 +80,22 @@ function updateProjection(
   attr.needsUpdate = true;
 }
 
+/**
+ * Camera-aware de-collision: the inner-Y offset reinforces apparent
+ * depth, so it inverts when the camera orbits past this device's
+ * distance plane (what was "nearer, so lower" becomes "farther, so
+ * higher" from the other side).
+ */
+function applyLabelLift(
+  group: Group | null,
+  baseLift: number,
+  camZ: number,
+  deviceZ: number,
+) {
+  if (!group) return;
+  group.position.y = camZ > deviceZ ? -baseLift : baseLift;
+}
+
 function applyCenterY(
   rect: Group | null,
   drop: Group | null,
@@ -262,6 +278,12 @@ export default function DeviceRect({
       curY.current,
       heightCm,
     );
+    applyLabelLift(
+      distLiftRef.current,
+      lp.distLift,
+      state.camera.position.z,
+      device.distanceCm,
+    );
     if (showProjection || selected) {
       updateProjection(
         projRef.current,
@@ -317,6 +339,7 @@ export default function DeviceRect({
     material?: { depthTest: boolean };
     renderOrder?: number;
   } | null>(null);
+  const distLiftRef = useRef<Group>(null);
   useEffect(() => {
     const t = distTextRef.current;
     if (t?.material) {
@@ -521,16 +544,19 @@ export default function DeviceRect({
               buffer. */}
           <Billboard position={[0, 1.2, 0]}>
             <group rotation={[0, 0, -Math.PI / 6]}>
-              <Text
-                ref={distTextRef}
-                fontSize={5}
-                color={device.color}
-                anchorX="left"
-                anchorY="middle"
-                position={[2.2, lp.distLift, 0]}
-              >
-                {distLabel}
-              </Text>
+              {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
+              <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
+                <Text
+                  ref={distTextRef}
+                  fontSize={5}
+                  color={device.color}
+                  anchorX="left"
+                  anchorY="middle"
+                  position={[6, 0, 0]}
+                >
+                  {distLabel}
+                </Text>
+              </group>
             </group>
           </Billboard>
         </group>
