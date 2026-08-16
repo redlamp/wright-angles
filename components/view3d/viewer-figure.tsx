@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { MathUtils, MeshBasicMaterial, Vector3, type Group, type Mesh } from "three";
+import { MathUtils, MeshStandardMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
@@ -15,7 +15,15 @@ export const SEAT_Y: Record<Exclude<Scenario, "standing">, number> = {
   couch: 40,
 };
 
-const FIGURE_MAT = new MeshBasicMaterial({ color: "#b6b6b6" });
+// Lit (unlike everything else in the scene) so the capsules and boxes
+// shade and their forms read; the figure lights in scene-view exist
+// solely for this material. Smooth shading on purpose — Taylor rejected
+// the faceted look (2026-08-15): "more accurate and generic".
+const FIGURE_MAT = new MeshStandardMaterial({
+  color: "#b6b6b6",
+  roughness: 0.9,
+  metalness: 0,
+});
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -229,8 +237,8 @@ function applyPose(
 }
 
 /**
- * Stylized low-poly human at the origin facing +Z. Unlit on purpose — the
- * scene has no lighting rig. Posed imperatively in useFrame so scenario
+ * Stylized low-poly human at the origin facing +Z, lit by the figure-only
+ * lights in scene-view. Posed imperatively in useFrame so scenario
  * changes tween (~0.5s ease in-out) instead of snapping.
  */
 export default function ViewerFigure({

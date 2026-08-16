@@ -487,6 +487,10 @@ export default function SceneView({
           <meshBasicMaterial color={palette.ground} />
         </mesh>
 
+        {/* Figure-only lighting: every other mesh is unlit, so these
+            lights exist purely to shade the figure's forms. */}
+        <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
+        <directionalLight position={[-140, 220, -90]} intensity={1.3} />
         <ViewerFigure scenario={scenario} heightCm={heightCm} palette={palette} />
         <ScenarioProps scenario={scenario} palette={palette} />
 
