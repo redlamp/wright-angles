@@ -91,7 +91,7 @@ const SORT_LABELS: Record<SortMode, string> = {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
   );
@@ -306,7 +306,7 @@ function LibraryList() {
       </div>
 
       {items.length === 0 ? (
-        <p className="px-2.5 pb-2.5 text-sm text-muted-foreground">
+        <p className="px-2.5 pb-2.5 text-base text-muted-foreground">
           No media yet. Drop images or videos anywhere in the window.
         </p>
       ) : view === "grid" ? (
@@ -355,10 +355,10 @@ function LibraryList() {
                   className="size-full object-cover"
                 />
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm" title={item.name}>
+              <span className="min-w-0 flex-1 truncate text-base" title={item.name}>
                 {item.name}
               </span>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              <span className="shrink-0 font-mono text-sm text-muted-foreground">
                 {item.width}×{item.height}
               </span>
             </button>
@@ -572,7 +572,7 @@ function CropSection({ item }: { item: MediaItem }) {
         <Button
           variant={noneActive ? "default" : "secondary"}
           size="sm"
-          className="h-6 px-1.5 text-xs"
+          className="h-6 px-1.5 text-sm"
           aria-pressed={noneActive}
           title="Show the full frame, uncropped"
           onClick={() => setCrop(item.id, undefined)}
@@ -584,7 +584,7 @@ function CropSection({ item }: { item: MediaItem }) {
             key={label}
             variant={active ? "default" : "secondary"}
             size="sm"
-            className="h-6 px-1.5 text-xs"
+            className="h-6 px-1.5 text-sm"
             aria-pressed={active}
             title={
               wholeFrame
@@ -601,7 +601,7 @@ function CropSection({ item }: { item: MediaItem }) {
         <Button
           variant={customActive ? "default" : "secondary"}
           size="sm"
-          className="h-6 px-1.5 text-xs"
+          className="h-6 px-1.5 text-sm"
           aria-pressed={customActive}
           title="Freeform crop — drag the window on the preview above"
           onClick={() => {
@@ -784,17 +784,17 @@ function ScanResults({
                     : scanBandColor(arcmin),
               }}
             />
-            <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
+            <span className="w-5 shrink-0 font-mono text-sm text-muted-foreground">
               {i + 1}
             </span>
             <span
-              className="min-w-0 flex-1 truncate text-sm"
+              className="min-w-0 flex-1 truncate text-base"
               title={line.text}
             >
               {line.text}
             </span>
             <span
-              className="shrink-0 font-mono text-xs text-muted-foreground"
+              className="shrink-0 font-mono text-sm text-muted-foreground"
               title={
                 line.sizePx
                   ? "Group-corrected font size (raw ink box may be shorter)"
@@ -804,7 +804,7 @@ function ScanResults({
               {shownPx}px · {Math.round(line.confidence)}%
             </span>
             <span
-              className="shrink-0 font-mono text-xs"
+              className="shrink-0 font-mono text-sm"
               style={{ color: scanBandColor(arcmin) }}
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
@@ -940,7 +940,7 @@ function TextDetectionSection({
             <Button
               variant="secondary"
               size="sm"
-              className="h-6 px-1.5 text-xs"
+              className="h-6 px-1.5 text-sm"
               disabled={running}
               title="Scan every unscanned keyframe in order"
               onClick={onScanAll}
@@ -951,7 +951,7 @@ function TextDetectionSection({
           <Button
             variant="secondary"
             size="sm"
-            className="h-6 px-1.5 text-xs"
+            className="h-6 px-1.5 text-sm"
             disabled={running || !canScan}
             title={
               animated
@@ -968,21 +968,21 @@ function TextDetectionSection({
         </span>
       </div>
       {failed ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Couldn&apos;t detect text — see console.
         </p>
       ) : null}
       <div className="flex items-center justify-between gap-2">
         {failed ? null : animated ? (
           note ? (
-            <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground">
               {note}
             </p>
           ) : (
             <span className="flex-1" />
           )
         ) : scan ? (
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
             {scan.lines.length === 0
               ? "No text found."
               : `${scan.lines.length} text line${
@@ -1010,7 +1010,7 @@ function TextDetectionSection({
                     : "Color by legibility verdict on This Device"
                 }
                 className={cn(
-                  "h-full rounded-[5px] px-1.5 text-xs transition-colors",
+                  "h-full rounded-[5px] px-1.5 text-sm transition-colors",
                   colorMode === m.id
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground",
@@ -1038,7 +1038,7 @@ function ScanFollowThrough() {
       <Button
         variant="ghost"
         size="sm"
-        className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+        className="h-6 px-1.5 text-sm text-muted-foreground hover:text-foreground"
         title="Switch to the Perception Report tab — measured text carries its read content"
         onClick={() => openWorkbenchTab("report")}
       >
@@ -1171,14 +1171,14 @@ function DetailCard({ item }: { item: MediaItem }) {
         <div className="flex gap-2">
           <button
             type="button"
-            className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
+            className="h-8 flex-1 rounded-md bg-destructive text-base text-white transition-opacity hover:opacity-90"
             onClick={() => void remove(item.id)}
           >
             Really remove
           </button>
           <button
             type="button"
-            className="ctl-quiet h-8 flex-1 text-sm"
+            className="ctl-quiet h-8 flex-1 text-base"
             onClick={() => setArmed(false)}
           >
             Cancel
@@ -1190,10 +1190,10 @@ function DetailCard({ item }: { item: MediaItem }) {
           what the simulation displays vs what the file is. */}
       <div className="grid grid-cols-2 gap-1.5">
         <div className="panel-inset rounded-md px-2.5 py-1.5">
-          <div className="text-xs tracking-wide text-muted-foreground uppercase">
+          <div className="text-sm tracking-wide text-muted-foreground uppercase">
             Display{item.crop ? " · cropped" : ""}
           </div>
-          <div className="font-mono text-xs leading-5">
+          <div className="font-mono text-sm leading-5">
             {eff.width}×{eff.height} · {aspect.w}:{aspect.h}
             {item.kind === "video" && item.duration
               ? ` · ${Math.round(item.duration)}s`
@@ -1201,10 +1201,10 @@ function DetailCard({ item }: { item: MediaItem }) {
           </div>
         </div>
         <div className="panel-inset rounded-md px-2.5 py-1.5">
-          <div className="text-xs tracking-wide text-muted-foreground uppercase">
+          <div className="text-sm tracking-wide text-muted-foreground uppercase">
             Source
           </div>
-          <div className="font-mono text-xs leading-5">
+          <div className="font-mono text-sm leading-5">
             {item.width}×{item.height}
           </div>
         </div>
@@ -1265,14 +1265,14 @@ function DetailCard({ item }: { item: MediaItem }) {
         onClearAll={() => clearDetection(item.id)}
       />
 
-      <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
+      <label className="flex h-9 items-center justify-between gap-2 text-base text-muted-foreground">
         <span className="flex items-center gap-1.5">
           Reference size
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger
                 aria-label="What reference size means"
-                className="flex size-4 cursor-help items-center justify-center rounded-full border border-muted-foreground/50 text-xs leading-none transition-colors hover:border-foreground/60 hover:text-foreground"
+                className="flex size-4 cursor-help items-center justify-center rounded-full border border-muted-foreground/50 text-sm leading-none transition-colors hover:border-foreground/60 hover:text-foreground"
               >
                 ?
               </TooltipTrigger>
@@ -1328,7 +1328,7 @@ function DisplayFillRow() {
             key={o.value}
             type="button"
             className={cn(
-              "h-full rounded-[6px] px-2.5 text-xs transition-colors",
+              "h-full rounded-[6px] px-2.5 text-sm transition-colors",
               o.value === displayFill
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:text-foreground",
@@ -1360,7 +1360,7 @@ export function MediaLibraryContent() {
       {active ? (
         <DetailCard key={active.id} item={active} />
       ) : (
-        <p className="p-2.5 text-sm text-muted-foreground">
+        <p className="p-2.5 text-base text-muted-foreground">
           Select something in the library to see its details.
         </p>
       )}

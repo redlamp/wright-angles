@@ -63,7 +63,7 @@ const ROW_GRID =
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
   );
@@ -120,7 +120,7 @@ function UnitFlip({
           key={u}
           type="button"
           className={cn(
-            "rounded px-1.5 py-0.5 text-xs transition-colors",
+            "rounded px-1.5 py-0.5 text-sm transition-colors",
             u === value
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:text-foreground",
@@ -141,7 +141,7 @@ function AngleReadout({ device }: { device: Device }) {
   const pxFor = (arcmin: number) =>
     a.arcminPerPx > 0 ? Math.ceil(arcmin / a.arcminPerPx) : 0;
   return (
-    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
+    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-sm leading-5 text-muted-foreground">
       <div>
         {a.horizontalArcmin.toFixed(0)}′ × {a.verticalArcmin.toFixed(0)}′ (
         {a.horizontalDeg.toFixed(1)}° × {a.verticalDeg.toFixed(1)}°)
@@ -310,7 +310,7 @@ export function DeviceEditor({
               onPatch({ resolution: { ...device.resolution, w } });
             }}
           />
-          <span className="text-sm text-muted-foreground">×</span>
+          <span className="text-base text-muted-foreground">×</span>
           <Input
             className="min-w-0 flex-1 text-right font-mono"
             type="number"
@@ -330,7 +330,7 @@ export function DeviceEditor({
                 key={`${r.w}x${r.h}`}
                 type="button"
                 className={cn(
-                  "rounded-md px-2 py-1 font-mono text-xs transition-colors",
+                  "rounded-md px-2 py-1 font-mono text-sm transition-colors",
                   r.w === device.resolution.w && r.h === device.resolution.h
                     ? "bg-foreground text-background"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -374,7 +374,7 @@ export function DeviceEditor({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Microlabel>Screen height · {scenarioLabel.toLowerCase()}</Microlabel>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
             Eye level
             <Switch
               checked={elevation === undefined}
@@ -433,7 +433,7 @@ export function DeviceEditor({
       </div>
 
       {device.deviceName && HANDHELD_BODIES[device.deviceName] ? (
-        <label className="flex h-8 items-center justify-between text-sm">
+        <label className="flex h-8 items-center justify-between text-base">
           <span className="text-muted-foreground">3D device body</span>
           <Switch
             checked={device.show3dBody !== false}
@@ -586,7 +586,7 @@ function DeviceRow({
               : undefined
           }
           className={cn(
-            "min-w-0 truncate text-left text-sm",
+            "min-w-0 truncate text-left text-base",
             !device.visible && "text-muted-foreground",
             reorder && "cursor-grab active:cursor-grabbing",
           )}
@@ -659,7 +659,7 @@ function AddDeviceMenu() {
         {groups.map((g, i) => (
           <DropdownMenuGroup key={g.cat}>
             {i > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuLabel className="text-xs tracking-wide text-muted-foreground uppercase">
+            <DropdownMenuLabel className="text-sm tracking-wide text-muted-foreground uppercase">
               {CATEGORY_LABELS[g.cat]}
             </DropdownMenuLabel>
             {g.presets.map((p) => (
@@ -668,7 +668,7 @@ function AddDeviceMenu() {
                 onClick={() => addFromPreset(p)}
               >
                 <span className="flex-1">{p.label}</span>
-                <span className="font-mono text-xs text-muted-foreground">
+                <span className="font-mono text-sm text-muted-foreground">
                   {p.resolution.w}×{p.resolution.h}
                 </span>
               </DropdownMenuItem>
@@ -720,7 +720,7 @@ function DetailFlyout() {
           className="size-2.5 shrink-0 rounded-full"
           style={{ background: device.color }}
         />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        <span className="min-w-0 flex-1 truncate text-base font-medium">
           {device.label}
         </span>
         <Button

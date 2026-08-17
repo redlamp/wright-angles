@@ -171,7 +171,7 @@ export function ComparisonTablePanel() {
       width={620}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-auto p-2.5">
-        <table className="w-full border-collapse font-mono text-sm">
+        <table className="w-full border-collapse font-mono text-base">
           <thead>
             <tr className="text-left text-muted-foreground">
               {COLUMNS.map((c) => (
@@ -254,7 +254,7 @@ export function ComparisonTablePanel() {
           </tbody>
         </table>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             * sub-retina: under 60 PPD, individual pixels are visible.
           </span>
           <Button variant="secondary" size="sm" onClick={exportCsv}>

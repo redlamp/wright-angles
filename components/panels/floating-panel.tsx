@@ -191,9 +191,9 @@ export function FloatingPanel({
         onPointerUp={onHeaderPointerUp}
       >
         <Icon className="size-3.5 text-muted-foreground" />
-        <span className="text-sm font-medium">{title}</span>
+        <span className="text-base font-medium">{title}</span>
         {headerNote ? (
-          <span className="min-w-0 flex-1 truncate px-2 text-center text-xs text-muted-foreground/70">
+          <span className="min-w-0 flex-1 truncate px-2 text-center text-sm text-muted-foreground/70">
             {headerNote}
           </span>
         ) : (

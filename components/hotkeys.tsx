@@ -154,17 +154,17 @@ export function Hotkeys() {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-baseline justify-between">
-          <span className="text-sm font-medium">Keyboard shortcuts</span>
-          <span className="text-xs text-muted-foreground">Esc to close</span>
+          <span className="text-base font-medium">Keyboard shortcuts</span>
+          <span className="text-sm text-muted-foreground">Esc to close</span>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-base">
           <tbody>
             {CHEAT_ROWS.map((r) => (
               <tr key={r.keys} className={r.soon ? "text-muted-foreground/60" : ""}>
-                <td className="py-1 pr-3 whitespace-nowrap font-mono text-xs">
+                <td className="py-1 pr-3 whitespace-nowrap font-mono text-sm">
                   {r.keys}
                 </td>
-                <td className="py-1 text-xs">
+                <td className="py-1 text-sm">
                   {r.does}
                   {r.soon ? " (soon)" : ""}
                 </td>

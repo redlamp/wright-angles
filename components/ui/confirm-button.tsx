@@ -24,7 +24,7 @@ export function ConfirmButton({
       variant={armed ? "destructive" : "ghost"}
       size="sm"
       className={cn(
-        "h-6 px-1.5 text-xs",
+        "h-6 px-1.5 text-sm",
         !armed &&
           "text-destructive hover:bg-destructive/10 hover:text-destructive",
       )}

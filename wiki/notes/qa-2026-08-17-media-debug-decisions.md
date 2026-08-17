@@ -51,9 +51,12 @@ distance") unpacks as:
   font size per group, with a visible group indicator.
 - **Type scale lives inside the design system** (plan 2): Taylor
   wants demonstrable design-system craft — sizes come from Tailwind's
-  type tokens and shadcn conventions (`text-sm` 14px base,
-  `text-xs` 12px floor, no arbitrary `text-[10px]`/`text-[11px]`
-  values), not bespoke pixel values.
+  type tokens and shadcn conventions, no arbitrary pixel values.
+  REVISED 18:01: the whole scale shifted up one rung — `text-base`
+  (16px) is the working default for content and controls, `text-sm`
+  (14px) is the captions/microlabels/mono floor, `text-xs` is banned.
+  The shadcn ui components themselves were re-based accordingly
+  (Button base/sm/xs, Input, Select, Dropdown, Tooltip).
 - **Hotkey map confirmed** (plan 4): m/d/p/c/s panels · Tab 2D↔3D ·
   o OCR overlay · x crop · 1/2/3 stances · q/w/e input types ·
   ? cheat-sheet overlay (to be built — does not exist yet).

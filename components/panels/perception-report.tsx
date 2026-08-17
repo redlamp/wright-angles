@@ -217,7 +217,7 @@ export function PerceptionReportContent() {
         key={key}
         type="button"
         className={cn(
-          "w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+          "w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors",
           selected ? "panel-inset ring-1 ring-ring ring-inset" : "hover:bg-muted/50",
         )}
         title={blessed ? undefined : ratioNote(r)}
@@ -274,7 +274,7 @@ export function PerceptionReportContent() {
             <button
               type="button"
               className={cn(
-                "mb-1 flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left text-sm font-medium transition-colors",
+                "mb-1 flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left text-base font-medium transition-colors",
                 column === "all"
                   ? "panel-inset ring-1 ring-ring ring-inset"
                   : "hover:bg-muted/50",
@@ -287,7 +287,7 @@ export function PerceptionReportContent() {
             {deviceEntry(thisDevice, true)}
             {devices.map((d) => deviceEntry(d, false))}
             {mode === "all" ? (
-              <p className="px-2 pt-1 text-xs leading-4.5 text-muted-foreground">
+              <p className="px-2 pt-1 text-sm leading-4.5 text-muted-foreground">
                 What you see on {thisDevice.label} at{" "}
                 {formatDistance(thisDevice.distanceCm, unit)} is not what
                 people see elsewhere — {"select a device to expand it."}
@@ -295,7 +295,7 @@ export function PerceptionReportContent() {
             ) : null}
           </div>
           {detailsDevice ? (
-            <div className="shrink-0 border-t border-border px-2.5 py-2 text-xs">
+            <div className="shrink-0 border-t border-border px-2.5 py-2 text-sm">
               <span
                 className="font-medium"
                 style={{ color: detailsDevice.color }}
@@ -335,7 +335,7 @@ export function PerceptionReportContent() {
                   <EyeOffIcon className="size-3.5" />
                 )}
               </button>
-              <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <span className="min-w-0 truncate text-sm font-medium tracking-wide text-muted-foreground uppercase">
                 Scanned text{activeItem ? ` · ${activeItem.name}` : ""}
               </span>
             </span>
@@ -358,7 +358,7 @@ export function PerceptionReportContent() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="h-6 px-1.5 text-xs"
+                  className="h-6 px-1.5 text-sm"
                   disabled={detecting}
                   title={
                     animatedActive
@@ -374,12 +374,12 @@ export function PerceptionReportContent() {
             ) : null}
           </div>
           {detectFailed ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Couldn&apos;t detect text — see console.
             </p>
           ) : null}
           {!activeItem ? (
-            <p className="panel-inset flex items-center gap-1 rounded-md px-2.5 py-2 text-xs text-muted-foreground">
+            <p className="panel-inset flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-muted-foreground">
               No active media.
               <button
                 type="button"
@@ -391,7 +391,7 @@ export function PerceptionReportContent() {
               </button>
             </p>
           ) : textEntries.length === 0 ? (
-            <p className="panel-inset rounded-md px-2.5 py-2 text-xs text-muted-foreground">
+            <p className="panel-inset rounded-md px-2.5 py-2 text-sm text-muted-foreground">
               Nothing measured yet — run Detect Text Size or draw measure
               boxes in the 2D view.
             </p>
@@ -401,7 +401,7 @@ export function PerceptionReportContent() {
                 <li
                   key={e.id}
                   className={cn(
-                    "panel-inset cursor-pointer rounded-md px-2.5 py-1.5 text-xs transition-shadow",
+                    "panel-inset cursor-pointer rounded-md px-2.5 py-1.5 text-sm transition-shadow",
                     e.id === selectedBoxId && "ring-1 ring-ring",
                   )}
                   onClick={() =>
@@ -415,7 +415,7 @@ export function PerceptionReportContent() {
                     >
                       {e.label}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    <span className="shrink-0 font-mono text-sm text-muted-foreground">
                       {e.kfTime !== null ? `@ ${fmtKfTime(e.kfTime)} · ` : ""}
                       {e.srcH}px
                     </span>
@@ -440,7 +440,7 @@ export function PerceptionReportContent() {
                       return (
                         <span
                           key={d.id}
-                          className="flex items-center gap-1 font-mono text-xs text-muted-foreground"
+                          className="flex items-center gap-1 font-mono text-sm text-muted-foreground"
                           title={`${d.label}: ${m.mm.toFixed(1)}mm tall, ${Math.round(m.devicePx)}px`}
                         >
                           <LegibilityDot arcmin={m.arcmin} />
@@ -463,7 +463,7 @@ export function PerceptionReportContent() {
           {showBands ? (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                   Probe text size
                 </span>
                 <div className="flex items-center gap-1.5">
@@ -475,7 +475,7 @@ export function PerceptionReportContent() {
                     max={200}
                     className="w-20"
                   />
-                  <span className="text-xs text-muted-foreground">px @</span>
+                  <span className="text-sm text-muted-foreground">px @</span>
                   <NumberStepper
                     ariaLabel="probe reference height"
                     value={refH}
@@ -486,10 +486,10 @@ export function PerceptionReportContent() {
                     max={4320}
                     className="w-24"
                   />
-                  <span className="text-xs text-muted-foreground">p</span>
+                  <span className="text-sm text-muted-foreground">p</span>
                 </div>
               </div>
-              <p className="font-mono text-xs text-muted-foreground">
+              <p className="font-mono text-sm text-muted-foreground">
                 On your screen: {hostArcmin.toFixed(0)}′. Bands per ISO
                 9241-303 (cap height): ≥16′ minimum, ≥20′ comfortable.
               </p>
