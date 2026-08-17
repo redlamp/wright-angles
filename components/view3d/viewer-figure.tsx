@@ -39,11 +39,22 @@ const FIGURE_MAT = new MeshStandardMaterial({
 /** Seconds for the transition fade (quicker than the camera flight). */
 const FADE_S = 0.25;
 
+/**
+ * Camera-to-head distance under which the figure hides. The 2D↔3D
+ * flight starts/ends at the eye point INSIDE the head; fading on
+ * proximity (rather than flight state) lets the figure appear the
+ * moment the camera clears the head in either direction — and also
+ * hides it if the user orbits into it.
+ */
+const HEAD_CLEAR_CM = 45;
+
 /** Module-level so the react-compiler lint permits the mutation. */
 function applyFigureOpacity(root: Group | null, opacity: number) {
   FIGURE_MAT.opacity = opacity;
   if (root) root.visible = opacity > 0.01;
 }
+
+const _headCenter = new Vector3();
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -285,17 +296,11 @@ export default function ViewerFigure({
   inputType,
   heightCm,
   palette,
-  shown = true,
 }: {
   scenario: Scenario;
   inputType: InputType;
   heightCm: number;
   palette: ScenePalette;
-  /**
-   * False while the camera flies between the 2D head-on pose and the
-   * orbit (the flight passes through the head); the figure fades.
-   */
-  shown?: boolean;
 }) {
   useEffect(() => {
     FIGURE_MAT.color.set(palette.figure);
@@ -331,9 +336,9 @@ export default function ViewerFigure({
     prevPoseKey.current = poseKey;
   }, [target, poseKey]);
 
-  // Transition fade; starts at the mount target so entering 3D begins
-  // invisible and fades in once the camera rests.
-  const opacity = useRef(shown ? 1 : 0);
+  // Proximity fade; starts hidden — 3D always mounts at the head-on
+  // pose, i.e. inside the head.
+  const opacity = useRef(0);
 
   useFrame((state, delta) => {
     const a = anim.current;
@@ -345,7 +350,11 @@ export default function ViewerFigure({
       // Keep frames coming while tweening (demand frameloop).
       state.invalidate();
     }
-    const fadeTarget = shown ? 1 : 0;
+    // Head center sits at the eye contract (root-local +69, scaled).
+    const pose = cur.current;
+    _headCenter.set(0, pose.rootY + 69 * pose.scale, 0);
+    const fadeTarget =
+      state.camera.position.distanceTo(_headCenter) < HEAD_CLEAR_CM ? 0 : 1;
     if (opacity.current !== fadeTarget) {
       const step = Math.min(delta, 1 / 30) / FADE_S;
       opacity.current =

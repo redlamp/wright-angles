@@ -560,14 +560,13 @@ export default function SceneView({
             lights exist purely to shade the figure's forms. */}
         <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
         <directionalLight position={[-140, 220, -90]} intensity={1.3} />
+        {/* The figure fades itself on camera proximity to the head, so
+            it appears the moment the flight clears the headspace. */}
         <ViewerFigure
           scenario={scenario}
           inputType={inputType}
           heightCm={heightCm}
           palette={palette}
-          // Faded during the head-on↔orbit flight so the camera never
-          // clips through the figure's head (Taylor 2026-08-17).
-          shown={controlsOn && !exiting}
         />
         <ScenarioProps
           scenario={scenario}
