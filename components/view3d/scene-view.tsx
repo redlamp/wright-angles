@@ -384,6 +384,7 @@ export default function SceneView({
   // crop space once and drawn on every screen (per-device colors happen
   // in the rect). Selection highlights follow the annotation store.
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const scanColorMode = useAnnotationStore((s) => s.scanColorMode);
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
   const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
   // Plain computation (no manual memo): it's a handful of array ops and
@@ -396,18 +397,31 @@ export default function SceneView({
       animatedActive && activeItem.scanKeyframes
         ? activeKeyframe(activeItem.scanKeyframes, timeSec)
         : null;
+    // Group ids come from the persisted scan / keyframe lines so the
+    // global Groups color mode carries into the 3D outlines.
+    const groupById = new Map<string, number>();
+    for (const l of activeItem.scan?.lines ?? [])
+      if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
     const entries = [
       ...(activeItem.boxes ?? []).map((b) => ({ ...b, hNorm: b.h })),
-      ...(kf?.lines ?? []).map((l) => ({
-        id: l.id,
-        ...l.box,
-        hNorm: l.sizePx ? l.sizePx / activeItem.height : l.box.h,
-      })),
+      ...(kf?.lines ?? []).map((l) => {
+        if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
+        return {
+          id: l.id,
+          ...l.box,
+          hNorm: l.sizePx ? l.sizePx / activeItem.height : l.box.h,
+        };
+      }),
     ];
     for (const e of entries) {
       const rect = boxInCrop(e, crop);
       if (!rect) continue;
-      contentBoxes.push({ id: e.id, rect, hMeasure: e.hNorm / crop.h });
+      contentBoxes.push({
+        id: e.id,
+        rect,
+        hMeasure: e.hNorm / crop.h,
+        groupId: groupById.get(e.id),
+      });
     }
   }
 
@@ -499,6 +513,7 @@ export default function SceneView({
         onDragState={setNodeDragging}
         contentBoxes={contentBoxes}
         selectedBoxId={selectedBoxId}
+        boxColorMode={scanColorMode}
         media={
           tex && mediaDims
             ? { texture: tex, width: mediaDims.width, height: mediaDims.height }

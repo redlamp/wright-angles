@@ -56,19 +56,37 @@ const xOverlap = (a: NormBox, b: NormBox): number => {
   return Math.max(0, hi - lo);
 };
 
+/** Distinct tints for text groups (shared by panel, 2D, and 3D). */
+export const GROUP_COLORS = [
+  "#5b9bd5",
+  "#c58af9",
+  "#4dd0a6",
+  "#f28bb2",
+  "#e6c04f",
+  "#7fd0e8",
+];
+export const groupColor = (groupId: number | undefined): string =>
+  groupId === undefined
+    ? "#f5a524"
+    : GROUP_COLORS[groupId % GROUP_COLORS.length];
+
 /** Would `line` continue the block ending in `prev` (same font size)? */
-function continues(prev: NormBox, line: NormBox, intrinsicH: number): boolean {
-  const hA = prev.h * intrinsicH;
-  const hB = line.h * intrinsicH;
+function continues(
+  prev: NormBox,
+  line: NormBox,
+  intrinsic: { width: number; height: number },
+): boolean {
+  const hA = prev.h * intrinsic.height;
+  const hB = line.h * intrinsic.height;
   const ratio = Math.max(hA, hB) / Math.max(1e-6, Math.min(hA, hB));
   if (ratio > MAX_HEIGHT_RATIO) return false;
   // Wrap/line spacing: the next line starts within a line-height below.
-  const gapPx = (line.y - (prev.y + prev.h)) * intrinsicH;
+  const gapPx = (line.y - (prev.y + prev.h)) * intrinsic.height;
   if (gapPx < -0.5 * Math.min(hA, hB)) return false; // overlapping = other column artifacts
   if (gapPx > MAX_GAP_FACTOR * Math.max(hA, hB)) return false;
   // Same column: ranges overlap, or left edges align (ragged-right wrap).
   const overlap = xOverlap(prev, line);
-  const leftShiftPx = Math.abs(line.x - prev.x) * intrinsicH; // vs height scale
+  const leftShiftPx = Math.abs(line.x - prev.x) * intrinsic.width;
   return (
     overlap >= 0.2 * Math.min(prev.w, line.w) ||
     leftShiftPx <= MAX_LEFT_SHIFT_FACTOR * Math.max(hA, hB)
@@ -98,7 +116,7 @@ export function groupTextLines(
   const open: Open[] = [];
   let nextId = 0;
   for (const { box, i } of order) {
-    const host = open.find((g) => continues(g.last, box, intrinsic.height));
+    const host = open.find((g) => continues(g.last, box, intrinsic));
     if (host) {
       host.members.push(i);
       host.last = box;

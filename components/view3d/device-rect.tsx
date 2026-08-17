@@ -21,6 +21,7 @@ import type { DisplayFill } from "@/stores/settings-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
+import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
 
 const SHOW_LABELS = true;
@@ -183,6 +184,8 @@ export interface ContentBox {
   rect: { x: number; y: number; w: number; h: number };
   /** Crop-relative height used for the per-device legibility color. */
   hMeasure: number;
+  /** Text block id — used when the global color mode is "group". */
+  groupId?: number;
 }
 
 const bandColor = (arcmin: number) =>
@@ -283,6 +286,7 @@ export default function DeviceRect({
   onDragState,
   contentBoxes,
   selectedBoxId,
+  boxColorMode = "rating",
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
@@ -328,6 +332,8 @@ export default function DeviceRect({
   contentBoxes?: ContentBox[];
   /** App-wide selected box for the white highlight. */
   selectedBoxId?: string | null;
+  /** Global scan color mode: block tints vs per-device verdict bands. */
+  boxColorMode?: "group" | "rating";
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
   const lp = labels ?? ZERO_LABELS;
@@ -633,11 +639,15 @@ export default function DeviceRect({
               device,
             ).arcmin;
             const sel = cb.id === selectedBoxId;
+            const color =
+              boxColorMode === "group" && cb.groupId !== undefined
+                ? groupColor(cb.groupId)
+                : bandColor(arcmin);
             return (
               <Line
                 key={cb.id}
                 points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
-                color={sel ? "#ffffff" : bandColor(arcmin)}
+                color={sel ? "#ffffff" : color}
                 lineWidth={sel ? 2.5 : 1.25}
                 transparent
                 opacity={sel ? 1 : 0.9}

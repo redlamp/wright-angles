@@ -31,14 +31,17 @@ import {
   isFullFrame,
   type CropHandle,
 } from "@/lib/media-crop";
-import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { captureFrameAt } from "@/lib/frame-capture";
-import { activeKeyframe, withScan } from "@/lib/scan-keyframes";
-import { groupTextLines } from "@/lib/text-groups";
+import { activeKeyframe, KEYFRAME_EPS, withScan } from "@/lib/scan-keyframes";
+import { groupColor, groupTextLines } from "@/lib/text-groups";
+import {
+  useAnnotationStore,
+  type ScanColorMode,
+} from "@/stores/annotation-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
@@ -637,17 +640,6 @@ interface ScanLine {
   sizePx?: number;
 }
 
-/** Distinct tints for text groups (7.3's visual indicator). */
-const GROUP_COLORS = [
-  "#5b9bd5",
-  "#c58af9",
-  "#4dd0a6",
-  "#f28bb2",
-  "#e6c04f",
-  "#7fd0e8",
-];
-const groupColor = (groupId: number | undefined) =>
-  groupId === undefined ? "#f5a524" : GROUP_COLORS[groupId % GROUP_COLORS.length];
 
 const scanBandColor = (arcmin: number) =>
   arcmin >= ACUITY.comfortableTextArcmin
@@ -661,9 +653,6 @@ const scanBandColor = (arcmin: number) =>
  * outlined and numbered, plus a per-line table (text, px height,
  * confidence, arcmin on This Device). Rows select their measure box.
  */
-/** Color modes for scan visuals: block tints or legibility verdicts. */
-type ScanColorMode = "group" | "rating";
-
 const scanLineColor = (
   line: ScanLine,
   mode: ScanColorMode,
@@ -690,12 +679,11 @@ const scanLineColor = (
 function ScanBoxesOverlay({
   lines,
   item,
-  colorMode,
 }: {
   lines: ScanLine[];
   item: MediaItem;
-  colorMode: ScanColorMode;
 }) {
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
@@ -733,12 +721,11 @@ function ScanBoxesOverlay({
 function ScanResults({
   item,
   lines,
-  colorMode,
 }: {
   item: MediaItem;
   lines: ScanLine[];
-  colorMode: ScanColorMode;
 }) {
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
@@ -872,9 +859,7 @@ function TextDetectionSection({
   unscannedCount = 0,
   onScanAll,
   note,
-  colorMode,
-  onColorMode,
-  onResetAll,
+  onClearAll,
 }: {
   item: MediaItem;
   scan: ScanRun | null;
@@ -883,6 +868,7 @@ function TextDetectionSection({
   showBoxes: boolean;
   onToggleBoxes: () => void;
   onDetect: () => void;
+  /** Timeline media: clears the ACTIVE keyframe's scan (marker stays). */
   onClear: () => void;
   /** Timeline media: scans attach to keyframes instead of the item. */
   animated?: boolean;
@@ -890,10 +876,10 @@ function TextDetectionSection({
   onScanAll?: () => void;
   /** Status line override (keyframe context / batch progress). */
   note?: string | null;
-  colorMode: ScanColorMode;
-  onColorMode: (m: ScanColorMode) => void;
-  onResetAll: () => void;
+  onClearAll: () => void;
 }) {
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
+  const setScanColorMode = useAnnotationStore((s) => s.setScanColorMode);
   const canScan = item.kind === "image" || animated;
   const hasLines = !!scan && scan.lines.length > 0;
   const hasAnyDetection =
@@ -931,7 +917,44 @@ function TextDetectionSection({
           </button>
           <SectionLabel>Text detection</SectionLabel>
         </span>
+        {/* Exact order + language per Taylor 2026-08-17 14:30:
+            Clear All · Clear Current (timeline only) · Detect Text Size.
+            Destructive actions in red. */}
         <span className="flex items-center gap-1">
+          {hasAnyDetection ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              title="Remove EVERY box and keyframe on this media — including ones from older sessions"
+              onClick={() => setResetArmed(true)}
+            >
+              Clear All
+            </Button>
+          ) : null}
+          {animated && hasLines ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              title="Clear the scan on the current keyframe (the marker stays)"
+              onClick={onClear}
+            >
+              Clear Current
+            </Button>
+          ) : null}
+          {animated && unscannedCount > 0 && onScanAll ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-6 px-1.5 text-xs"
+              disabled={running}
+              title="Scan every unscanned keyframe in order"
+              onClick={onScanAll}
+            >
+              Scan all ({unscannedCount})
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="sm"
@@ -947,52 +970,8 @@ function TextDetectionSection({
             onClick={onDetect}
           >
             <ScanTextIcon className="size-3.5" />
-            {running
-              ? animated
-                ? "Scanning…"
-                : "Detecting…"
-              : animated
-                ? "Scan frame"
-                : "Detect text sizes"}
+            {running ? "Detecting…" : "Detect Text Size"}
           </Button>
-          {animated && unscannedCount > 0 && onScanAll ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-6 px-1.5 text-xs"
-              disabled={running}
-              title="Scan every unscanned keyframe in order"
-              onClick={onScanAll}
-            >
-              Scan all ({unscannedCount})
-            </Button>
-          ) : null}
-          {hasLines ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-              title={
-                animated
-                  ? "Clear scans from every keyframe (markers stay)"
-                  : "Remove the detected boxes"
-              }
-              onClick={onClear}
-            >
-              Clear detected
-            </Button>
-          ) : null}
-          {hasAnyDetection ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-destructive"
-              title="Remove EVERY box and keyframe on this media — including ones from older sessions"
-              onClick={() => setResetArmed(true)}
-            >
-              Reset all…
-            </Button>
-          ) : null}
         </span>
       </div>
       {resetArmed ? (
@@ -1002,7 +981,7 @@ function TextDetectionSection({
             className="h-7 flex-1 rounded-md bg-destructive text-xs text-white transition-opacity hover:opacity-90"
             onClick={() => {
               setResetArmed(false);
-              onResetAll();
+              onClearAll();
             }}
           >
             Really remove all boxes + keyframes
@@ -1064,7 +1043,7 @@ function TextDetectionSection({
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground",
                 )}
-                onClick={() => onColorMode(m.id)}
+                onClick={() => setScanColorMode(m.id)}
               >
                 {m.label}
               </button>
@@ -1072,9 +1051,7 @@ function TextDetectionSection({
           </span>
         ) : null}
       </div>
-      {hasLines ? (
-        <ScanResults item={item} lines={scan.lines} colorMode={colorMode} />
-      ) : null}
+      {hasLines ? <ScanResults item={item} lines={scan.lines} /> : null}
       {hasLines ? <ScanFollowThrough /> : null}
     </div>
   );
@@ -1130,13 +1107,12 @@ function DetailCard({ item }: { item: MediaItem }) {
   // Images keep a one-shot scan; timeline media (video/GIF) scans attach
   // to user-placed keyframes and the ACTIVE keyframe's scan shows until
   // the playhead passes the next marker (plan topic 9).
-  const [scan, setScan] = useState<ScanRun | null>(null);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanFailed, setScanFailed] = useState(false);
   const [showScanBoxes, setShowScanBoxes] = useState(true);
   const [batchNote, setBatchNote] = useState<string | null>(null);
-  const [colorMode, setColorMode] = useState<ScanColorMode>("group");
   const clearDetection = useMediaStore((s) => s.clearDetection);
+  const setScanStore = useMediaStore((s) => s.setScan);
 
   const animated = isAnimatedItem(item);
   const timeSec = usePlaybackStore((s) => s.timeSec);
@@ -1144,11 +1120,13 @@ function DetailCard({ item }: { item: MediaItem }) {
   const keyframes = item.scanKeyframes ?? [];
   const kf = animated ? activeKeyframe(keyframes, timeSec) : null;
   const unscannedCount = keyframes.filter((k) => !k.lines).length;
+  // Persisted on the item, so returning to a scanned media shows its
+  // detection again without re-running (Taylor 14:30 bug report).
   const effectiveScan: ScanRun | null = animated
     ? kf?.lines
       ? { lines: kf.lines, medianPx: kf.medianPx ?? 0 }
       : null
-    : scan;
+    : (item.scan ?? null);
 
   /** OCR one frame URL into grouped, size-corrected scan lines. */
   const ocrFrame = async (url: string) => {
@@ -1206,9 +1184,12 @@ function DetailCard({ item }: { item: MediaItem }) {
         // Client-only dynamic import: the OCR module (and the Tesseract
         // worker behind it) never loads during prerender.
         const { lines, medianPx } = await ocrFrame(objectUrl);
+        // Re-detecting replaces the previous scan's boxes instead of
+        // stacking duplicates.
+        for (const old of item.scan?.lines ?? []) removeBox(item.id, old.id);
         for (const line of lines)
           addBox(item.id, { id: line.id, label: line.text, ...line.box });
-        setScan({ lines, medianPx });
+        setScanStore(item.id, { lines, medianPx });
       }
       setShowScanBoxes(true);
     } catch (err) {
@@ -1239,18 +1220,18 @@ function DetailCard({ item }: { item: MediaItem }) {
     }
   };
 
-  const clearDetected = () => {
-    if (animated) {
-      // Scans go, user-placed markers stay.
-      setScanKeyframes(
-        item.id,
-        freshKeyframes().map((k) => ({ timeSec: k.timeSec, lines: null })),
-      );
-      return;
-    }
-    if (!scan) return;
-    for (const line of scan.lines) removeBox(item.id, line.id);
-    setScan(null);
+  /** "Clear Current" (timeline only): the ACTIVE keyframe's scan goes,
+   * its marker and every other keyframe stay. */
+  const clearCurrent = () => {
+    if (!animated || !kf) return;
+    setScanKeyframes(
+      item.id,
+      freshKeyframes().map((k) =>
+        Math.abs(k.timeSec - kf.timeSec) <= KEYFRAME_EPS
+          ? { timeSec: k.timeSec, lines: null }
+          : k,
+      ),
+    );
   };
 
   const keyframeNote =
@@ -1337,11 +1318,7 @@ function DetailCard({ item }: { item: MediaItem }) {
           item={item}
           overlay={
             showScanBoxes && effectiveScan && effectiveScan.lines.length > 0 ? (
-              <ScanBoxesOverlay
-                lines={effectiveScan.lines}
-                item={item}
-                colorMode={colorMode}
-              />
+              <ScanBoxesOverlay lines={effectiveScan.lines} item={item} />
             ) : null
           }
         >
@@ -1380,17 +1357,12 @@ function DetailCard({ item }: { item: MediaItem }) {
         showBoxes={showScanBoxes}
         onToggleBoxes={() => setShowScanBoxes((v) => !v)}
         onDetect={() => void detect()}
-        onClear={clearDetected}
+        onClear={clearCurrent}
         animated={animated}
         unscannedCount={unscannedCount}
         onScanAll={() => void scanAll()}
         note={keyframeNote}
-        colorMode={colorMode}
-        onColorMode={setColorMode}
-        onResetAll={() => {
-          clearDetection(item.id);
-          setScan(null);
-        }}
+        onClearAll={() => clearDetection(item.id)}
       />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
