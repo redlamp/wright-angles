@@ -893,8 +893,8 @@ function TextDetectionSection({
             aria-pressed={showBoxes}
             title={
               showBoxes
-                ? "Hide detected boxes on the preview"
-                : "Show detected boxes on the preview"
+                ? "Hide text boxes everywhere (2D, 3D, previews)"
+                : "Show text boxes everywhere (2D, 3D, previews)"
             }
             className={cn(
               "panel-inset flex size-6 items-center justify-center rounded-md transition-colors",
@@ -1065,7 +1065,10 @@ function DetailCard({ item }: { item: MediaItem }) {
   // the playhead passes the next marker (plan topic 9).
   const [scanRunning, setScanRunning] = useState(false);
   const [scanFailed, setScanFailed] = useState(false);
-  const [showScanBoxes, setShowScanBoxes] = useState(true);
+  // Global eye state — shared with the Perception Report and the
+  // 2D/3D world views (Taylor: parity of state across panels/views).
+  const showScanBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  const setShowScanBoxes = useAnnotationStore((s) => s.setShowTextBoxes);
   const [batchNote, setBatchNote] = useState<string | null>(null);
   const clearDetection = useMediaStore((s) => s.clearDetection);
 
@@ -1244,7 +1247,7 @@ function DetailCard({ item }: { item: MediaItem }) {
         running={scanRunning}
         failed={scanFailed}
         showBoxes={showScanBoxes}
-        onToggleBoxes={() => setShowScanBoxes((v) => !v)}
+        onToggleBoxes={() => setShowScanBoxes(!showScanBoxes)}
         onDetect={() => void detect()}
         onClear={clearCurrent}
         animated={animated}

@@ -385,13 +385,14 @@ export default function SceneView({
   // in the rect). Selection highlights follow the annotation store.
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const scanColorMode = useAnnotationStore((s) => s.scanColorMode);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
   const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
   // Plain computation (no manual memo): it's a handful of array ops and
   // the demand frameloop only renders on real changes anyway — and the
   // react-compiler can memoize it itself where profitable.
   const contentBoxes: ContentBox[] = [];
-  if (activeItem) {
+  if (activeItem && showTextBoxes) {
     const crop = cropOf(activeItem);
     const kf =
       animatedActive && activeItem.scanKeyframes

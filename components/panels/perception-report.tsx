@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { GaugeIcon, ScanTextIcon, Trash2Icon } from "lucide-react";
+import {
+  EyeIcon,
+  EyeOffIcon,
+  GaugeIcon,
+  ScanTextIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ACUITY,
@@ -141,6 +147,8 @@ export function PerceptionReportPanel() {
   const clearDetection = useMediaStore((s) => s.clearDetection);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  const setShowTextBoxes = useAnnotationStore((s) => s.setShowTextBoxes);
   const activeItem = items.find((i) => i.id === activeId) ?? null;
 
   const [column, setColumn] = useState<"all" | "mine" | string>("all");
@@ -289,8 +297,34 @@ export function PerceptionReportPanel() {
         {/* Column 2: the scanned text for the active media. */}
         <div className="min-h-0 space-y-2.5 overflow-y-scroll p-2.5">
           <div className="flex h-6 items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Scanned text{activeItem ? ` · ${activeItem.name}` : ""}
+            <span className="flex min-w-0 items-center gap-1.5">
+              {/* Same global eye as the Media Library — hiding boxes
+                  here hides them in 2D and 3D too. */}
+              <button
+                type="button"
+                aria-pressed={showTextBoxes}
+                title={
+                  showTextBoxes
+                    ? "Hide text boxes everywhere (2D, 3D, previews)"
+                    : "Show text boxes everywhere (2D, 3D, previews)"
+                }
+                className={cn(
+                  "panel-inset flex size-6 shrink-0 items-center justify-center rounded-md transition-colors",
+                  showTextBoxes
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setShowTextBoxes(!showTextBoxes)}
+              >
+                {showTextBoxes ? (
+                  <EyeIcon className="size-3.5" />
+                ) : (
+                  <EyeOffIcon className="size-3.5" />
+                )}
+              </button>
+              <span className="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Scanned text{activeItem ? ` · ${activeItem.name}` : ""}
+              </span>
             </span>
             {activeItem ? (
               <span className="flex shrink-0 items-center gap-1">

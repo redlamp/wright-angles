@@ -280,6 +280,7 @@ export function DisplayArea() {
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
@@ -681,7 +682,7 @@ export function DisplayArea() {
             {/* Boxes live INSIDE each rect so a nested device naturally
                 covers the ones beneath it — tied to the device they're
                 on (Taylor 2026-08-17). Only the host's are clickable. */}
-            {activeItem && overlayBoxes.length > 0 ? (
+            {activeItem && overlayBoxes.length > 0 && showTextBoxes ? (
               <BoxLayer
                 rectW={w}
                 rectH={h}
