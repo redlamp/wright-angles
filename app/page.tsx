@@ -139,7 +139,10 @@ export default function Home() {
     >
       {!mounted ? null : (
         <>
-          <div className="absolute inset-0">
+          {/* `isolate` contains the 2D view's internal z-indexes (rect
+              stack, toolbar z-40) in their own stacking context, so the
+              later canvas sibling paints over ALL of it in 3D mode. */}
+          <div className="absolute inset-0 isolate">
             <DisplayArea />
           </div>
           {show3d ? (
