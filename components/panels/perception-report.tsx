@@ -35,6 +35,7 @@ import { useUiStore } from "@/stores/ui-store";
 import { CornerDownRightIcon } from "lucide-react";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
+import { SplitGrid } from "./split-grid";
 
 /**
  * The product's thesis, in words: what fits comfortably on the screen
@@ -262,14 +263,12 @@ export function PerceptionReportContent() {
     mode === "mine" ? thisDevice : mode === "device" ? pickedDevice : null;
 
   return (
-      <div
-        className="grid h-full min-h-0"
-        style={{ gridTemplateColumns: "230px minmax(0, 1fr)" }}
-      >
-        {/* Column 1: device details — All Devices, My Device (in the
-            list, per Taylor), every project device incl. hidden.
-            Selection specs pin to the bottom so rows never resize. */}
-        <div className="flex min-h-0 flex-col border-r border-border">
+      <SplitGrid
+        // Column 1: device details — All Devices, My Device (in the
+        // list, per Taylor), every project device incl. hidden.
+        // Selection specs pin to the bottom so rows never resize.
+        left={
+        <div className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1 space-y-0.5 overflow-y-scroll p-1.5">
             <button
               type="button"
@@ -306,8 +305,9 @@ export function PerceptionReportContent() {
             </div>
           ) : null}
         </div>
-
-        {/* Column 2: the scanned text for the active media. */}
+        }
+        // Column 2: the scanned text for the active media.
+        right={
         <div className="min-h-0 space-y-2.5 overflow-y-scroll p-2.5">
           <div className="flex h-6 items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1.5">
@@ -496,6 +496,7 @@ export function PerceptionReportContent() {
             </div>
           ) : null}
         </div>
-      </div>
+        }
+      />
   );
 }

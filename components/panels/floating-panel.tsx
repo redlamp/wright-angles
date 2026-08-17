@@ -163,17 +163,28 @@ export function FloatingPanel({
     drag.current = null;
   }, []);
 
-  // Keep panels reachable if the window shrinks below a stored position.
+  // Keep panels reachable: at least min(240, width) of the panel must
+  // stay horizontally inside the viewport — checked at mount (a stored
+  // position can come from a much wider monitor) and on window resize.
+  // NOT on every position change: a deliberate drag past the edge is
+  // allowed its looser drag clamp and must not snap back.
   useEffect(() => {
-    if (!stored) return;
-    const onResize = () => {
-      const x = Math.min(stored.x, window.innerWidth - 48);
-      const y = Math.min(stored.y, window.innerHeight - 40);
-      if (x !== stored.x || y !== stored.y) setPanelPosition(id, { x, y });
+    const clamp = () => {
+      const cur = useUiStore.getState().panelPositions[id];
+      if (!cur) return;
+      const w = ref.current?.offsetWidth ?? width;
+      const visible = Math.min(240, w);
+      const x = Math.min(
+        Math.max(cur.x, visible - w),
+        window.innerWidth - visible,
+      );
+      const y = Math.min(Math.max(cur.y, 8), window.innerHeight - 40);
+      if (x !== cur.x || y !== cur.y) setPanelPosition(id, { x, y });
     };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [id, setPanelPosition, stored]);
+    clamp();
+    window.addEventListener("resize", clamp);
+    return () => window.removeEventListener("resize", clamp);
+  }, [id, setPanelPosition, width]);
 
   if (!open) return null;
 

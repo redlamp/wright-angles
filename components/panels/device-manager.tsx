@@ -49,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SplitGrid } from "./split-grid";
 
 const DIST_MIN_CM = 10;
 const DIST_MAX_CM = 9999;
@@ -829,11 +830,9 @@ export function DeviceManagerContent() {
   const clearMarker = () => setInsertIdx(null);
 
   return (
-    <div
-      className="grid h-full min-h-0"
-      style={{ gridTemplateColumns: "300px minmax(0, 1fr)" }}
-    >
-      <div className="min-h-0 overflow-x-clip overflow-y-scroll border-r border-border">
+    <SplitGrid
+      left={
+      <div className="min-h-0 overflow-x-clip overflow-y-scroll">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
@@ -876,7 +875,8 @@ export function DeviceManagerContent() {
           <AddDeviceMenu />
         </div>
       </div>
-      <EditorColumn />
-    </div>
+      }
+      right={<EditorColumn />}
+    />
   );
 }
