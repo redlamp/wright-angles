@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Columns2Icon,
+  EyeIcon,
+  EyeOffIcon,
   FolderDownIcon,
   ImageIcon,
   LayoutGridIcon,
   ListIcon,
-  RectangleVerticalIcon,
   ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
@@ -29,7 +29,6 @@ import {
   dragCrop,
   effectiveDims,
   isFullFrame,
-  viewBoxStyle,
   type CropHandle,
 } from "@/lib/media-crop";
 import { useAnnotationStore } from "@/stores/annotation-store";
@@ -411,9 +410,12 @@ const CROP_HANDLES: { id: CropHandle; className: string }[] = [
  */
 function CropOverlayFrame({
   item,
+  overlay,
   children,
 }: {
   item: MediaItem;
+  /** Extra full-frame-coordinate layers (e.g. detected-text boxes). */
+  overlay?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const setCrop = useMediaStore((s) => s.setCrop);
@@ -477,41 +479,46 @@ function CropOverlayFrame({
       }}
     >
       {children}
-      {/* The crop window; the oversized shadow is the outside scrim. */}
-      <div
-        className="absolute cursor-move touch-none"
-        style={{
-          left: `${crop.x * 100}%`,
-          top: `${crop.y * 100}%`,
-          width: `${crop.w * 100}%`,
-          height: `${crop.h * 100}%`,
-          boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
-          outline: "1px solid rgba(255,255,255,0.9)",
-        }}
-        data-handle="move"
-        onPointerDown={onDragStart}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-        onPointerCancel={onDragEnd}
-      >
-        {CROP_HANDLES.map(({ id, className }) => (
-          <div
-            key={id}
-            data-handle={id}
-            className={cn(
-              // A 16px hit target around a smaller visual knob.
-              "absolute flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center",
-              className,
-            )}
-            onPointerDown={onDragStart}
-            onPointerMove={onDragMove}
-            onPointerUp={onDragEnd}
-            onPointerCancel={onDragEnd}
-          >
-            <div className="pointer-events-none size-2.5 rounded-[2px] border border-black/60 bg-white" />
-          </div>
-        ))}
-      </div>
+      {/* The crop window; the oversized shadow is the outside scrim.
+          Rendered only while a crop (or live drag) exists, so the frame
+          doubles as a plain full-frame host for other overlays. */}
+      {item.crop || draft ? (
+        <div
+          className="absolute cursor-move touch-none"
+          style={{
+            left: `${crop.x * 100}%`,
+            top: `${crop.y * 100}%`,
+            width: `${crop.w * 100}%`,
+            height: `${crop.h * 100}%`,
+            boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
+            outline: "1px solid rgba(255,255,255,0.9)",
+          }}
+          data-handle="move"
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+        >
+          {CROP_HANDLES.map(({ id, className }) => (
+            <div
+              key={id}
+              data-handle={id}
+              className={cn(
+                // A 16px hit target around a smaller visual knob.
+                "absolute flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center",
+                className,
+              )}
+              onPointerDown={onDragStart}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragEnd}
+              onPointerCancel={onDragEnd}
+            >
+              <div className="pointer-events-none size-2.5 rounded-[2px] border border-black/60 bg-white" />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {overlay}
     </div>
   );
 }
@@ -530,16 +537,19 @@ function CropSection({ item }: { item: MediaItem }) {
   const noCrop = !item.crop || isFullFrame(current);
   const presets = ASPECT_PRESETS.map(({ label, ratio }) => {
     const crop = aspectCrop(ratio, item.width, item.height);
-    // An exact-aspect image makes this preset the full frame — that is
-    // "None", so the button is inert rather than a second None.
+    // An exact-aspect image makes this preset the full frame: uncropped,
+    // the button lights up to NAME the native shape (a 1920×1080 image
+    // shows 16:9 active) and clicking it is a no-op.
     const wholeFrame = isFullFrame(crop);
     return {
       label,
       crop,
       wholeFrame,
-      active: !noCrop && !wholeFrame && cropsEqual(current, crop),
+      active: wholeFrame ? noCrop : !noCrop && cropsEqual(current, crop),
     };
   });
+  const nativeMatch = presets.some((p) => p.wholeFrame);
+  const noneActive = noCrop && !nativeMatch;
   const customActive = !noCrop && !presets.some((p) => p.active);
 
   return (
@@ -549,10 +559,10 @@ function CropSection({ item }: { item: MediaItem }) {
       </div>
       <div className="flex flex-wrap gap-1">
         <Button
-          variant={noCrop ? "default" : "secondary"}
+          variant={noneActive ? "default" : "secondary"}
           size="sm"
           className="h-6 px-1.5 text-xs"
-          aria-pressed={noCrop}
+          aria-pressed={noneActive}
           title="Show the full frame, uncropped"
           onClick={() => setCrop(item.id, undefined)}
         >
@@ -565,13 +575,14 @@ function CropSection({ item }: { item: MediaItem }) {
             size="sm"
             className="h-6 px-1.5 text-xs"
             aria-pressed={active}
-            disabled={wholeFrame}
             title={
               wholeFrame
-                ? "The image is already this shape"
+                ? `The image is natively ${label}`
                 : `Largest centered ${label} window`
             }
-            onClick={() => setCrop(item.id, crop)}
+            onClick={() =>
+              setCrop(item.id, wholeFrame ? undefined : crop)
+            }
           >
             {label}
           </Button>
@@ -630,13 +641,49 @@ const scanBandColor = (arcmin: number) =>
  * outlined and numbered, plus a per-line table (text, px height,
  * confidence, arcmin on This Device). Rows select their measure box.
  */
+/**
+ * Detected-line outlines drawn over the top media display, in full-frame
+ * coordinates (rendered inside CropOverlayFrame's intrinsic-aspect host —
+ * per Taylor, no second image area). Clicking an outline selects its
+ * measure box, same as a list row.
+ */
+function ScanBoxesOverlay({ lines }: { lines: ScanLine[] }) {
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const selectBox = useAnnotationStore((s) => s.selectBox);
+  return (
+    <>
+      {lines.map((line, i) => (
+        <button
+          key={line.id}
+          type="button"
+          aria-label={`Select detected line ${i + 1}`}
+          className={cn(
+            "absolute border",
+            line.id === selectedBoxId
+              ? "z-10 border-2 border-white"
+              : "border-[#f5a524]/80 hover:border-white/80",
+          )}
+          style={{
+            left: `${line.box.x * 100}%`,
+            top: `${line.box.y * 100}%`,
+            width: `${line.box.w * 100}%`,
+            height: `${line.box.h * 100}%`,
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBox(line.id === selectedBoxId ? null : line.id);
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 function ScanResults({
   item,
-  url,
   lines,
 }: {
   item: MediaItem;
-  url: string;
   lines: ScanLine[];
 }) {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
@@ -644,6 +691,9 @@ function ScanResults({
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const crop = cropOf(item);
   const eff = effectiveDims(item);
+  // User-adjustable list height (session-local).
+  const [listH, setListH] = useState(160);
+  const resize = useRef<{ startY: number; base: number } | null>(null);
 
   const rows = lines
     .map((line, i) => {
@@ -658,39 +708,8 @@ function ScanResults({
     .filter((r) => r.inCrop !== null);
 
   return (
-    <div className="space-y-1.5">
-      <div
-        className="relative w-full overflow-hidden rounded-md bg-black/40"
-        style={{ aspectRatio: `${eff.width} / ${eff.height}` }}
-      >
-        {/* Fills the container exactly (same aspect), so percentage
-            overlays line up with image pixels. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt="" className="size-full" style={viewBoxStyle(item)} />
-        {rows.map(({ line, i, inCrop }) => (
-          <button
-            key={line.id}
-            type="button"
-            aria-label={`Select detected line ${i + 1}`}
-            className={cn(
-              "absolute border",
-              line.id === selectedBoxId
-                ? "z-10 border-2 border-white"
-                : "border-[#f5a524]/80 hover:border-white/80",
-            )}
-            style={{
-              left: `${inCrop!.x * 100}%`,
-              top: `${inCrop!.y * 100}%`,
-              width: `${inCrop!.w * 100}%`,
-              height: `${inCrop!.h * 100}%`,
-            }}
-            onClick={() =>
-              selectBox(line.id === selectedBoxId ? null : line.id)
-            }
-          />
-        ))}
-      </div>
-      <div className="max-h-40 space-y-0.5 overflow-y-auto">
+    <div className="space-y-1">
+      <div className="space-y-0.5 overflow-y-auto" style={{ height: listH }}>
         {rows.map(({ line, i, arcmin }) => (
           <button
             key={line.id}
@@ -728,27 +747,157 @@ function ScanResults({
           </button>
         ))}
       </div>
+      {/* Height grip: drag to grow/shrink the list (plan: adjustable). */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize detected text list"
+        className="mx-auto h-1.5 w-16 cursor-ns-resize touch-none rounded-full bg-border transition-colors hover:bg-ring/60"
+        onPointerDown={(e) => {
+          resize.current = { startY: e.clientY, base: listH };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const r = resize.current;
+          if (!r || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+          setListH(
+            Math.min(480, Math.max(80, r.base + (e.clientY - r.startY))),
+          );
+        }}
+        onPointerUp={() => {
+          resize.current = null;
+        }}
+      />
     </div>
   );
 }
 
-function TextDetectionSection({ item }: { item: MediaItem }) {
+interface ScanRun {
+  lines: ScanLine[];
+  medianPx: number;
+}
+
+/**
+ * Header-row controls + result list for OCR. The scan state lives in
+ * DetailCard (which also draws the boxes over the media display); this
+ * section is the buttons, status line, and the per-line table.
+ */
+function TextDetectionSection({
+  item,
+  scan,
+  running,
+  failed,
+  showBoxes,
+  onToggleBoxes,
+  onDetect,
+  onClear,
+}: {
+  item: MediaItem;
+  scan: ScanRun | null;
+  running: boolean;
+  failed: boolean;
+  showBoxes: boolean;
+  onToggleBoxes: () => void;
+  onDetect: () => void;
+  onClear: () => void;
+}) {
+  const isImage = item.kind === "image";
+  const hasLines = !!scan && scan.lines.length > 0;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-6 items-center justify-between gap-1">
+        <span className="flex items-center gap-1.5">
+          <SectionLabel>Text detection</SectionLabel>
+          {hasLines ? (
+            <button
+              type="button"
+              aria-pressed={showBoxes}
+              title={
+                showBoxes
+                  ? "Hide detected boxes on the preview"
+                  : "Show detected boxes on the preview"
+              }
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              onClick={onToggleBoxes}
+            >
+              {showBoxes ? (
+                <EyeIcon className="size-3.5" />
+              ) : (
+                <EyeOffIcon className="size-3.5" />
+              )}
+            </button>
+          ) : null}
+        </span>
+        <span className="flex items-center gap-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-6 px-1.5 text-xs"
+            disabled={running || !isImage}
+            title={
+              isImage
+                ? "Find text lines with local OCR and add a measure box per line"
+                : "Text detection works on images only — running it on video posters may come later"
+            }
+            onClick={onDetect}
+          >
+            <ScanTextIcon className="size-3.5" />
+            {running ? "Detecting…" : "Detect text sizes"}
+          </Button>
+          {hasLines ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={onClear}
+            >
+              Clear detected
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      {failed ? (
+        <p className="text-xs text-muted-foreground">
+          Couldn&apos;t detect text — see console.
+        </p>
+      ) : scan ? (
+        <p className="text-xs text-muted-foreground">
+          {scan.lines.length === 0
+            ? "No text found."
+            : `${scan.lines.length} text line${
+                scan.lines.length === 1 ? "" : "s"
+              } → boxes · median ${Math.round(scan.medianPx)}px tall`}
+        </p>
+      ) : null}
+      {hasLines ? <ScanResults item={item} lines={scan.lines} /> : null}
+    </div>
+  );
+}
+
+/** Keyed by item id at the callsite so the armed/scan state resets on switch. */
+function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
+  const videoUrl = useMediaStore((s) => s.videoUrls[item.id]);
+  const remove = useMediaStore((s) => s.remove);
+  const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
   const addBox = useMediaStore((s) => s.addBox);
   const removeBox = useMediaStore((s) => s.removeBox);
-  const [running, setRunning] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [lastRun, setLastRun] = useState<{
-    lines: ScanLine[];
-    medianPx: number;
-  } | null>(null);
+  const [armed, setArmed] = useState(false);
+  const eff = effectiveDims(item);
+  const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
 
-  const isImage = item.kind === "image";
+  // OCR scan state lives here so the detected boxes can render over the
+  // media display above (no second image area — Taylor 2026-08-17).
+  const [scan, setScan] = useState<ScanRun | null>(null);
+  const [scanRunning, setScanRunning] = useState(false);
+  const [scanFailed, setScanFailed] = useState(false);
+  const [showScanBoxes, setShowScanBoxes] = useState(true);
 
   const detect = async () => {
-    if (running) return;
-    setRunning(true);
-    setFailed(false);
+    if (scanRunning) return;
+    setScanRunning(true);
+    setScanFailed(false);
     try {
       // Client-only dynamic import: the OCR module (and the Tesseract
       // worker behind it) never loads during prerender.
@@ -771,78 +920,21 @@ function TextDetectionSection({ item }: { item: MediaItem }) {
         });
         addBox(item.id, { id, ...line.box });
       }
-      setLastRun({ lines: kept, medianPx: medianHeightPx(lines, intrinsic) });
+      setScan({ lines: kept, medianPx: medianHeightPx(lines, intrinsic) });
+      setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
-      setFailed(true);
+      setScanFailed(true);
     } finally {
-      setRunning(false);
+      setScanRunning(false);
     }
   };
 
   const clearDetected = () => {
-    if (!lastRun) return;
-    for (const line of lastRun.lines) removeBox(item.id, line.id);
-    setLastRun(null);
+    if (!scan) return;
+    for (const line of scan.lines) removeBox(item.id, line.id);
+    setScan(null);
   };
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex h-5 items-center justify-between">
-        <SectionLabel>Text detection</SectionLabel>
-        {lastRun && lastRun.lines.length > 0 ? (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            onClick={clearDetected}
-          >
-            Clear detected
-          </button>
-        ) : null}
-      </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={running || !isImage}
-        title={
-          isImage
-            ? "Find text lines with local OCR and add a measure box per line"
-            : "Text detection works on images only — running it on video posters may come later"
-        }
-        onClick={() => void detect()}
-      >
-        <ScanTextIcon className="size-4" />
-        {running ? "Detecting…" : "Detect text sizes"}
-      </Button>
-      {failed ? (
-        <p className="text-xs text-muted-foreground">
-          Couldn&apos;t detect text — see console.
-        </p>
-      ) : lastRun ? (
-        <p className="text-xs text-muted-foreground">
-          {lastRun.lines.length === 0
-            ? "No text found."
-            : `${lastRun.lines.length} text line${
-                lastRun.lines.length === 1 ? "" : "s"
-              } → boxes · median ${Math.round(lastRun.medianPx)}px tall`}
-        </p>
-      ) : null}
-      {lastRun && lastRun.lines.length > 0 ? (
-        <ScanResults item={item} url={objectUrl} lines={lastRun.lines} />
-      ) : null}
-    </div>
-  );
-}
-
-/** Keyed by item id at the callsite so the armed state resets on switch. */
-function DetailCard({ item }: { item: MediaItem }) {
-  const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
-  const videoUrl = useMediaStore((s) => s.videoUrls[item.id]);
-  const remove = useMediaStore((s) => s.remove);
-  const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
-  const [armed, setArmed] = useState(false);
-  const eff = effectiveDims(item);
-  const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
 
   return (
     <div className="space-y-2.5 p-2.5">
@@ -907,54 +999,54 @@ function DetailCard({ item }: { item: MediaItem }) {
       </div>
 
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
-        {item.crop ? (
-          // With a crop in place the preview shows the FULL frame with
-          // the crop window drawn over it — the always-live crop editor.
-          <CropOverlayFrame item={item}>
-            {item.kind === "video" && videoUrl ? (
-              <SyncedVideo
-                src={videoUrl}
-                className="absolute inset-0 size-full"
-              />
-            ) : item.type === "image/gif" ? (
-              <GifView
-                url={objectUrl}
-                alt={item.name}
-                className="absolute inset-0 size-full"
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={objectUrl}
-                alt={item.name}
-                draggable={false}
-                className="absolute inset-0 size-full"
-              />
-            )}
-          </CropOverlayFrame>
-        ) : item.kind === "video" && videoUrl ? (
-          <SyncedVideo src={videoUrl} className="size-full object-contain" />
-        ) : item.type === "image/gif" ? (
-          <GifView
-            url={objectUrl}
-            alt={item.name}
-            className="size-full object-contain"
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={objectUrl}
-            alt={item.name}
-            className="size-full object-contain"
-          />
-        )}
+        {/* The one media display: full frame in an intrinsic-aspect host,
+            with the crop window (when cropped) and the detected-text
+            boxes (when scanned + shown) layered directly over it. */}
+        <CropOverlayFrame
+          item={item}
+          overlay={
+            showScanBoxes && scan && scan.lines.length > 0 ? (
+              <ScanBoxesOverlay lines={scan.lines} />
+            ) : null
+          }
+        >
+          {item.kind === "video" && videoUrl ? (
+            <SyncedVideo
+              src={videoUrl}
+              className="absolute inset-0 size-full"
+            />
+          ) : item.type === "image/gif" ? (
+            <GifView
+              url={objectUrl}
+              alt={item.name}
+              className="absolute inset-0 size-full"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={objectUrl}
+              alt={item.name}
+              draggable={false}
+              className="absolute inset-0 size-full"
+            />
+          )}
+        </CropOverlayFrame>
       </div>
 
       <TransportControls />
 
       <CropSection item={item} />
 
-      <TextDetectionSection item={item} />
+      <TextDetectionSection
+        item={item}
+        scan={scan}
+        running={scanRunning}
+        failed={scanFailed}
+        showBoxes={showScanBoxes}
+        onToggleBoxes={() => setShowScanBoxes((v) => !v)}
+        onDetect={() => void detect()}
+        onClear={clearDetected}
+      />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
         <span className="flex items-center gap-1.5">
@@ -1041,23 +1133,10 @@ export function MediaLibraryPanel() {
   const splitPct = useUiStore((s) => s.mediaSplitPct);
   const setSplitPct = useUiStore((s) => s.setMediaSplitPct);
 
-  // Explicit 1/2-column choice from the header toggle; two-column bumps
-  // a too-narrow panel wide enough to be useful.
   const bodyRef = useRef<HTMLDivElement>(null);
-  const mediaColumns = useUiStore((s) => s.mediaColumns);
-  const setMediaColumns = useUiStore((s) => s.setMediaColumns);
-  const storedWidth = useUiStore((s) => s.panelWidths.media);
-  const setPanelWidth = useUiStore((s) => s.setPanelWidth);
-  const wide = mediaColumns === 2;
-  const chooseColumns = (cols: 1 | 2) => {
-    setMediaColumns(cols);
-    if (cols === 2 && (storedWidth ?? 520) < 460) {
-      setPanelWidth("media", 520);
-    }
-  };
 
   const detailColumn = (
-    <div className={cn("min-w-0", !wide && "border-t border-border")}>
+    <div className="min-h-0 min-w-0 overflow-y-auto">
       {active ? (
         <DetailCard key={active.id} item={active} />
       ) : (
@@ -1066,9 +1145,6 @@ export function MediaLibraryPanel() {
         </p>
       )}
       <DisplayFillRow />
-      <p className="px-2.5 py-1.5 text-xs text-muted-foreground/70">
-        Media is stored in your browser only — never uploaded.
-      </p>
     </div>
   );
 
@@ -1081,48 +1157,23 @@ export function MediaLibraryPanel() {
       width={520}
       maxWidth="none"
       resizableHeight
-      headerActions={
-        <div className="panel-inset mr-1 flex items-center gap-0.5 rounded-md p-0.5">
-          {(
-            [
-              { cols: 1 as const, icon: RectangleVerticalIcon, label: "One column" },
-              { cols: 2 as const, icon: Columns2Icon, label: "Two columns" },
-            ] as const
-          ).map(({ cols, icon: ColIcon, label }) => (
-            <button
-              key={cols}
-              type="button"
-              aria-label={label}
-              aria-pressed={mediaColumns === cols}
-              title={label}
-              className={cn(
-                "flex size-5.5 items-center justify-center rounded-[5px] transition-colors",
-                mediaColumns === cols
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => chooseColumns(cols)}
-            >
-              <ColIcon className="size-3.5" />
-            </button>
-          ))}
-        </div>
-      }
     >
-      <div
-        ref={bodyRef}
-        className="grid h-full max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto"
-        style={
-          wide
-            ? { gridTemplateColumns: `${splitPct}% 5px minmax(0, 1fr)` }
-            : undefined
-        }
-      >
-        <div className="min-w-0">
-          <Toolbar />
-          <LibraryList />
-        </div>
-        {wide ? (
+      <div className="flex h-full max-h-[calc(100vh-8rem)] flex-col">
+        {/* The local-only promise rides the header area — always visible,
+            never scrolled away (Taylor 2026-08-17). */}
+        <p className="border-b border-border px-2.5 py-1 text-center text-xs text-muted-foreground/70">
+          Media is stored in your browser only — never uploaded.
+        </p>
+        <div
+          ref={bodyRef}
+          className="grid min-h-0 flex-1 overflow-x-clip"
+          style={{ gridTemplateColumns: `${splitPct}% 5px minmax(0, 1fr)` }}
+        >
+          {/* Library and active media scroll independently. */}
+          <div className="min-h-0 min-w-0 overflow-y-auto">
+            <Toolbar />
+            <LibraryList />
+          </div>
           <div
             role="separator"
             aria-orientation="vertical"
@@ -1139,8 +1190,8 @@ export function MediaLibraryPanel() {
               setSplitPct(((e.clientX - r.left) / r.width) * 100);
             }}
           />
-        ) : null}
-        {detailColumn}
+          {detailColumn}
+        </div>
       </div>
     </FloatingPanel>
   );
