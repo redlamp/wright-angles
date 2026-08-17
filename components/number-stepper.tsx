@@ -71,7 +71,7 @@ export function NumberStepper({
       </button>
       <Input
         aria-label={ariaLabel}
-        className="h-full w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-center font-mono text-[11px] shadow-none focus-visible:ring-0 dark:bg-transparent"
+        className="h-full w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-center font-mono text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
         value={editing ? draft : suffix ? `${shown}` : shown}
         onFocus={(e) => {
           setEditing(true);

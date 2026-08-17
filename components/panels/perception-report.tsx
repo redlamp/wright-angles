@@ -92,7 +92,7 @@ export function PerceptionReportPanel() {
                     >
                       {d.label}
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
                       {Math.round(d.distanceCm)} cm
                     </span>
                   </div>
@@ -118,7 +118,7 @@ export function PerceptionReportPanel() {
                     {ratioNote(r)}
                   </p>
                   {showBands ? (
-                    <p className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                    <p className="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
                       <LegibilityDot arcmin={arcmin} />
                       {fontPx}px @ {refH}p text ⇒ {arcmin.toFixed(0)}′{" "}
                       {arcmin >= ACUITY.comfortableTextArcmin
@@ -136,7 +136,7 @@ export function PerceptionReportPanel() {
 
         {activeItem && (activeItem.boxes?.length ?? 0) > 0 ? (
           <div className="space-y-1.5">
-            <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Measured boxes · {activeItem.name}
             </span>
             <ul className="space-y-1.5">
@@ -157,7 +157,7 @@ export function PerceptionReportPanel() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">Box {idx + 1}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {srcW}×{srcH}px src
                         {activeItem.referenceHeight !== activeItem.height
                           ? ` · ${refPx}px @ ${activeItem.referenceHeight}p`
@@ -182,7 +182,7 @@ export function PerceptionReportPanel() {
                         return (
                           <span
                             key={d.id}
-                            className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground"
+                            className="flex items-center gap-1 font-mono text-xs text-muted-foreground"
                             title={`${d.label}: ${m.mm.toFixed(1)}mm tall, ${Math.round(m.devicePx)}px`}
                           >
                             <LegibilityDot arcmin={m.arcmin} />
@@ -207,7 +207,7 @@ export function PerceptionReportPanel() {
         {showBands ? (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Probe text size
               </span>
               <div className="flex items-center gap-1.5">
@@ -219,7 +219,7 @@ export function PerceptionReportPanel() {
                   max={200}
                   className="w-20"
                 />
-                <span className="text-[10px] text-muted-foreground">px @</span>
+                <span className="text-xs text-muted-foreground">px @</span>
                 <NumberStepper
                   ariaLabel="probe reference height"
                   value={refH}
@@ -230,10 +230,10 @@ export function PerceptionReportPanel() {
                   max={4320}
                   className="w-24"
                 />
-                <span className="text-[10px] text-muted-foreground">p</span>
+                <span className="text-xs text-muted-foreground">p</span>
               </div>
             </div>
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground">
               On your screen: {hostArcmin.toFixed(0)}′. Bands per ISO
               9241-303 (cap height): ≥16′ minimum, ≥20′ comfortable.
             </p>
