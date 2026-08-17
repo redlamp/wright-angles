@@ -606,9 +606,16 @@ function CropSection({ item }: { item: MediaItem }) {
           title="Freeform crop — drag the window on the preview above"
           onClick={() => {
             pauseIfAnimated();
-            // Start a centered ~80% window; with a crop already there,
-            // the overlay is live and this is just the highlight state.
-            if (noCrop) setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+            if (noCrop) {
+              // Start a centered ~80% window.
+              setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+            } else {
+              // Entering Custom FROM a preset (Taylor): keep the window
+              // where it is, nudged a hair (0.4%) off the preset match
+              // so Custom takes the highlight and edits are freeform.
+              const c = cropOf(item);
+              setCrop(item.id, { ...c, w: c.w * 0.996, h: c.h * 0.996 });
+            }
           }}
         >
           Custom…
