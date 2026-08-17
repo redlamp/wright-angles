@@ -491,10 +491,11 @@ export default function SceneView({
 
   // The media texture is loaded ONCE here and shared by every rect.
   const rects = (tex: Texture | null) =>
-    visible.map((d) => (
+    visible.map((d, i) => (
       <DeviceRect
         key={d.id}
         device={d}
+        zBias={i * 0.04}
         centerY={d.elevation?.[scenario] ?? eyeH}
         poseKey={scenario}
         distLabel={formatDistance(d.distanceCm, unit)}

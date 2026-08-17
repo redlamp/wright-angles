@@ -7,10 +7,14 @@ export type PanelId =
   | "devices"
   | "media"
   | "report"
+  | "workbench"
   | "table"
   | "info"
   | "settings";
 export type ViewMode = "2d" | "3d";
+
+/** Tabs of the unified workbench panel (Taylor 2026-08-17). */
+export type WorkbenchTab = "devices" | "media" | "report";
 
 interface UiState {
   openPanels: Record<PanelId, boolean>;
@@ -25,6 +29,13 @@ interface UiState {
   togglePanel: (id: PanelId) => void;
   /** Open (never close) a panel — deep links from other panels. */
   openPanel: (id: PanelId) => void;
+  /** Active workbench tab (Device Manager / Media Library / Report). */
+  workbenchTab: WorkbenchTab;
+  /** Deep link: open the workbench on a tab (never closes). */
+  openWorkbenchTab: (tab: WorkbenchTab) => void;
+  /** Hotkey/sidebar semantics: same tab toggles the panel, another
+   * tab switches to it (opening if needed). */
+  toggleWorkbenchTab: (tab: WorkbenchTab) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
   setPanelWidth: (id: PanelId, width: number) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -54,13 +65,30 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       openPanels: {
-        devices: true,
+        devices: false,
         media: false,
         report: false,
+        workbench: true,
         table: false,
         info: false,
         settings: false,
       },
+      workbenchTab: "devices",
+      openWorkbenchTab: (tab) =>
+        set((s) => ({
+          workbenchTab: tab,
+          openPanels: { ...s.openPanels, workbench: true },
+        })),
+      toggleWorkbenchTab: (tab) =>
+        set((s) => {
+          if (s.openPanels.workbench && s.workbenchTab === tab) {
+            return { openPanels: { ...s.openPanels, workbench: false } };
+          }
+          return {
+            workbenchTab: tab,
+            openPanels: { ...s.openPanels, workbench: true },
+          };
+        }),
       panelPositions: {},
       panelWidths: {},
       viewMode: "2d",
@@ -114,6 +142,27 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "wright-angles:ui",
+      version: 2,
+      // v2: the three content panels merged into the workbench — carry
+      // legacy state over so an open panel becomes the open workbench.
+      migrate: (persisted) => {
+        const s = persisted as {
+          openPanels?: Record<string, boolean>;
+          workbenchTab?: WorkbenchTab;
+        };
+        if (s?.openPanels && s.openPanels.workbench === undefined) {
+          s.openPanels.workbench =
+            !!s.openPanels.devices ||
+            !!s.openPanels.media ||
+            !!s.openPanels.report;
+          s.workbenchTab = s.openPanels.media
+            ? "media"
+            : s.openPanels.report
+              ? "report"
+              : "devices";
+        }
+        return s;
+      },
       // Selection is per-session; everything else persists as before.
       partialize: (s) =>
         Object.fromEntries(

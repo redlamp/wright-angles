@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CornerDownRightIcon,
   EyeIcon,
   EyeOffIcon,
   FolderDownIcon,
-  ImageIcon,
   LayoutGridIcon,
   ListIcon,
   ScanTextIcon,
@@ -49,7 +49,6 @@ import {
 } from "@/stores/annotation-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
-import { FloatingPanel } from "./floating-panel";
 import {
   GifView,
   SyncedVideo,
@@ -1023,19 +1022,21 @@ function TextDetectionSection({
   );
 }
 
-/** Post-scan deep link (plan 5.5): the verdicts live over there. */
+/** Post-scan deep link (plan 5.5): the verdicts live one tab over.
+ * CornerDownRight reads as in-app navigation, not an external link. */
 function ScanFollowThrough() {
-  const openPanel = useUiStore((s) => s.openPanel);
+  const openWorkbenchTab = useUiStore((s) => s.openWorkbenchTab);
   return (
     <div className="flex gap-1">
       <Button
         variant="ghost"
         size="sm"
         className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-        title="Open the Perception Report — measured text carries its read content"
-        onClick={() => openPanel("report")}
+        title="Switch to the Perception Report tab — measured text carries its read content"
+        onClick={() => openWorkbenchTab("report")}
       >
-        Perception Report →
+        <CornerDownRightIcon className="size-3.5" />
+        Perception Report
       </Button>
     </div>
   );
@@ -1335,7 +1336,8 @@ function DisplayFillRow() {
   );
 }
 
-export function MediaLibraryPanel() {
+/** Media Library tab content (hosted by the workbench panel). */
+export function MediaLibraryContent() {
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const active = items.find((i) => i.id === activeId);
@@ -1360,17 +1362,7 @@ export function MediaLibraryPanel() {
   );
 
   return (
-    <FloatingPanel
-      id="media"
-      title="Media Library"
-      icon={ImageIcon}
-      defaultPosition={{ x: 420, y: 16 }}
-      width={520}
-      maxWidth="none"
-      resizableHeight
-      headerNote="Media is stored on your computer only — never uploaded."
-    >
-      <div className="flex h-full max-h-[calc(100vh-8rem)] flex-col">
+    <div className="flex h-full min-h-0 flex-col">
         <div
           ref={bodyRef}
           className="grid min-h-0 flex-1 overflow-x-clip"
@@ -1399,7 +1391,6 @@ export function MediaLibraryPanel() {
           />
           {detailColumn}
         </div>
-      </div>
-    </FloatingPanel>
+    </div>
   );
 }
