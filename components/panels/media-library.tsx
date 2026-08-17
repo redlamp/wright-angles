@@ -24,6 +24,7 @@ import {
   boxInCrop,
   cropOf,
   cropScaleStyle,
+  cropsEqual,
   dragCrop,
   effectiveDims,
   isFullFrame,
@@ -58,6 +59,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const REFERENCE_CHOICES = [720, 1080, 1440, 2160];
 
@@ -574,48 +581,61 @@ function CropSection({
   const setCrop = useMediaStore((s) => s.setCrop);
   const [editing, setEditing] = useState(false);
 
+  // Which option is in effect right now: no crop (or an effectively
+  // full-frame one) → None; a crop matching a preset within EPS → that
+  // preset; any other crop is the freeform editor's doing → Custom.
+  const current = cropOf(item);
+  const noCrop = !item.crop || isFullFrame(current);
+  const presets = CROP_PRESETS.map(({ kind, label }) => {
+    const crop = presetCrop(kind, item.width, item.height);
+    return {
+      kind,
+      label,
+      crop,
+      active: !noCrop && crop !== null && cropsEqual(current, crop),
+    };
+  });
+  const customActive = !noCrop && !presets.some((p) => p.active);
+
   return (
     <div className="space-y-1.5">
       <div className="flex h-5 items-center justify-between">
         <SectionLabel>Crop</SectionLabel>
-        {item.crop ? (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            onClick={() => {
-              setCrop(item.id, undefined);
-              setEditing(false);
-            }}
-          >
-            Clear
-          </button>
-        ) : null}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {CROP_PRESETS.map(({ kind, label }) => {
-          const preset = presetCrop(kind, item.width, item.height);
-          return (
-            <Button
-              key={kind}
-              variant="secondary"
-              size="sm"
-              disabled={!preset}
-              title={
-                preset ? undefined : "The image is already this shape"
-              }
-              onClick={() => preset && setCrop(item.id, preset)}
-            >
-              {label}
-            </Button>
-          );
-        })}
         <Button
-          variant={editing ? "default" : "secondary"}
+          variant={noCrop ? "default" : "secondary"}
           size="sm"
+          aria-pressed={noCrop}
+          title="Show the full frame, uncropped"
+          onClick={() => {
+            setCrop(item.id, undefined);
+            setEditing(false);
+          }}
+        >
+          None
+        </Button>
+        {presets.map(({ kind, label, crop, active }) => (
+          <Button
+            key={kind}
+            variant={active ? "default" : "secondary"}
+            size="sm"
+            aria-pressed={active}
+            disabled={!crop}
+            title={crop ? undefined : "The image is already this shape"}
+            onClick={() => crop && setCrop(item.id, crop)}
+          >
+            {label}
+          </Button>
+        ))}
+        <Button
+          variant={editing || customActive ? "default" : "secondary"}
+          size="sm"
+          aria-pressed={customActive}
           aria-expanded={editing}
           onClick={() => setEditing((v) => !v)}
         >
-          Adjust…
+          Custom…
         </Button>
       </div>
       {editing ? (
@@ -946,7 +966,24 @@ function DetailCard({ item }: { item: MediaItem }) {
       <TextDetectionSection item={item} />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
-        Reference size
+        <span className="flex items-center gap-1.5">
+          Reference size
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                aria-label="What reference size means"
+                className="flex size-4 cursor-help items-center justify-center rounded-full border border-muted-foreground/50 text-xs leading-none transition-colors hover:border-foreground/60 hover:text-foreground"
+              >
+                ?
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-60">
+                Tells Wright Angles how large this content really is — one
+                screen-height of the source device. Measurements and
+                arc-minute readouts scale from it.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </span>
         <Select
           value={String(item.referenceHeight)}
           onValueChange={(v) => setReferenceHeight(item.id, Number(v))}
