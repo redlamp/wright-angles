@@ -35,9 +35,14 @@ import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { isAnimatedItem } from "@/lib/playback-engine";
-import { activeKeyframe, KEYFRAME_EPS } from "@/lib/scan-keyframes";
+import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
-import { detectTextForItem, scanKeyframeAt } from "@/lib/scan-actions";
+import {
+  clearCurrentKeyframeScan,
+  detectTextForItem,
+  scanKeyframeAt,
+} from "@/lib/scan-actions";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import {
   useAnnotationStore,
   type ScanColorMode,
@@ -1036,44 +1041,6 @@ function ScanFollowThrough() {
   );
 }
 
-/**
- * Destructive action needing a second click: the first turns the button
- * into "Confirm" (solid red); it disarms on blur.
- */
-function ConfirmButton({
-  label,
-  title,
-  onConfirm,
-}: {
-  label: string;
-  title: string;
-  onConfirm: () => void;
-}) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <Button
-      variant={armed ? "destructive" : "ghost"}
-      size="sm"
-      className={cn(
-        "h-6 px-1.5 text-xs",
-        !armed &&
-          "text-destructive hover:bg-destructive/10 hover:text-destructive",
-      )}
-      title={armed ? `Click again to ${label.toLowerCase()}` : title}
-      onBlur={() => setArmed(false)}
-      onClick={() => {
-        if (armed) {
-          setArmed(false);
-          onConfirm();
-        } else {
-          setArmed(true);
-        }
-      }}
-    >
-      {armed ? "Confirm" : label}
-    </Button>
-  );
-}
 
 const fmtKfTime = (t: number) => {
   const m = Math.floor(t / 60);
@@ -1104,7 +1071,6 @@ function DetailCard({ item }: { item: MediaItem }) {
 
   const animated = isAnimatedItem(item);
   const timeSec = usePlaybackStore((s) => s.timeSec);
-  const setScanKeyframes = useMediaStore((s) => s.setScanKeyframes);
   const keyframes = item.scanKeyframes ?? [];
   const kf = animated ? activeKeyframe(keyframes, timeSec) : null;
   const unscannedCount = keyframes.filter((k) => !k.lines).length;
@@ -1155,19 +1121,7 @@ function DetailCard({ item }: { item: MediaItem }) {
     }
   };
 
-  /** "Clear Current" (timeline only): the ACTIVE keyframe's scan goes,
-   * its marker and every other keyframe stay. */
-  const clearCurrent = () => {
-    if (!animated || !kf) return;
-    setScanKeyframes(
-      item.id,
-      freshKeyframes().map((k) =>
-        Math.abs(k.timeSec - kf.timeSec) <= KEYFRAME_EPS
-          ? { timeSec: k.timeSec, lines: null }
-          : k,
-      ),
-    );
-  };
+  const clearCurrent = () => clearCurrentKeyframeScan(item.id);
 
   const keyframeNote =
     batchNote ??
