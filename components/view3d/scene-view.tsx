@@ -565,6 +565,9 @@ export default function SceneView({
           inputType={inputType}
           heightCm={heightCm}
           palette={palette}
+          // Faded during the head-on↔orbit flight so the camera never
+          // clips through the figure's head (Taylor 2026-08-17).
+          shown={controlsOn && !exiting}
         />
         <ScenarioProps
           scenario={scenario}
