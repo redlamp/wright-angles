@@ -43,6 +43,12 @@ interface UiState {
   pinDetail: (id: string, pos: { x: number; y: number }) => void;
   unpinDetail: (id: string) => void;
   moveDetail: (id: string, pos: { x: number; y: number }) => void;
+  /**
+   * Device selected app-wide (table row, 2D rect, 3D rect). Session-only:
+   * excluded from persistence via `partialize` below.
+   */
+  selectedDeviceId: string | null;
+  selectDevice: (id: string | null) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -102,7 +108,16 @@ export const useUiStore = create<UiState>()(
         set((s) => ({
           pinnedDetails: { ...s.pinnedDetails, [id]: pos },
         })),
+      selectedDeviceId: null,
+      selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
     }),
-    { name: "wright-angles:ui" },
+    {
+      name: "wright-angles:ui",
+      // Selection is per-session; everything else persists as before.
+      partialize: (s) =>
+        Object.fromEntries(
+          Object.entries(s).filter(([key]) => key !== "selectedDeviceId"),
+        ),
+    },
   ),
 );
