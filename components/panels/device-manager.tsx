@@ -682,13 +682,23 @@ function AddDeviceMenu() {
   );
 }
 
+/**
+ * Selector fallback MUST be a stable module constant: an inline `?? {...}`
+ * returns a fresh object every getSnapshot call, which React treats as a
+ * changed store snapshot → infinite re-render loop. It only bites when the
+ * stored position is unset — i.e. every brand-new visitor — which is
+ * exactly how it shipped: dev machines all had stored positions, and
+ * v0.3.0 crashed on load for fresh-state users (React #185).
+ */
+const DEFAULT_DEVICES_PANEL_POS = { x: 64, y: 16 };
+
 /** Detail flyout beside the Device Manager, pinnable into its own window. */
 function DetailFlyout() {
   const openDetailId = useUiStore((s) => s.openDetailId);
   const openDetail = useUiStore((s) => s.openDetail);
   const pinDetail = useUiStore((s) => s.pinDetail);
   const panelPos = useUiStore(
-    (s) => s.panelPositions.devices ?? { x: 64, y: 16 },
+    (s) => s.panelPositions.devices ?? DEFAULT_DEVICES_PANEL_POS,
   );
   const panelWidth = useUiStore((s) => s.panelWidths.devices ?? 380);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
