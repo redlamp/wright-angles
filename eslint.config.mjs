@@ -16,6 +16,9 @@ const eslintConfig = defineConfig([
     ".remember/**",
     // Vendored Tesseract.js runtime (minified), see public/ocr/README.md.
     "public/ocr/**",
+    // Obsidian vault internals (gitignored, but eslint scans the disk):
+    // community plugins drop their own JS here.
+    "wiki/.obsidian/**",
   ]),
 ]);
 
