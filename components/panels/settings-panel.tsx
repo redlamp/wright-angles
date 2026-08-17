@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   DownloadIcon,
+  RulerIcon,
   SettingsIcon,
   ShieldCheckIcon,
   SparklesIcon,
@@ -14,6 +15,7 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useUiStore } from "@/stores/ui-store";
 import { downloadSetup, importSetupFile } from "@/lib/setup-io";
+import { CalibrationDialog } from "@/components/calibration-dialog";
 import { FloatingPanel } from "./floating-panel";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -116,6 +118,7 @@ export function SettingsPanel() {
   const resetDevices = useDeviceStore((s) => s.resetAll);
   const wipeMedia = useMediaStore((s) => s.wipeAll);
   const [armed, setArmed] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -189,6 +192,20 @@ export function SettingsPanel() {
           >
             <SparklesIcon className="size-3.5" /> Run setup assistant again
           </Button>
+        </Section>
+
+        <Section label="This device">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-full justify-start text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => setCalibrating(true)}
+          >
+            <RulerIcon className="size-3.5" /> Calibrate screen size…
+          </Button>
+          <p className="px-2.5 text-sm leading-4 text-muted-foreground">
+            match a credit card to measure your true screen size
+          </p>
         </Section>
 
         <Section label="Units">
@@ -272,6 +289,7 @@ export function SettingsPanel() {
           </button>
         )}
       </div>
+      <CalibrationDialog open={calibrating} onOpenChange={setCalibrating} />
     </FloatingPanel>
   );
 }
