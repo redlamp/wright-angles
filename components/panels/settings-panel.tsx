@@ -58,7 +58,7 @@ function Section({
 }) {
   return (
     <div className="space-y-1">
-      <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </span>
       {children}
@@ -89,7 +89,7 @@ function StorageUsage() {
   const pct = usage.quota > 0 ? (usage.used / usage.quota) * 100 : 0;
   return (
     <div className="panel-inset space-y-1 rounded-md px-2.5 py-2">
-      <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+      <div className="flex justify-between font-mono text-xs text-muted-foreground">
         <span>{mb(usage.used)} MB used</span>
         <span>{mb(usage.quota)} MB available</span>
       </div>
@@ -179,7 +179,7 @@ export function SettingsPanel() {
             }}
           />
           {importError ? (
-            <p className="text-[10px] text-destructive">{importError}</p>
+            <p className="text-xs text-destructive">{importError}</p>
           ) : null}
           <Button
             variant="ghost"
@@ -237,7 +237,7 @@ export function SettingsPanel() {
           <StorageUsage />
         </Section>
 
-        <div className="panel-inset flex items-start gap-2 rounded-md px-2.5 py-2 text-[11px] leading-4 text-muted-foreground">
+        <div className="panel-inset flex items-start gap-2 rounded-md px-2.5 py-2 text-xs leading-4 text-muted-foreground">
           <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             Wright Angles has no server. Devices, settings, and images live

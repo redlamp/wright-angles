@@ -171,7 +171,7 @@ export function ComparisonTablePanel() {
       width={620}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-auto p-2.5">
-        <table className="w-full border-collapse font-mono text-xs">
+        <table className="w-full border-collapse font-mono text-sm">
           <thead>
             <tr className="text-left text-muted-foreground">
               {COLUMNS.map((c) => (
