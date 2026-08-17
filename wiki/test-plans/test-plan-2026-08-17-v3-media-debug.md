@@ -30,10 +30,12 @@ loop; all dev machines had stored state and sailed past it).
 ## 2. Design system — type scale (Taylor: current text "would fail
    the legibility test")
 
-- [ ] 2.1 Agree the scale. Proposal on the table: 14px base UI /
-      13px secondary + numeric readouts (tabular) / 12px absolute
-      floor (captions only — kill every 10–11px) / 15–16px panel
-      titles. Barlow throughout, Share Tech Mono for readouts.
+- [ ] 2.1 Scale agreed in principle (Taylor 2026-08-17): work INSIDE
+      shadcn + Tailwind conventions to show design-system craft —
+      Tailwind type tokens only (`text-sm` 14px base, `text-xs` 12px
+      floor, `text-base`/`font-medium` titles), kill every arbitrary
+      `text-[10px]`/`text-[11px]`. Barlow throughout, Share Tech Mono
+      readouts. See [[qa-2026-08-17-media-debug-decisions]].
 - [ ] 2.2 Roll out across worst offenders first: comparison table,
       media library, scene HUD, panel chrome, onboarding.
 
@@ -51,9 +53,12 @@ loop; all dev machines had stored state and sailed past it).
 - [ ] 4.1 m media · d devices · p perception · c comparison ·
       s settings · Tab 2D/3D toggle (suppressed while typing in
       inputs).
-- [ ] 4.2 Candidate additions (Taylor open to suggestions):
-      Esc deselect/close topmost, x crop mode, o OCR overlay,
-      1/2/3 stances, ? hotkey cheat-sheet.
+- [ ] 4.2 Confirmed additions (Taylor 2026-08-17): o OCR overlay ·
+      x crop · 1/2/3 stances · q/w/e input types · ? cheat-sheet
+      overlay (needs building — doesn't exist yet) · Esc deselect.
+- [ ] 4.3 2D interaction change: drop Space-to-pan. Left mouse
+      selects on click; dragging pans by default (drag threshold
+      distinguishes the two).
 
 ## 5. Active media panel redesign (Taylor spec)
 

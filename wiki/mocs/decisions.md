@@ -5,3 +5,4 @@
 - [[decision-github-pages-deploy]] — GH Pages static export from `main`, gated env config *(adopted)*
 - [[decision-local-only-media]] — media never leaves the machine; IndexedDB + localStorage *(adopted)*
 - [[design-active-media-gateway]] — Active Media as the measuring/monitoring gateway; content in, verdicts out *(draft)*
+- [[qa-2026-08-17-media-debug-decisions]] — ISO-minimum semantics, blessed This Device, local-only exports, user-driven video keyframes, shadcn type scale, hotkey map *(adopted)*
