@@ -32,9 +32,6 @@ interface UiState {
   /** Media Library two-column split, left column percent (25–75). */
   mediaSplitPct: number;
   setMediaSplitPct: (pct: number) => void;
-  /** Media Library layout: single column or library+detail columns. */
-  mediaColumns: 1 | 2;
-  setMediaColumns: (cols: 1 | 2) => void;
   /** Device whose detail flyout is open beside the Device Manager. */
   openDetailId: string | null;
   /** Pinned device-detail windows and their positions. */
@@ -88,8 +85,6 @@ export const useUiStore = create<UiState>()(
       mediaSplitPct: 50,
       setMediaSplitPct: (pct) =>
         set({ mediaSplitPct: Math.min(75, Math.max(25, pct)) }),
-      mediaColumns: 2,
-      setMediaColumns: (mediaColumns) => set({ mediaColumns }),
       openDetailId: null,
       pinnedDetails: {},
       openDetail: (openDetailId) => set({ openDetailId }),
