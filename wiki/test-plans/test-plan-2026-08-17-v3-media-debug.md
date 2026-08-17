@@ -14,13 +14,13 @@ loop; all dev machines had stored state and sailed past it).
       arrow moves — reserve the arrow's space.
 - [x] 1.3 Comparison table: clicking a row selects that device in the
       2D and 3D views (shared selection store).
-- [ ] 1.4 Comparison table: font sizes up to the new type scale (topic 2).
-- [ ] 1.5 Crop: active state highlighted; "Custom" rename — shipped,
+- [x] 1.4 Comparison table: font sizes up to the new type scale (topic 2).
+- [x] 1.5 Crop: active state highlighted; "Custom" rename — shipped,
       then superseded same morning by the 5.4 aspect redesign.
-- [ ] 1.6 Gamepad pose: hold is too high — lower it; forearms roughly
+- [x] 1.6 Gamepad pose: hold is too high — lower it; forearms roughly
       10° tilted up from horizontal.
-- [ ] 1.7 Standing desk: top sits just below the figure's elbow.
-- [ ] 1.8 3D labels render in Barlow (vendored for troika), not the
+- [x] 1.7 Standing desk: top sits just below the figure's elbow.
+- [x] 1.8 3D labels render in Barlow (vendored for troika), not the
       generic drei default.
 - [ ] 1.9 Console hygiene: THREE.Clock deprecation is R3F-internal
       (upstream, no action); GPOS/GSUB font-table warnings come from
@@ -30,13 +30,13 @@ loop; all dev machines had stored state and sailed past it).
 ## 2. Design system — type scale (Taylor: current text "would fail
    the legibility test")
 
-- [ ] 2.1 Scale agreed in principle (Taylor 2026-08-17): work INSIDE
+- [x] 2.1 Scale agreed in principle (Taylor 2026-08-17): work INSIDE
       shadcn + Tailwind conventions to show design-system craft —
       Tailwind type tokens only (`text-sm` 14px base, `text-xs` 12px
       floor, `text-base`/`font-medium` titles), kill every arbitrary
       `text-[10px]`/`text-[11px]`. Barlow throughout, Share Tech Mono
       readouts. See [[qa-2026-08-17-media-debug-decisions]].
-- [ ] 2.2 Roll out across worst offenders first: comparison table,
+- [x] 2.2 Roll out across worst offenders first: comparison table,
       media library, scene HUD, panel chrome, onboarding.
 
 ## 3. Device side panel (click-to-inspect)
@@ -50,10 +50,10 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 4. Hotkeys
 
-- [ ] 4.1 BUILT, verify: m media · d devices · p perception ·
+- [x] 4.1 BUILT, verify: m media · d devices · p perception ·
       c comparison · s settings · Tab 2D/3D toggle (suppressed while
       typing in inputs).
-- [ ] 4.2 BUILT except x/o (wire once crop v2 and the OCR overlay
+- [x] 4.2 BUILT except x/o (wire once crop v2 and the OCR overlay
       exist — listed "soon" in the sheet): 1/2/3 stances · q/w/e
       input types · ? cheat-sheet overlay · Esc deselect.
 - [ ] 4.3 BUILT, verify: Space-pan dropped; left mouse selects on a
@@ -62,19 +62,19 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 5. Active media panel redesign (Taylor spec)
 
-- [ ] 5.1 BUILT, verify: name row at the TOP with the red trashcan
+- [x] 5.1 BUILT, verify: name row at the TOP with the red trashcan
       icon (arms the two-step confirm; bottom remove link gone).
-- [ ] 5.2 BUILT, verify: DISPLAY / SOURCE grid cells above the media,
+- [x] 5.2 BUILT, verify: DISPLAY / SOURCE grid cells above the media,
       identical layout for every item; shown-as removed.
-- [ ] 5.3 BUILT with 5.1–5.2: name → details → media → timeline order.
-- [ ] 5.4 BUILT, verify: crop v2 — one aspect row (None · 4:3 · 5:4 ·
+- [x] 5.3 BUILT with 5.1–5.2: name → details → media → timeline order.
+- [x] 5.4 BUILT, verify: crop v2 — one aspect row (None · 4:3 · 5:4 ·
       16:9 · 16:10 · 21:9 · 32:9 · Custom), overlay editor on the
       media, playhead pauses on crop interaction, native-aspect
       images highlight their ratio button.
 - [ ] 5.5 BUILT, verify: scan status line (batch shows "Scanning k of
       n…"), post-scan links open the comparison table and perception
       report.
-- [ ] 5.6 BUILT, verify: reference size "?" tooltip.
+- [x] 5.6 BUILT, verify: reference size "?" tooltip.
 - [ ] 5.7 BUILT, verify (Taylor's 10:43 batch): scan boxes over the
       media (no second image), eye toggle by the section header,
       Detect + Clear on the header line, resizable results list,
@@ -83,11 +83,11 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 6. Perception report v2 — Miller columns
 
-- [ ] 6.1 Window resizable, wider by default.
-- [ ] 6.2 Lists ALL project devices, including ones hidden from
+- [x] 6.1 Window resizable, wider by default.
+- [x] 6.2 Lists ALL project devices, including ones hidden from
       2D/3D. BUG: distances render in inches when the unit setting
       says cm — must follow the setting.
-- [ ] 6.3 Miller columns: "All devices" selected by default, "My
+- [x] 6.3 Miller columns: "All devices" selected by default, "My
       Display" listed; selecting a device narrows column 2 to that
       device's report.
 - [ ] 6.4 BUILT, verify: OCR-sourced measure boxes carry their read
@@ -111,20 +111,20 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 8. OCR → perception report (approved; ties into 7's groups)
 
-- [ ] 8.1 Scan results (grouped) feed the report's measured-box list.
-- [ ] 8.2 How to test: load a UI screenshot → Text detection → open
+- [x] 8.1 Scan results (grouped) feed the report's measured-box list.
+- [x] 8.2 How to test: load a UI screenshot → Text detection → open
       Perception Report → the boxes appear with their text labels and
       per-device arcmin verdicts; smallest text in shot is called out.
 
 ## 9. Video OCR keyframes (Taylor: user-set, batch or piecemeal)
 
-- [ ] 9.1 BUILT, verify: bookmark button places/removes keyframes at
+- [x] 9.1 BUILT, verify: bookmark button places/removes keyframes at
       the playhead; Scan frame scans one, Scan all batches the
       unscanned in order (engine frame → local OCR).
-- [ ] 9.2 BUILT, verify: diamond markers under the timeline (filled =
+- [x] 9.2 BUILT, verify: diamond markers under the timeline (filled =
       scanned) click-seek+pause; `<`/`>` (`,`/`.`) jump markers and
       pause; Space toggles play/pause.
-- [ ] 9.3 BUILT, verify: the active keyframe's boxes/list persist
+- [x] 9.3 BUILT, verify: the active keyframe's boxes/list persist
       until the playhead passes the next marker; Clear keeps markers,
       drops scans. All 9.x built without a browser (extension was
       down) — gates green, needs the visual pass.

@@ -7,6 +7,8 @@ import {
   PauseIcon,
   PlayIcon,
   RepeatIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getEngine } from "@/lib/playback-engine";
@@ -14,6 +16,8 @@ import { cropOf } from "@/lib/media-crop";
 import {
   addKeyframe,
   keyframeAt,
+  nextKeyframeTime,
+  prevKeyframeTime,
   removeKeyframe,
 } from "@/lib/scan-keyframes";
 import type { MediaItem } from "@/lib/types";
@@ -235,7 +239,7 @@ export function TransportControls() {
                 aria-label={`OCR keyframe at ${fmtTime(k.timeSec)}`}
                 title={`OCR keyframe · ${fmtTime(k.timeSec)}${k.lines ? ` · ${k.lines.length} lines` : " · not scanned"}`}
                 className={cn(
-                  "absolute top-full size-2 -translate-x-1/2 rotate-45 border border-[#f5a524]",
+                  "absolute top-full size-2 -translate-x-1/2 rotate-45 cursor-pointer border border-[#f5a524] transition-transform hover:scale-150",
                   k.lines ? "bg-[#f5a524]" : "bg-transparent",
                 )}
                 style={{ left: `${(k.timeSec / durationSec) * 100}%` }}
@@ -251,6 +255,37 @@ export function TransportControls() {
         {fmtTime(timeSec)}
         {durationSec ? ` / ${fmtTime(durationSec)}` : ""}
       </span>
+      {/* Prev/next OCR keyframe — button versions of the ,/. hotkeys. */}
+      {[
+        {
+          label: "Previous keyframe",
+          Icon: SkipBackIcon,
+          target: prevKeyframeTime(keyframes, timeSec),
+        },
+        {
+          label: "Next keyframe",
+          Icon: SkipForwardIcon,
+          target: nextKeyframeTime(keyframes, timeSec),
+        },
+      ].map(({ label, Icon, target }) => (
+        <button
+          key={label}
+          type="button"
+          aria-label={label}
+          title={
+            target !== null ? `${label} · ${fmtTime(target)}` : label
+          }
+          disabled={target === null}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          onClick={() => {
+            if (target === null) return;
+            setPlaying(false);
+            seek(target);
+          }}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
       <button
         type="button"
         aria-label="Loop"
