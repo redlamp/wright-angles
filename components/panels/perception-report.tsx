@@ -12,8 +12,14 @@ import {
   formatDistance,
   physicalSizeCm,
 } from "@/lib/display-math";
-import { detectTextForItem } from "@/lib/scan-actions";
+import {
+  clearCurrentKeyframeScan,
+  detectTextForItem,
+} from "@/lib/scan-actions";
+import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
+import { usePlaybackStore } from "@/stores/playback-store";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import type { Device, MediaItem } from "@/lib/types";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -132,6 +138,7 @@ export function PerceptionReportPanel() {
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const removeBox = useMediaStore((s) => s.removeBox);
+  const clearDetection = useMediaStore((s) => s.clearDetection);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const activeItem = items.find((i) => i.id === activeId) ?? null;
@@ -160,6 +167,19 @@ export function PerceptionReportPanel() {
         : [thisDevice, ...devices];
 
   const textEntries = activeItem ? buildTextEntries(activeItem) : [];
+
+  // Clear-button state mirrors the Media Library's Text Detection row.
+  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
+  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
+  const activeKf =
+    animatedActive && activeItem?.scanKeyframes
+      ? activeKeyframe(activeItem.scanKeyframes, timeSec)
+      : null;
+  const hasAnyDetection =
+    !!activeItem &&
+    ((activeItem.boxes?.length ?? 0) > 0 ||
+      (activeItem.scanKeyframes?.length ?? 0) > 0 ||
+      !!activeItem.scan);
 
   const detect = async () => {
     if (!activeItem || detecting) return;
@@ -273,21 +293,37 @@ export function PerceptionReportPanel() {
               Scanned text{activeItem ? ` · ${activeItem.name}` : ""}
             </span>
             {activeItem ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-6 shrink-0 px-1.5 text-xs"
-                disabled={detecting}
-                title={
-                  isAnimatedItem(activeItem)
-                    ? "Pause and scan the current frame (adds an OCR keyframe)"
-                    : "Find text lines with local OCR"
-                }
-                onClick={() => void detect()}
-              >
-                <ScanTextIcon className="size-3.5" />
-                {detecting ? "Detecting…" : "Detect Text Size"}
-              </Button>
+              <span className="flex shrink-0 items-center gap-1">
+                {hasAnyDetection ? (
+                  <ConfirmButton
+                    label="Clear All"
+                    title="Remove EVERY box and keyframe on this media — including ones from older sessions"
+                    onConfirm={() => clearDetection(activeItem.id)}
+                  />
+                ) : null}
+                {animatedActive && activeKf?.lines ? (
+                  <ConfirmButton
+                    label="Clear Current"
+                    title="Clear the scan on the current keyframe (the marker stays)"
+                    onConfirm={() => clearCurrentKeyframeScan(activeItem.id)}
+                  />
+                ) : null}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-6 px-1.5 text-xs"
+                  disabled={detecting}
+                  title={
+                    animatedActive
+                      ? "Pause and scan the current frame (adds an OCR keyframe)"
+                      : "Find text lines with local OCR"
+                  }
+                  onClick={() => void detect()}
+                >
+                  <ScanTextIcon className="size-3.5" />
+                  {detecting ? "Detecting…" : "Detect Text Size"}
+                </Button>
+              </span>
             ) : null}
           </div>
           {detectFailed ? (

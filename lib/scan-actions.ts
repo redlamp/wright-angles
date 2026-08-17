@@ -2,7 +2,7 @@
 
 import { captureFrameAt } from "./frame-capture";
 import { isAnimatedItem } from "./playback-engine";
-import { withScan } from "./scan-keyframes";
+import { activeKeyframe, KEYFRAME_EPS, withScan } from "./scan-keyframes";
 import { groupTextLines } from "./text-groups";
 import type { KeyframeLine, MediaItem } from "./types";
 import { useMediaStore } from "@/stores/media-store";
@@ -75,6 +75,26 @@ export async function scanKeyframeAt(
   } finally {
     frame.revoke();
   }
+}
+
+/**
+ * "Clear Current": drop the ACTIVE keyframe's scan (last marker at or
+ * before the playhead); the marker itself and every other keyframe stay.
+ */
+export function clearCurrentKeyframeScan(itemId: string): void {
+  const media = useMediaStore.getState();
+  const item = media.items.find((i) => i.id === itemId);
+  const kfs = item?.scanKeyframes ?? [];
+  const kf = activeKeyframe(kfs, usePlaybackStore.getState().timeSec);
+  if (!item || !kf) return;
+  media.setScanKeyframes(
+    itemId,
+    kfs.map((k) =>
+      Math.abs(k.timeSec - kf.timeSec) <= KEYFRAME_EPS
+        ? { timeSec: k.timeSec, lines: null }
+        : k,
+    ),
+  );
 }
 
 /**
