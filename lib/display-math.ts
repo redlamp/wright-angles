@@ -20,15 +20,19 @@ export const inToCm = (v: number) => v * CM_PER_IN;
 export const cmToIn = (v: number) => v / CM_PER_IN;
 
 /**
- * Human-readable viewing distance in the chosen unit: "74 cm",
- * "13.8 in", and from three feet up the conventional feet-and-inches
- * form (6′ 7″). Inch remainders round to whole inches, carrying into
- * the foot count at 12 so 35.8 in reads 3′ 0″, never 2′ 12″.
+ * Human-readable viewing distance in the chosen unit (Taylor
+ * 2026-08-17): whole centimeters, or imperial as feet-and-inches from
+ * one foot up (6′ 7″) and plain inches in half-inch steps below a foot
+ * (9.5″). Inch remainders round whole and carry into the foot count at
+ * 12, so 35.8 in reads 3′ 0″, never 2′ 12″.
  */
 export function formatDistance(distanceCm: number, unit: LengthUnit): string {
   if (unit === "cm") return `${Math.round(distanceCm)} cm`;
   const totalIn = cmToIn(distanceCm);
-  if (totalIn < 36) return `${totalIn.toFixed(1)} in`;
+  if (totalIn < 12) {
+    const half = Math.round(totalIn * 2) / 2;
+    return `${half % 1 === 0 ? half.toFixed(0) : half.toFixed(1)}″`;
+  }
   let ft = Math.floor(totalIn / 12);
   let rem = Math.round(totalIn - ft * 12);
   if (rem === 12) {
