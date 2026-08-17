@@ -35,9 +35,9 @@ import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { isAnimatedItem } from "@/lib/playback-engine";
-import { captureFrameAt } from "@/lib/frame-capture";
-import { activeKeyframe, KEYFRAME_EPS, withScan } from "@/lib/scan-keyframes";
-import { groupColor, groupTextLines } from "@/lib/text-groups";
+import { activeKeyframe, KEYFRAME_EPS } from "@/lib/scan-keyframes";
+import { groupColor } from "@/lib/text-groups";
+import { detectTextForItem, scanKeyframeAt } from "@/lib/scan-actions";
 import {
   useAnnotationStore,
   type ScanColorMode,
@@ -614,15 +614,6 @@ function CropSection({ item }: { item: MediaItem }) {
   );
 }
 
-/** Detected lines are capped to the largest few so a text-dense shot
- * doesn't flood the overlay and the Perception Report. */
-const MAX_DETECTED_BOXES = 24;
-
-const newBoxId = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-
 /**
  * Fully local OCR (vendored Tesseract, see public/ocr/README.md): each
  * detected text line becomes a regular HighlightBox, so it flows into the
@@ -886,7 +877,6 @@ function TextDetectionSection({
     hasLines ||
     (item.boxes?.length ?? 0) > 0 ||
     (item.scanKeyframes?.length ?? 0) > 0;
-  const [resetArmed, setResetArmed] = useState(false);
 
   return (
     <div className="space-y-1.5">
@@ -922,26 +912,18 @@ function TextDetectionSection({
             Destructive actions in red. */}
         <span className="flex items-center gap-1">
           {hasAnyDetection ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            <ConfirmButton
+              label="Clear All"
               title="Remove EVERY box and keyframe on this media — including ones from older sessions"
-              onClick={() => setResetArmed(true)}
-            >
-              Clear All
-            </Button>
+              onConfirm={onClearAll}
+            />
           ) : null}
           {animated && hasLines ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            <ConfirmButton
+              label="Clear Current"
               title="Clear the scan on the current keyframe (the marker stays)"
-              onClick={onClear}
-            >
-              Clear Current
-            </Button>
+              onConfirm={onClear}
+            />
           ) : null}
           {animated && unscannedCount > 0 && onScanAll ? (
             <Button
@@ -974,27 +956,6 @@ function TextDetectionSection({
           </Button>
         </span>
       </div>
-      {resetArmed ? (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="h-7 flex-1 rounded-md bg-destructive text-xs text-white transition-opacity hover:opacity-90"
-            onClick={() => {
-              setResetArmed(false);
-              onClearAll();
-            }}
-          >
-            Really remove all boxes + keyframes
-          </button>
-          <button
-            type="button"
-            className="ctl-quiet h-7 flex-1 text-xs"
-            onClick={() => setResetArmed(false)}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : null}
       {failed ? (
         <p className="text-xs text-muted-foreground">
           Couldn&apos;t detect text — see console.
@@ -1057,7 +1018,7 @@ function TextDetectionSection({
   );
 }
 
-/** Post-scan deep links (plan 5.5): the verdicts live over there. */
+/** Post-scan deep link (plan 5.5): the verdicts live over there. */
 function ScanFollowThrough() {
   const openPanel = useUiStore((s) => s.openPanel);
   return (
@@ -1066,21 +1027,51 @@ function ScanFollowThrough() {
         variant="ghost"
         size="sm"
         className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-        title="Open the comparison table"
-        onClick={() => openPanel("table")}
-      >
-        Comparison table →
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-        title="Open the perception report — measured boxes carry their read text"
+        title="Open the Perception Report — measured text carries its read content"
         onClick={() => openPanel("report")}
       >
-        Perception report →
+        Perception Report →
       </Button>
     </div>
+  );
+}
+
+/**
+ * Destructive action needing a second click: the first turns the button
+ * into "Confirm" (solid red); it disarms on blur.
+ */
+function ConfirmButton({
+  label,
+  title,
+  onConfirm,
+}: {
+  label: string;
+  title: string;
+  onConfirm: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  return (
+    <Button
+      variant={armed ? "destructive" : "ghost"}
+      size="sm"
+      className={cn(
+        "h-6 px-1.5 text-xs",
+        !armed &&
+          "text-destructive hover:bg-destructive/10 hover:text-destructive",
+      )}
+      title={armed ? `Click again to ${label.toLowerCase()}` : title}
+      onBlur={() => setArmed(false)}
+      onClick={() => {
+        if (armed) {
+          setArmed(false);
+          onConfirm();
+        } else {
+          setArmed(true);
+        }
+      }}
+    >
+      {armed ? "Confirm" : label}
+    </Button>
   );
 }
 
@@ -1096,8 +1087,6 @@ function DetailCard({ item }: { item: MediaItem }) {
   const videoUrl = useMediaStore((s) => s.videoUrls[item.id]);
   const remove = useMediaStore((s) => s.remove);
   const setReferenceHeight = useMediaStore((s) => s.setReferenceHeight);
-  const addBox = useMediaStore((s) => s.addBox);
-  const removeBox = useMediaStore((s) => s.removeBox);
   const [armed, setArmed] = useState(false);
   const eff = effectiveDims(item);
   const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
@@ -1112,7 +1101,6 @@ function DetailCard({ item }: { item: MediaItem }) {
   const [showScanBoxes, setShowScanBoxes] = useState(true);
   const [batchNote, setBatchNote] = useState<string | null>(null);
   const clearDetection = useMediaStore((s) => s.clearDetection);
-  const setScanStore = useMediaStore((s) => s.setScan);
 
   const animated = isAnimatedItem(item);
   const timeSec = usePlaybackStore((s) => s.timeSec);
@@ -1128,69 +1116,16 @@ function DetailCard({ item }: { item: MediaItem }) {
       : null
     : (item.scan ?? null);
 
-  /** OCR one frame URL into grouped, size-corrected scan lines. */
-  const ocrFrame = async (url: string) => {
-    const { detectTextLines, largestByArea, medianHeightPx } = await import(
-      "@/lib/ocr"
-    );
-    const intrinsic = { width: item.width, height: item.height };
-    const raw = largestByArea(
-      await detectTextLines(url, intrinsic, item.crop),
-      MAX_DETECTED_BOXES,
-    );
-    // Group neighbouring lines into blocks; every member shares the
-    // block's descender-aware size so no-descender lines stop
-    // under-reporting (plan 7.1–7.2).
-    const { groupOf, groups } = groupTextLines(
-      raw.map((l) => l.box),
-      intrinsic,
-    );
-    return {
-      lines: raw.map((l, i) => ({
-        id: newBoxId(),
-        text: l.text,
-        confidence: l.confidence,
-        box: l.box,
-        groupId: groupOf[i],
-        sizePx: groups[groupOf[i]].sizePx,
-      })),
-      medianPx: medianHeightPx(raw, intrinsic),
-    };
-  };
-
   const freshKeyframes = () =>
     useMediaStore.getState().items.find((i) => i.id === item.id)
       ?.scanKeyframes ?? [];
-
-  const scanFrameAt = async (t: number) => {
-    const frame = await captureFrameAt(t);
-    if (!frame) throw new Error("no decodable frame at the playhead");
-    try {
-      const { lines, medianPx } = await ocrFrame(frame.url);
-      setScanKeyframes(item.id, withScan(freshKeyframes(), t, lines, medianPx));
-    } finally {
-      frame.revoke();
-    }
-  };
 
   const detect = async () => {
     if (scanRunning) return;
     setScanRunning(true);
     setScanFailed(false);
     try {
-      if (animated) {
-        await scanFrameAt(usePlaybackStore.getState().timeSec);
-      } else {
-        // Client-only dynamic import: the OCR module (and the Tesseract
-        // worker behind it) never loads during prerender.
-        const { lines, medianPx } = await ocrFrame(objectUrl);
-        // Re-detecting replaces the previous scan's boxes instead of
-        // stacking duplicates.
-        for (const old of item.scan?.lines ?? []) removeBox(item.id, old.id);
-        for (const line of lines)
-          addBox(item.id, { id: line.id, label: line.text, ...line.box });
-        setScanStore(item.id, { lines, medianPx });
-      }
+      await detectTextForItem(item.id);
       setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
@@ -1208,7 +1143,7 @@ function DetailCard({ item }: { item: MediaItem }) {
       const pending = freshKeyframes().filter((k) => !k.lines);
       for (let i = 0; i < pending.length; i++) {
         setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
-        await scanFrameAt(pending[i].timeSec);
+        await scanKeyframeAt(item.id, pending[i].timeSec);
       }
       setShowScanBoxes(true);
     } catch (err) {
@@ -1453,7 +1388,9 @@ export function MediaLibraryPanel() {
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const detailColumn = (
-    <div className="min-h-0 min-w-0 overflow-y-auto">
+    // Scrollbar always reserved so incoming content (scan lists, crop
+    // rows) doesn't pop the layout width (Taylor 2026-08-17).
+    <div className="min-h-0 min-w-0 overflow-y-scroll">
       {active ? (
         <DetailCard key={active.id} item={active} />
       ) : (

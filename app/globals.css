@@ -144,6 +144,14 @@
   --shadow-lg: 0 16px 32px -10px oklch(0 0 0 / 0.5);
 }
 
+@layer base {
+  /* Scrollbars follow the theme instead of the OS chrome. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+}
+
 @layer components {
   /* Fill + elevation only — padding and radius stay at the callsite. */
   .panel-frame {
