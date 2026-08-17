@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Sidebar } from "@/components/sidebar";
+import { Hotkeys } from "@/components/hotkeys";
 import { DisplayArea } from "@/components/display-area";
 import { DeviceManagerPanel } from "@/components/panels/device-manager";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
@@ -132,6 +133,7 @@ export default function Home() {
 
       {mounted ? (
         <>
+          <Hotkeys />
           <Sidebar />
           <DeviceManagerPanel />
           <DeviceDetailWindows />
