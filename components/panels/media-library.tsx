@@ -15,6 +15,7 @@ import {
   ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,10 @@ import {
   ACUITY,
   aspectFromResolution,
   boxMetricsOnDevice,
+  strokesSubAcuity,
 } from "@/lib/display-math";
+import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
+import { useContrastMap } from "@/components/use-contrast-map";
 import {
   ASPECT_PRESETS,
   aspectCrop,
@@ -800,6 +804,42 @@ function ScanBoxesOverlay({
   );
 }
 
+/**
+ * WCAG contrast estimate badge (plan 10.1). undefined = still sampling
+ * or unavailable (video keyframes); null = flat sample.
+ */
+function ContrastBadge({ est }: { est?: ContrastEstimate | null }) {
+  if (est === undefined || est === null) {
+    return (
+      <span
+        className="shrink-0 font-mono text-sm text-muted-foreground/50"
+        title={
+          est === null
+            ? "No text/background split found in this box"
+            : "Contrast estimate unavailable (video frames aren't sampled)"
+        }
+      >
+        –:1
+      </span>
+    );
+  }
+  const color =
+    est.ratio >= AA_NORMAL
+      ? "#46a758"
+      : est.ratio >= AA_LARGE
+        ? "#f5a524"
+        : "#e5484d";
+  return (
+    <span
+      className="shrink-0 font-mono text-sm"
+      style={{ color }}
+      title="Estimated text/background contrast (WCAG): AA needs 4.5:1, or 3:1 for large text"
+    >
+      {est.ratio.toFixed(1)}:1
+    </span>
+  );
+}
+
 function ScanResults({
   item,
   lines,
@@ -811,6 +851,17 @@ function ScanResults({
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
+  const showContrast = useAnnotationStore((s) => s.showContrast);
+  const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
+  // Contrast sampling needs stable pixels — static images only; video
+  // keyframe lines would need a seek+capture per row.
+  const contrastMap = useContrastMap(
+    item.id,
+    objectUrl,
+    item,
+    lines,
+    showContrast && item.kind === "image",
+  );
   const crop = cropOf(item);
   const eff = effectiveDims(item);
   // User-adjustable list height (session-local).
@@ -898,6 +949,9 @@ function ScanResults({
             >
               {shownPx}px · {Math.round(line.confidence)}%
             </span>
+            {showContrast ? (
+              <ContrastBadge est={contrastMap.get(line.id)} />
+            ) : null}
             <span
               className="shrink-0 font-mono text-sm"
               style={{ color: scanBandColor(arcmin) }}
@@ -905,6 +959,14 @@ function ScanResults({
             >
               {arcmin.toFixed(0)}′
             </span>
+            {strokesSubAcuity(arcmin) ? (
+              <span
+                className="shrink-0"
+                title="Strokes render below 1′ on This Device — letterforms lose their detail at this distance"
+              >
+                <TriangleAlertIcon className="size-3 text-[#e5484d]" />
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

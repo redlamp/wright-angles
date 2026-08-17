@@ -7,6 +7,7 @@ import {
   LayoutGridIcon,
   ScanTextIcon,
   Trash2Icon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +18,7 @@ import {
   deviceAngles,
   formatDistance,
   physicalSizeCm,
+  strokesSubAcuity,
 } from "@/lib/display-math";
 import {
   clearCurrentKeyframeScan,
@@ -451,6 +453,12 @@ export function PerceptionReportContent() {
                             {d.label}
                           </span>
                           {m.arcmin.toFixed(0)}′
+                          {strokesSubAcuity(m.arcmin) ? (
+                            <TriangleAlertIcon
+                              className="size-3 text-[#e5484d]"
+                              aria-label="Sub-acuity strokes"
+                            />
+                          ) : null}
                         </span>
                       );
                     })}

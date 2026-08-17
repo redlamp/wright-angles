@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon, PencilRulerIcon } from "lucide-react";
+import { DownloadIcon, LayersIcon, PencilRulerIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
@@ -132,6 +138,253 @@ function CropFrame({
     >
       <div className="absolute" style={cropScaleStyle(item)}>
         {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Debug-overlays menu chip (plan topic 10): safe areas, contrast
+ * badges, pixel loupe. Session-only toggles with app-wide parity.
+ */
+function OverlaysChip() {
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const setShowSafeAreas = useAnnotationStore((s) => s.setShowSafeAreas);
+  const showContrast = useAnnotationStore((s) => s.showContrast);
+  const setShowContrast = useAnnotationStore((s) => s.setShowContrast);
+  const loupeOn = useAnnotationStore((s) => s.loupeOn);
+  const setLoupeOn = useAnnotationStore((s) => s.setLoupeOn);
+  const anyOn = showSafeAreas || showContrast || loupeOn;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "flex h-7 items-center gap-1 rounded-md px-2.5 font-mono text-sm transition-colors",
+          anyOn
+            ? "bg-white/25 text-white"
+            : "bg-black/50 text-white/60 hover:text-white",
+        )}
+        title="Debug overlays: safe areas, contrast badges, pixel loupe"
+      >
+        <LayersIcon className="size-3" />
+        overlays
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuCheckboxItem
+          checked={showSafeAreas}
+          onCheckedChange={setShowSafeAreas}
+        >
+          TV safe areas (93% / 90%)
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={showContrast}
+          onCheckedChange={setShowContrast}
+        >
+          Contrast badges on scanned text
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={loupeOn}
+          onCheckedChange={setLoupeOn}
+        >
+          Pixel loupe
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * SMPTE ST 2046-1 safe-area frames, relative to the DISPLAY (not the
+ * media): action-safe 93%, title-safe 90%. Overlaid per device rect so
+ * TV-bound UI can be judged against every screen at once.
+ */
+function SafeAreas({ large }: { large: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      <div
+        className="absolute border border-dashed border-white/50"
+        style={{ inset: "3.5%" }}
+      >
+        {large ? (
+          <span className="absolute top-0 left-1 font-mono text-sm text-white/50">
+            action 93%
+          </span>
+        ) : null}
+      </div>
+      <div
+        className="absolute border border-dashed border-[#f5a524]/60"
+        style={{ inset: "5%" }}
+      >
+        {large ? (
+          <span className="absolute bottom-0 left-1 font-mono text-sm text-[#f5a524]/70">
+            title 90%
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const LOUPE_SIZE = 176;
+const LOUPE_ZOOM = 8;
+
+/**
+ * Pixel loupe (plan 10.2): follows the cursor over This Device's rect
+ * and magnifies the source image 8×, pixel grid on top, with a readout
+ * of the source coordinate and what one source pixel subtends on This
+ * Device. Static images only — video would need per-frame capture.
+ */
+function PixelLoupe({
+  containerRef,
+  center,
+  hostW,
+  hostH,
+  item,
+  url,
+  thisDevice,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  center: { x: number; y: number };
+  hostW: number;
+  hostH: number;
+  item: MediaItem;
+  url: string;
+  thisDevice: Device;
+}) {
+  const [pt, setPt] = useState<{
+    x: number;
+    y: number;
+    cw: number;
+    ch: number;
+  } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const img = new Image();
+    img.src = url;
+    img
+      .decode()
+      .then(() => {
+        if (alive) imgRef.current = img;
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      imgRef.current = null;
+    };
+  }, [url]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      setPt({
+        x: e.clientX - r.left,
+        y: e.clientY - r.top,
+        cw: r.width,
+        ch: r.height,
+      });
+    };
+    const leave = () => setPt(null);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerleave", leave);
+    return () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerleave", leave);
+    };
+  }, [containerRef]);
+
+  const crop = cropOf(item);
+  const eff = effectiveDims(item);
+  const area = containFit(eff.width, eff.height, hostW, hostH);
+  let sx = -1;
+  let sy = -1;
+  if (pt && area.w) {
+    const u = (pt.x - (center.x - hostW / 2) - area.x) / area.w;
+    const v = (pt.y - (center.y - hostH / 2) - area.y) / area.h;
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      sx = (crop.x + u * crop.w) * item.width;
+      sy = (crop.y + v * crop.h) * item.height;
+    }
+  }
+  const active = sx >= 0;
+
+  useEffect(() => {
+    if (!active) return;
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    const win = LOUPE_SIZE / LOUPE_ZOOM;
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = "#111";
+    g.fillRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
+    g.drawImage(
+      img,
+      sx - win / 2,
+      sy - win / 2,
+      win,
+      win,
+      0,
+      0,
+      LOUPE_SIZE,
+      LOUPE_SIZE,
+    );
+    // Grid aligned to whole source pixels.
+    g.strokeStyle = "rgba(255,255,255,0.18)";
+    g.lineWidth = 1;
+    const xOff = (Math.ceil(sx - win / 2) - (sx - win / 2)) * LOUPE_ZOOM;
+    const yOff = (Math.ceil(sy - win / 2) - (sy - win / 2)) * LOUPE_ZOOM;
+    g.beginPath();
+    for (let x = xOff; x <= LOUPE_SIZE; x += LOUPE_ZOOM) {
+      g.moveTo(x + 0.5, 0);
+      g.lineTo(x + 0.5, LOUPE_SIZE);
+    }
+    for (let y = yOff; y <= LOUPE_SIZE; y += LOUPE_ZOOM) {
+      g.moveTo(0, y + 0.5);
+      g.lineTo(LOUPE_SIZE, y + 0.5);
+    }
+    g.stroke();
+    // Crosshair on the sampled pixel.
+    g.strokeStyle = "#f5a524";
+    g.strokeRect(
+      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
+      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
+      LOUPE_ZOOM - 1,
+      LOUPE_ZOOM - 1,
+    );
+  }, [active, sx, sy]);
+
+  if (!pt || !active) return null;
+  const left =
+    pt.x + 18 + LOUPE_SIZE > pt.cw ? pt.x - 18 - LOUPE_SIZE : pt.x + 18;
+  const top =
+    pt.y + 18 + LOUPE_SIZE + 24 > pt.ch
+      ? pt.y - 18 - LOUPE_SIZE - 24
+      : pt.y + 18;
+  const arcminPerPx = boxMetricsOnDevice(
+    1 / item.height / crop.h,
+    eff,
+    thisDevice,
+  ).arcmin;
+  return (
+    <div
+      className="pointer-events-none absolute z-40 overflow-hidden rounded-md border border-white/30 bg-black/80 shadow-lg"
+      style={{ left, top, width: LOUPE_SIZE }}
+    >
+      <canvas
+        ref={canvasRef}
+        width={LOUPE_SIZE}
+        height={LOUPE_SIZE}
+        className="block"
+      />
+      <div className="px-1.5 py-0.5 font-mono text-sm leading-4.5 text-white/70">
+        {Math.floor(sx)},{Math.floor(sy)} px · 1px ≈{" "}
+        {arcminPerPx.toFixed(2)}′
       </div>
     </div>
   );
@@ -375,6 +628,8 @@ export function DisplayArea() {
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
   const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const loupeOn = useAnnotationStore((s) => s.loupeOn);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
@@ -802,6 +1057,7 @@ export function DisplayArea() {
                 isHost={!!device.isThis && !drawMode}
               />
             ) : null}
+            {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
           </div>
           {/* Cycle label corners so tightly nested rects stay readable. */}
           <span
@@ -913,6 +1169,26 @@ export function DisplayArea() {
         </div>
       ) : null}
 
+      {(() => {
+        const host = rects.find((r) => r.device.isThis);
+        return loupeOn &&
+          host &&
+          activeItem &&
+          activeItem.kind === "image" &&
+          activeItem.type !== "image/gif" &&
+          activeUrl ? (
+          <PixelLoupe
+            containerRef={ref}
+            center={center}
+            hostW={host.w}
+            hostH={host.h}
+            item={activeItem}
+            url={activeUrl}
+            thisDevice={thisDevice}
+          />
+        ) : null;
+      })()}
+
 
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
         {zoomPct !== null ? (
@@ -955,6 +1231,7 @@ export function DisplayArea() {
               {drawMode ? "done" : "measure"}
             </button>
           ) : null}
+          <OverlaysChip />
           <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
           <button
             type="button"
