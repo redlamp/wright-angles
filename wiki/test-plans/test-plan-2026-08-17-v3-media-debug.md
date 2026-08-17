@@ -62,11 +62,11 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 5. Active media panel redesign (Taylor spec)
 
-- [ ] 5.1 Row 1: media name, right-aligned red trashcan button =
-      remove from library.
-- [ ] 5.2 Details as consistent grid cells on one line: display size +
-      source size; drop the unclear "shown as".
-- [ ] 5.3 The media itself, then timeline.
+- [ ] 5.1 BUILT, verify: name row at the TOP with the red trashcan
+      icon (arms the two-step confirm; bottom remove link gone).
+- [ ] 5.2 BUILT, verify: DISPLAY / SOURCE grid cells above the media,
+      identical layout for every item; shown-as removed.
+- [ ] 5.3 BUILT with 5.1–5.2: name → details → media → timeline order.
 - [ ] 5.4 Crop v2 (Taylor 2026-08-17): ONE row of aspect-ratio
       presets — None · 4:3 · 5:4 · 16:9 · 16:10 · 21:9 · 32:9 ·
       Custom (Bottom/Center variants removed). Any active crop draws
