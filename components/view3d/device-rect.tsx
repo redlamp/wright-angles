@@ -135,13 +135,35 @@ function setBodyCursor(cursor: string) {
  * settings), which rebuild materials AFTER a mount effect would have
  * run; the traverse also catches the outline sub-mesh.
  */
-function raiseDistLabel(text: Object3D) {
+function raiseLabel(text: Object3D, order: number) {
   text.traverse((o) => {
-    o.renderOrder = 20;
+    o.renderOrder = order;
     const m = (o as { material?: Material | Material[] }).material;
     if (!m) return;
     for (const mat of Array.isArray(m) ? m : [m]) mat.depthTest = false;
   });
+}
+const raiseDistLabel = (text: Object3D) => raiseLabel(text, 20);
+/** Name labels ride just under the distance readouts. */
+const raiseNameLabel = (text: Object3D) => raiseLabel(text, 15);
+
+/**
+ * Same camera-side modulation as the distance labels, applied to the
+ * NAME label's horizontal de-collision offset: nested rects park their
+ * names on alternating rect edges, and flipping the side with the
+ * viewing direction keeps "nearer name outward" true from both sides
+ * of the scene instead of crossing over.
+ */
+function applyNameOffset(
+  group: Group | null,
+  baseX: number,
+  camera: Camera,
+  deviceZ: number,
+) {
+  if (!group) return;
+  _projA.set(0, 1.2, deviceZ).project(camera);
+  _projB.set(0, 1.2, deviceZ + 40).project(camera);
+  group.position.x = baseX * Math.tanh((_projB.x - _projA.x) * 40);
 }
 
 function applyCenterY(
@@ -429,6 +451,12 @@ export default function DeviceRect({
       state.camera,
       device.distanceCm,
     );
+    applyNameOffset(
+      nameOffsetRef.current,
+      lp.nameX,
+      state.camera,
+      device.distanceCm,
+    );
     if (showProjection || selected) {
       updateProjection(
         projRef.current,
@@ -523,6 +551,7 @@ export default function DeviceRect({
 
   const shownDistLabel = distLabel ?? `${Math.round(device.distanceCm)} cm`;
   const distLiftRef = useRef<Group>(null);
+  const nameOffsetRef = useRef<Group>(null);
 
   const body =
     device.show3dBody !== false && device.deviceName
@@ -663,20 +692,28 @@ export default function DeviceRect({
         : null}
 
       {SHOW_LABELS ? (
-        <Billboard position={[lp.nameX, heightCm / 2 + 3 + lp.nameLift, 0]}>
-          <Text
-            font={FONT_URL}
-            fontSize={nameSize}
-            color={device.color}
-            anchorX="center"
-            anchorY="bottom"
-            outlineColor="#000000"
-            outlineOpacity={0.5}
-            outlineOffsetX="3%"
-            outlineOffsetY="3%"
-          >
-            {device.label}
-          </Text>
+        <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>
+          {/* Registration-point clip (same model as the distance
+              labels): the horizontal de-collision offset lives on this
+              inner group and flips with the camera side per frame, so
+              nested rects' names keep a stable side relative to the
+              viewer instead of crossing over. */}
+          <group ref={nameOffsetRef} position={[lp.nameX, 0, 0]}>
+            <Text
+              font={FONT_URL}
+              fontSize={nameSize}
+              color={device.color}
+              anchorX="center"
+              anchorY="bottom"
+              outlineColor="#000000"
+              outlineOpacity={0.5}
+              outlineOffsetX="3%"
+              outlineOffsetY="3%"
+              onSync={raiseNameLabel}
+            >
+              {device.label}
+            </Text>
+          </group>
         </Billboard>
       ) : null}
 
