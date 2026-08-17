@@ -6,18 +6,18 @@ apply if unticked.
 
 ## v0.3.0 acceptance (live at redlamp.github.io/wright-angles)
 
-- [ ] Site deploys and loads clean from the v0.3.0 merge; no console
+- [x] Site deploys and loads clean from the v0.3.0 merge; no console
       errors; OCR assets load from `/wright-angles/ocr/` (fully local).
-- [ ] Comparison table: sortable, CSV export, sub-retina PPD flags.
-- [ ] Crop: presets + freeform; crop respected by 2D, 3D texture UVs,
+- [x] Comparison table: sortable, CSV export, sub-retina PPD flags.
+- [x] Crop: presets + freeform; crop respected by 2D, 3D texture UVs,
       measure boxes, OCR mapping, and export.
 - [ ] OCR inspector: scan → numbered outlines + per-line rows (text,
       px, confidence, This-Device arcmin); row click → measure box.
-- [ ] GIF + video: single master decode, transport (play/pause, seek,
+- [x] GIF + video: single master decode, transport (play/pause, seek,
       loop) drives 2D and 3D identically.
-- [ ] Stance × input matrix: all 9 combos pose sensibly; standing desk
+- [x] Stance × input matrix: all 9 combos pose sensibly; standing desk
       appears only for Standing + Mouse & KB.
-- [ ] Stance order reads Standing · On a couch · At a desk (dev,
+- [x] Stance order reads Standing · On a couch · At a desk (dev,
       post-v0.3.0).
 
 ## Media debug track — pushing past plain OCR
@@ -28,14 +28,14 @@ Proposed stages, roughly in dependency order:
 
 ### Stage 1 — OCR results become first-class overlays
 
-- [ ] Persist scan results per media item (IndexedDB, keyed by media +
+- [x] Persist scan results per media item (IndexedDB, keyed by media +
       crop) so a scan survives panel close/reopen and reload.
-- [ ] Overlay toggle in the 2D view itself (not just the library
+- [x] Overlay toggle in the 2D view itself (not just the library
       panel): boxes drawn over the true-scale image.
-- [ ] Verdict coloring: each line tinted by its arcmin verdict for a
+- [x] Verdict coloring: each line tinted by its arcmin verdict for a
       chosen reference device (≥20′ ok / 16–20′ caution / <16′ fail),
       switchable between devices.
-- [ ] Multi-select lines → batch-create measure boxes.
+- [x] Multi-select lines → batch-create measure boxes.
 
 ### Stage 2 — Legibility matrix & report
 
@@ -47,11 +47,11 @@ Proposed stages, roughly in dependency order:
 
 ### Stage 3 — Video timeline debugging
 
-- [ ] Scan the CURRENT FRAME at the playhead (engine canvas is already
+- [x] Scan the CURRENT FRAME at the playhead (engine canvas is already
       the single decode source — feed it to the OCR worker).
-- [ ] Frame results stamped with timestamp; a strip of scanned frames
+- [x] Frame results stamped with timestamp; a strip of scanned frames
       to jump between.
-- [ ] Track one region (e.g. subtitles) across scans to see size
+- [x] Track one region (e.g. subtitles) across scans to see size
       changes over time.
 
 ### Stage 4 — Beyond text (rank these)
