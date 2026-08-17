@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { GifView, VideoMirror } from "@/components/media-view";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
+import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
@@ -16,6 +17,8 @@ import {
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
+import { isAnimatedItem } from "@/lib/playback-engine";
+import { activeKeyframe } from "@/lib/scan-keyframes";
 import {
   boxInCrop,
   cropOf,
@@ -148,12 +151,15 @@ function BoxLayer({
   rectW,
   rectH,
   media,
+  boxes,
   worstByBox,
   isHost,
 }: {
   rectW: number;
   rectH: number;
   media: MediaItem;
+  /** Measure boxes + active-keyframe lines, full-image normalized. */
+  boxes: HighlightBox[];
   worstByBox: Map<string, number>;
   isHost: boolean;
 }) {
@@ -165,7 +171,7 @@ function BoxLayer({
   if (!area.w) return null;
   return (
     <>
-      {(media.boxes ?? []).map((b) => {
+      {boxes.map((b) => {
         // Boxes stay normalized to the full image; render them through
         // the crop window (clipped; hidden when fully outside).
         const cb = boxInCrop(b, crop);
@@ -272,8 +278,27 @@ export function DisplayArea() {
   const [draft, setDraft] = useState<HighlightBox | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
+  // Timeline media contributes its ACTIVE keyframe's detected lines to
+  // the world overlays (they behave like read-only measure boxes and
+  // follow the playhead until the next marker).
+  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
+  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
+  const overlayBoxes = useMemo<HighlightBox[]>(() => {
+    if (!activeItem) return [];
+    const base = activeItem.boxes ?? [];
+    if (!animatedActive || !activeItem.scanKeyframes) return base;
+    const kf = activeKeyframe(activeItem.scanKeyframes, timeSec);
+    if (!kf?.lines) return base;
+    return [
+      ...base,
+      ...kf.lines.map((l) => ({ id: l.id, label: l.text, ...l.box })),
+    ];
+  }, [activeItem, animatedActive, timeSec]);
+
   // Worst-case legibility per box across every visible device — the
   // "will this text survive everywhere" verdict that colors the box.
+  // Keyframe lines measure with their group-corrected size when it
+  // exists (descender-aware).
   const worstByBox = useMemo(() => {
     const map = new Map<string, number>();
     if (!activeItem) return map;
@@ -283,21 +308,26 @@ export function DisplayArea() {
       ...(thisDevice.visible ? [thisDevice] : []),
       ...devices.filter((d) => d.visible),
     ];
-    for (const b of activeItem.boxes ?? []) {
+    const kfSize = new Map<string, number>();
+    for (const k of activeItem.scanKeyframes ?? [])
+      for (const l of k.lines ?? [])
+        if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
+    for (const b of overlayBoxes) {
+      const hNorm = kfSize.get(b.id) ?? b.h;
       let worst = Infinity;
       for (const d of devs) {
         // The cropped region is what contain-fits onto each device, so
-        // the box height re-normalizes against the crop (b.h/c.h of
+        // the box height re-normalizes against the crop (h/c.h of
         // dims.height = the box's unchanged source-pixel height).
         worst = Math.min(
           worst,
-          boxMetricsOnDevice(b.h / c.h, dims, d).arcmin,
+          boxMetricsOnDevice(hNorm / c.h, dims, d).arcmin,
         );
       }
       map.set(b.id, worst);
     }
     return map;
-  }, [activeItem, thisDevice, devices]);
+  }, [activeItem, overlayBoxes, thisDevice, devices]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -626,13 +656,17 @@ export function DisplayArea() {
                 className="size-full object-contain select-none"
               />
             ) : null}
-            {activeItem && !device.isThis ? (
+            {/* Boxes live INSIDE each rect so a nested device naturally
+                covers the ones beneath it — tied to the device they're
+                on (Taylor 2026-08-17). Only the host's are clickable. */}
+            {activeItem && overlayBoxes.length > 0 ? (
               <BoxLayer
                 rectW={w}
                 rectH={h}
                 media={activeItem}
+                boxes={overlayBoxes}
                 worstByBox={worstByBox}
-                isHost={false}
+                isHost={!!device.isThis && !drawMode}
               />
             ) : null}
           </div>
@@ -676,15 +710,6 @@ export function DisplayArea() {
               height: hostRect.h,
             }}
           >
-            <div className="[&>div]:pointer-events-auto">
-              <BoxLayer
-                rectW={hostRect.w}
-                rectH={hostRect.h}
-                media={activeItem}
-                worstByBox={worstByBox}
-                isHost={!drawMode}
-              />
-            </div>
             {draftCb ? (
               <div
                 className="pointer-events-none absolute border border-dashed border-white/80"

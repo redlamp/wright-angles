@@ -19,18 +19,23 @@ import {
 } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
-import { getEngine, type GifEngine } from "@/lib/playback-engine";
+import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
-import { effectiveDims } from "@/lib/media-crop";
+import { boxInCrop, cropOf, effectiveDims } from "@/lib/media-crop";
+import { activeKeyframe } from "@/lib/scan-keyframes";
+import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
-import DeviceRect, { type LabelPlacement } from "./device-rect";
+import DeviceRect, {
+  type ContentBox,
+  type LabelPlacement,
+} from "./device-rect";
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
@@ -375,6 +380,37 @@ export default function SceneView({
   const mediaCrop = activeItem?.crop;
   const mediaDims = activeItem ? effectiveDims(activeItem) : null;
 
+  // Measure boxes + the active keyframe's detected lines, mapped into
+  // crop space once and drawn on every screen (per-device colors happen
+  // in the rect). Selection highlights follow the annotation store.
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
+  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
+  // Plain computation (no manual memo): it's a handful of array ops and
+  // the demand frameloop only renders on real changes anyway — and the
+  // react-compiler can memoize it itself where profitable.
+  const contentBoxes: ContentBox[] = [];
+  if (activeItem) {
+    const crop = cropOf(activeItem);
+    const kf =
+      animatedActive && activeItem.scanKeyframes
+        ? activeKeyframe(activeItem.scanKeyframes, timeSec)
+        : null;
+    const entries = [
+      ...(activeItem.boxes ?? []).map((b) => ({ ...b, hNorm: b.h })),
+      ...(kf?.lines ?? []).map((l) => ({
+        id: l.id,
+        ...l.box,
+        hNorm: l.sizePx ? l.sizePx / activeItem.height : l.box.h,
+      })),
+    ];
+    for (const e of entries) {
+      const rect = boxInCrop(e, crop);
+      if (!rect) continue;
+      contentBoxes.push({ id: e.id, rect, hMeasure: e.hNorm / crop.h });
+    }
+  }
+
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
@@ -461,6 +497,8 @@ export default function SceneView({
             : updateDevice(d.id, { distanceCm })
         }
         onDragState={setNodeDragging}
+        contentBoxes={contentBoxes}
+        selectedBoxId={selectedBoxId}
         media={
           tex && mediaDims
             ? { texture: tex, width: mediaDims.width, height: mediaDims.height }

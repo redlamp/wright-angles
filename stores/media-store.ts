@@ -124,6 +124,12 @@ interface MediaState {
   setReferenceHeight: (id: string, referenceHeight: number) => void;
   /** Set or clear (undefined) the item's crop window. */
   setCrop: (id: string, crop: MediaCrop | undefined) => void;
+  /**
+   * Nuke every detection artifact on the item: ALL measure boxes
+   * (including hand-drawn — stale unlabeled scan boxes are
+   * indistinguishable) and every scan keyframe.
+   */
+  clearDetection: (id: string) => void;
   /** Replace the item's OCR keyframe list (empty/undefined clears it). */
   setScanKeyframes: (
     id: string,
@@ -427,6 +433,19 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           return rest;
         }
         return { ...i, crop };
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
+  clearDetection: (id) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        const rest = { ...i };
+        delete rest.boxes;
+        delete rest.scanKeyframes;
+        return rest;
       }),
     }));
     persistMeta(get, id);
