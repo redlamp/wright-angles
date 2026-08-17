@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
 import { DisplayArea } from "@/components/display-area";
+import { CvdFilters, cvdFilter } from "@/components/cvd-filters";
 import { WorkbenchPanel } from "@/components/panels/workbench";
+import { DeviceInspector } from "@/components/panels/device-inspector";
 import { MEDIA_DRAG_MIME } from "@/components/panels/media-library";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
 import { ComparisonTablePanel } from "@/components/panels/comparison-table";
@@ -20,6 +22,7 @@ import { InfoPanel } from "@/components/panels/info-panel";
 import { SettingsPanel } from "@/components/panels/settings-panel";
 import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { useResolvedTheme } from "@/lib/use-theme";
 import {
@@ -37,6 +40,7 @@ export default function Home() {
   const addFiles = useMediaStore((s) => s.addFiles);
   const theme = useResolvedTheme();
   const viewMode = useUiStore((s) => s.viewMode);
+  const cvdMode = useSettingsStore((s) => s.cvdMode);
   const [dropScrim, setDropScrim] = useState(false);
   // 3D stays mounted through its exit animation so the camera can fly
   // back to the head-on pose before the 2D overlay returns. The 2D view
@@ -142,34 +146,42 @@ export default function Home() {
     >
       {!mounted ? null : (
         <>
-          {/* `isolate` contains the 2D view's internal z-indexes (rect
-              stack, toolbar z-40) in their own stacking context, so the
-              later canvas sibling paints over ALL of it in 3D mode. */}
-          <div className="absolute inset-0 isolate">
-            <DisplayArea />
-          </div>
-          {show3d ? (
-            <div
-              className={cn(
-                "absolute inset-0 transition-opacity duration-150",
-                sceneShown ? "opacity-100" : "opacity-0",
-              )}
-            >
-              <SceneView
-                exiting={exiting3d}
-                onExited={() => {
-                  // The camera flew to a head-on pose matching 2D's OWN
-                  // framing (mode + pan untouched) — just reveal it.
-                  setSceneShown(false);
-                  handoffTimer.current = window.setTimeout(() => {
-                    handoffTimer.current = null;
-                    setShow3d(false);
-                    setExiting3d(false);
-                  }, 180);
-                }}
-              />
+          <CvdFilters />
+          {/* Color-vision simulation wraps BOTH view layers (panels and
+              chrome stay unfiltered — the simulation is about content). */}
+          <div
+            className="absolute inset-0"
+            style={{ filter: cvdFilter(cvdMode) }}
+          >
+            {/* `isolate` contains the 2D view's internal z-indexes (rect
+                stack, toolbar z-40) in their own stacking context, so the
+                later canvas sibling paints over ALL of it in 3D mode. */}
+            <div className="absolute inset-0 isolate">
+              <DisplayArea />
             </div>
-          ) : null}
+            {show3d ? (
+              <div
+                className={cn(
+                  "absolute inset-0 transition-opacity duration-150",
+                  sceneShown ? "opacity-100" : "opacity-0",
+                )}
+              >
+                <SceneView
+                  exiting={exiting3d}
+                  onExited={() => {
+                    // The camera flew to a head-on pose matching 2D's OWN
+                    // framing (mode + pan untouched) — just reveal it.
+                    setSceneShown(false);
+                    handoffTimer.current = window.setTimeout(() => {
+                      handoffTimer.current = null;
+                      setShow3d(false);
+                      setExiting3d(false);
+                    }, 180);
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         </>
       )}
 
@@ -178,6 +190,7 @@ export default function Home() {
           <Hotkeys />
           <Sidebar />
           <WorkbenchPanel />
+          <DeviceInspector />
           <DeviceDetailWindows />
           <ComparisonTablePanel />
           <InfoPanel />
