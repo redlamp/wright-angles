@@ -26,6 +26,8 @@ interface FloatingPanelProps {
   maxWidth?: number | "none";
   /** Extra controls rendered in the header, before the close button. */
   headerActions?: React.ReactNode;
+  /** Small centered note in the title bar (e.g. the local-only promise). */
+  headerNote?: string;
   /**
    * Allow dragging the bottom edge / corner to fix the content height
    * (children should fill with h-full and scroll internally).
@@ -42,6 +44,7 @@ export function FloatingPanel({
   width: defaultWidth = 320,
   maxWidth,
   headerActions,
+  headerNote,
   resizableHeight,
   children,
 }: FloatingPanelProps) {
@@ -188,7 +191,14 @@ export function FloatingPanel({
         onPointerUp={onHeaderPointerUp}
       >
         <Icon className="size-3.5 text-muted-foreground" />
-        <span className="flex-1 text-sm font-medium">{title}</span>
+        <span className="text-sm font-medium">{title}</span>
+        {headerNote ? (
+          <span className="min-w-0 flex-1 truncate px-2 text-center text-xs text-muted-foreground/70">
+            {headerNote}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
         {headerActions}
         <button
           type="button"

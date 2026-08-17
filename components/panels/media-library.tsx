@@ -948,6 +948,34 @@ function TextDetectionSection({
         </p>
       ) : null}
       {hasLines ? <ScanResults item={item} lines={scan.lines} /> : null}
+      {hasLines ? <ScanFollowThrough /> : null}
+    </div>
+  );
+}
+
+/** Post-scan deep links (plan 5.5): the verdicts live over there. */
+function ScanFollowThrough() {
+  const openPanel = useUiStore((s) => s.openPanel);
+  return (
+    <div className="flex gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+        title="Open the comparison table"
+        onClick={() => openPanel("table")}
+      >
+        Comparison table →
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+        title="Open the perception report — measured boxes carry their read text"
+        onClick={() => openPanel("report")}
+      >
+        Perception report →
+      </Button>
     </div>
   );
 }
@@ -1335,13 +1363,9 @@ export function MediaLibraryPanel() {
       width={520}
       maxWidth="none"
       resizableHeight
+      headerNote="Media is stored on your computer only — never uploaded."
     >
       <div className="flex h-full max-h-[calc(100vh-8rem)] flex-col">
-        {/* The local-only promise rides the header area — always visible,
-            never scrolled away (Taylor 2026-08-17). */}
-        <p className="border-b border-border px-2.5 py-1 text-center text-xs text-muted-foreground/70">
-          Media is stored in your browser only — never uploaded.
-        </p>
         <div
           ref={bodyRef}
           className="grid min-h-0 flex-1 overflow-x-clip"
