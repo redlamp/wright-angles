@@ -36,7 +36,7 @@ import type { Device, HighlightBox, MediaItem } from "@/lib/types";
  * estimated from the outer/inner delta (borders split left/right, the
  * rest is the title/tab bar). Polled — there is no window-move event.
  */
-function useScreenViewport() {
+export function useScreenViewport() {
   const [vp, setVp] = useState<{
     clientX: number;
     clientY: number;
@@ -840,14 +840,18 @@ export function DisplayArea() {
           ) : null}
           <button
             type="button"
-            title="Center the composition on the physical screen or in this window"
+            title={
+              displayCenter === "screen"
+                ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
+                : "Centered in this window. Click to lock the content to your monitor's physical center instead."
+            }
             className="h-7 w-36 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
             onClick={() => {
               setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
               setPanOffset({ x: 0, y: 0 });
             }}
           >
-            {displayCenter === "screen" ? "center · screen" : "center · window"}
+            {displayCenter === "screen" ? "locked · screen" : "centered · window"}
           </button>
           <button
             type="button"

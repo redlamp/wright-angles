@@ -55,7 +55,9 @@ export const useSettingsStore = create<SettingsState>()(
       sceneTheme: "follow",
       displayFill: "black",
       displayMode: "viewport",
-      displayCenter: "screen",
+      // Default: content centered in the window; "screen" (locked to the
+      // physical display's center) is the opt-in, remembered choice.
+      displayCenter: "window",
       sizeUnit: "in",
       showLegibilityBands: true,
       onboarded: false,
