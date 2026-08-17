@@ -115,6 +115,27 @@ export interface MediaItem {
    * intrinsic image so they never shift when the crop changes.
    */
   crop?: MediaCrop;
+  /**
+   * OCR keyframes for timeline media (video/GIF): user-placed points on
+   * the timeline, each optionally holding its frame's scan. A scan stays
+   * on screen until the playhead passes the NEXT keyframe.
+   */
+  scanKeyframes?: ScanKeyframe[];
+}
+
+/** One text line detected on a keyframe's frame (full-image normalized). */
+export interface KeyframeLine {
+  id: string;
+  text: string;
+  confidence: number;
+  box: { x: number; y: number; w: number; h: number };
+}
+
+export interface ScanKeyframe {
+  timeSec: number;
+  /** null = placed but not yet scanned. */
+  lines: KeyframeLine[] | null;
+  medianPx?: number;
 }
 
 export type LengthUnit = "in" | "cm";

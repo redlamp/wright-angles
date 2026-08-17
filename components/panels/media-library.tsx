@@ -35,6 +35,9 @@ import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
+import { isAnimatedItem } from "@/lib/playback-engine";
+import { captureFrameAt } from "@/lib/frame-capture";
+import { activeKeyframe, withScan } from "@/lib/scan-keyframes";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
@@ -791,6 +794,10 @@ function TextDetectionSection({
   onToggleBoxes,
   onDetect,
   onClear,
+  animated = false,
+  unscannedCount = 0,
+  onScanAll,
+  note,
 }: {
   item: MediaItem;
   scan: ScanRun | null;
@@ -800,8 +807,14 @@ function TextDetectionSection({
   onToggleBoxes: () => void;
   onDetect: () => void;
   onClear: () => void;
+  /** Timeline media: scans attach to keyframes instead of the item. */
+  animated?: boolean;
+  unscannedCount?: number;
+  onScanAll?: () => void;
+  /** Status line override (keyframe context / batch progress). */
+  note?: string | null;
 }) {
-  const isImage = item.kind === "image";
+  const canScan = item.kind === "image" || animated;
   const hasLines = !!scan && scan.lines.length > 0;
 
   return (
@@ -834,22 +847,47 @@ function TextDetectionSection({
             variant="secondary"
             size="sm"
             className="h-6 px-1.5 text-xs"
-            disabled={running || !isImage}
+            disabled={running || !canScan}
             title={
-              isImage
-                ? "Find text lines with local OCR and add a measure box per line"
-                : "Text detection works on images only — running it on video posters may come later"
+              animated
+                ? "Pause here and scan this frame (adds an OCR keyframe at the playhead)"
+                : canScan
+                  ? "Find text lines with local OCR and add a measure box per line"
+                  : "Text detection needs an image or timeline frame"
             }
             onClick={onDetect}
           >
             <ScanTextIcon className="size-3.5" />
-            {running ? "Detecting…" : "Detect text sizes"}
+            {running
+              ? animated
+                ? "Scanning…"
+                : "Detecting…"
+              : animated
+                ? "Scan frame"
+                : "Detect text sizes"}
           </Button>
+          {animated && unscannedCount > 0 && onScanAll ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-6 px-1.5 text-xs"
+              disabled={running}
+              title="Scan every unscanned keyframe in order"
+              onClick={onScanAll}
+            >
+              Scan all ({unscannedCount})
+            </Button>
+          ) : null}
           {hasLines ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              title={
+                animated
+                  ? "Clear scans from every keyframe (markers stay)"
+                  : "Remove the detected boxes"
+              }
               onClick={onClear}
             >
               Clear detected
@@ -861,6 +899,10 @@ function TextDetectionSection({
         <p className="text-xs text-muted-foreground">
           Couldn&apos;t detect text — see console.
         </p>
+      ) : animated ? (
+        note ? (
+          <p className="text-xs text-muted-foreground">{note}</p>
+        ) : null
       ) : scan ? (
         <p className="text-xs text-muted-foreground">
           {scan.lines.length === 0
@@ -874,6 +916,12 @@ function TextDetectionSection({
     </div>
   );
 }
+
+const fmtKfTime = (t: number) => {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
 
 /** Keyed by item id at the callsite so the armed/scan state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
@@ -889,38 +937,77 @@ function DetailCard({ item }: { item: MediaItem }) {
 
   // OCR scan state lives here so the detected boxes can render over the
   // media display above (no second image area — Taylor 2026-08-17).
+  // Images keep a one-shot scan; timeline media (video/GIF) scans attach
+  // to user-placed keyframes and the ACTIVE keyframe's scan shows until
+  // the playhead passes the next marker (plan topic 9).
   const [scan, setScan] = useState<ScanRun | null>(null);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanFailed, setScanFailed] = useState(false);
   const [showScanBoxes, setShowScanBoxes] = useState(true);
+  const [batchNote, setBatchNote] = useState<string | null>(null);
+
+  const animated = isAnimatedItem(item);
+  const timeSec = usePlaybackStore((s) => s.timeSec);
+  const setScanKeyframes = useMediaStore((s) => s.setScanKeyframes);
+  const keyframes = item.scanKeyframes ?? [];
+  const kf = animated ? activeKeyframe(keyframes, timeSec) : null;
+  const unscannedCount = keyframes.filter((k) => !k.lines).length;
+  const effectiveScan: ScanRun | null = animated
+    ? kf?.lines
+      ? { lines: kf.lines, medianPx: kf.medianPx ?? 0 }
+      : null
+    : scan;
+
+  /** OCR one frame URL into keyframe lines (ids for selection only). */
+  const ocrFrame = async (url: string) => {
+    const { detectTextLines, largestByArea, medianHeightPx } = await import(
+      "@/lib/ocr"
+    );
+    const intrinsic = { width: item.width, height: item.height };
+    const raw = largestByArea(
+      await detectTextLines(url, intrinsic, item.crop),
+      MAX_DETECTED_BOXES,
+    );
+    return {
+      lines: raw.map((l) => ({
+        id: newBoxId(),
+        text: l.text,
+        confidence: l.confidence,
+        box: l.box,
+      })),
+      medianPx: medianHeightPx(raw, intrinsic),
+    };
+  };
+
+  const freshKeyframes = () =>
+    useMediaStore.getState().items.find((i) => i.id === item.id)
+      ?.scanKeyframes ?? [];
+
+  const scanFrameAt = async (t: number) => {
+    const frame = await captureFrameAt(t);
+    if (!frame) throw new Error("no decodable frame at the playhead");
+    try {
+      const { lines, medianPx } = await ocrFrame(frame.url);
+      setScanKeyframes(item.id, withScan(freshKeyframes(), t, lines, medianPx));
+    } finally {
+      frame.revoke();
+    }
+  };
 
   const detect = async () => {
     if (scanRunning) return;
     setScanRunning(true);
     setScanFailed(false);
     try {
-      // Client-only dynamic import: the OCR module (and the Tesseract
-      // worker behind it) never loads during prerender.
-      const { detectTextLines, largestByArea, medianHeightPx } = await import(
-        "@/lib/ocr"
-      );
-      const intrinsic = { width: item.width, height: item.height };
-      const lines = largestByArea(
-        await detectTextLines(objectUrl, intrinsic, item.crop),
-        MAX_DETECTED_BOXES,
-      );
-      const kept: ScanLine[] = [];
-      for (const line of lines) {
-        const id = newBoxId();
-        kept.push({
-          id,
-          text: line.text,
-          confidence: line.confidence,
-          box: line.box,
-        });
-        addBox(item.id, { id, ...line.box });
+      if (animated) {
+        await scanFrameAt(usePlaybackStore.getState().timeSec);
+      } else {
+        // Client-only dynamic import: the OCR module (and the Tesseract
+        // worker behind it) never loads during prerender.
+        const { lines, medianPx } = await ocrFrame(objectUrl);
+        for (const line of lines) addBox(item.id, { id: line.id, ...line.box });
+        setScan({ lines, medianPx });
       }
-      setScan({ lines: kept, medianPx: medianHeightPx(lines, intrinsic) });
       setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
@@ -930,11 +1017,53 @@ function DetailCard({ item }: { item: MediaItem }) {
     }
   };
 
+  const scanAll = async () => {
+    if (scanRunning) return;
+    setScanRunning(true);
+    setScanFailed(false);
+    try {
+      const pending = freshKeyframes().filter((k) => !k.lines);
+      for (let i = 0; i < pending.length; i++) {
+        setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        await scanFrameAt(pending[i].timeSec);
+      }
+      setShowScanBoxes(true);
+    } catch (err) {
+      console.warn("Batch text detection failed:", err);
+      setScanFailed(true);
+    } finally {
+      setBatchNote(null);
+      setScanRunning(false);
+    }
+  };
+
   const clearDetected = () => {
+    if (animated) {
+      // Scans go, user-placed markers stay.
+      setScanKeyframes(
+        item.id,
+        freshKeyframes().map((k) => ({ timeSec: k.timeSec, lines: null })),
+      );
+      return;
+    }
     if (!scan) return;
     for (const line of scan.lines) removeBox(item.id, line.id);
     setScan(null);
   };
+
+  const keyframeNote =
+    batchNote ??
+    (animated
+      ? keyframes.length === 0
+        ? "Mark frames on the timeline (bookmark button), then scan them."
+        : kf
+          ? kf.lines
+            ? `Keyframe ${fmtKfTime(kf.timeSec)} · ${kf.lines.length} line${
+                kf.lines.length === 1 ? "" : "s"
+              } · median ${Math.round(kf.medianPx ?? 0)}px — shown until the next marker`
+            : `Keyframe ${fmtKfTime(kf.timeSec)} — not scanned yet`
+          : "Playhead is before the first keyframe."
+      : null);
 
   return (
     <div className="space-y-2.5 p-2.5">
@@ -1005,8 +1134,8 @@ function DetailCard({ item }: { item: MediaItem }) {
         <CropOverlayFrame
           item={item}
           overlay={
-            showScanBoxes && scan && scan.lines.length > 0 ? (
-              <ScanBoxesOverlay lines={scan.lines} />
+            showScanBoxes && effectiveScan && effectiveScan.lines.length > 0 ? (
+              <ScanBoxesOverlay lines={effectiveScan.lines} />
             ) : null
           }
         >
@@ -1039,13 +1168,17 @@ function DetailCard({ item }: { item: MediaItem }) {
 
       <TextDetectionSection
         item={item}
-        scan={scan}
+        scan={effectiveScan}
         running={scanRunning}
         failed={scanFailed}
         showBoxes={showScanBoxes}
         onToggleBoxes={() => setShowScanBoxes((v) => !v)}
         onDetect={() => void detect()}
         onClear={clearDetected}
+        animated={animated}
+        unscannedCount={unscannedCount}
+        onScanAll={() => void scanAll()}
+        note={keyframeNote}
       />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
