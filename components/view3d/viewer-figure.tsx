@@ -27,11 +27,23 @@ export const STAND_DESK_TOP = 112;
 // shade and their forms read; the figure lights in scene-view exist
 // solely for this material. Smooth shading on purpose — Taylor rejected
 // the faceted look (2026-08-15): "more accurate and generic".
+// Transparent so the whole figure can fade during the 2D↔3D camera
+// flight, which passes straight through the head.
 const FIGURE_MAT = new MeshStandardMaterial({
   color: "#b6b6b6",
   roughness: 0.9,
   metalness: 0,
+  transparent: true,
 });
+
+/** Seconds for the transition fade (quicker than the camera flight). */
+const FADE_S = 0.25;
+
+/** Module-level so the react-compiler lint permits the mutation. */
+function applyFigureOpacity(root: Group | null, opacity: number) {
+  FIGURE_MAT.opacity = opacity;
+  if (root) root.visible = opacity > 0.01;
+}
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -273,11 +285,17 @@ export default function ViewerFigure({
   inputType,
   heightCm,
   palette,
+  shown = true,
 }: {
   scenario: Scenario;
   inputType: InputType;
   heightCm: number;
   palette: ScenePalette;
+  /**
+   * False while the camera flies between the 2D head-on pose and the
+   * orbit (the flight passes through the head); the figure fades.
+   */
+  shown?: boolean;
 }) {
   useEffect(() => {
     FIGURE_MAT.color.set(palette.figure);
@@ -313,7 +331,11 @@ export default function ViewerFigure({
     prevPoseKey.current = poseKey;
   }, [target, poseKey]);
 
-  useFrame((state) => {
+  // Transition fade; starts at the mount target so entering 3D begins
+  // invisible and fades in once the camera rests.
+  const opacity = useRef(shown ? 1 : 0);
+
+  useFrame((state, delta) => {
     const a = anim.current;
     if (a) {
       if (a.start === null) a.start = state.clock.elapsedTime;
@@ -323,6 +345,16 @@ export default function ViewerFigure({
       // Keep frames coming while tweening (demand frameloop).
       state.invalidate();
     }
+    const fadeTarget = shown ? 1 : 0;
+    if (opacity.current !== fadeTarget) {
+      const step = Math.min(delta, 1 / 30) / FADE_S;
+      opacity.current =
+        fadeTarget > opacity.current
+          ? Math.min(fadeTarget, opacity.current + step)
+          : Math.max(fadeTarget, opacity.current - step);
+      state.invalidate();
+    }
+    applyFigureOpacity(rootRef.current, opacity.current);
     if (rootRef.current && torsoRef.current && headRef.current) {
       applyPose(cur.current, rootRef.current, torsoRef.current, headRef.current, sides.current);
     }
