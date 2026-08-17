@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, PencilRulerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -954,6 +955,7 @@ export function DisplayArea() {
               {drawMode ? "done" : "measure"}
             </button>
           ) : null}
+          <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
           <button
             type="button"
             title={

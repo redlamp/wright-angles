@@ -2,6 +2,7 @@
 
 import { Link2Icon, Unlink2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CvdChip } from "@/components/cvd-filters";
 import { INPUT_TYPES, SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { Slider } from "@/components/ui/slider";
 
@@ -29,15 +30,18 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
       <div className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-sm tabular-nums text-muted-foreground">
         <span id={FPS_NODE_ID} /> fps
       </div>
-      {onExport ? (
-        <button
-          type="button"
-          className="panel-frame absolute right-3 top-3 z-10 select-none rounded-md border border-border px-2.5 py-1.5 font-mono text-sm uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
-          onClick={onExport}
-        >
-          Export view
-        </button>
-      ) : null}
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+        <CvdChip className="panel-frame rounded-md border border-border font-mono text-sm text-muted-foreground" />
+        {onExport ? (
+          <button
+            type="button"
+            className="panel-frame select-none rounded-md border border-border px-2.5 py-1.5 font-mono text-sm uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+            onClick={onExport}
+          >
+            Export view
+          </button>
+        ) : null}
+      </div>
       <div className="panel-frame absolute bottom-3 left-1/2 z-10 w-80 -translate-x-1/2 rounded-lg border border-border p-2 text-sm">
         {/* The two option rows align by column (standing-handheld,
             couch-gamepad, desk-keyboard); the chain toggle on the right

@@ -1,6 +1,14 @@
 "use client";
 
-import type { CvdMode } from "@/stores/settings-store";
+import { cn } from "@/lib/utils";
+import { useSettingsStore, type CvdMode } from "@/stores/settings-store";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Color-vision-deficiency simulation (plan 10.5), fully local: SVG
@@ -45,17 +53,70 @@ const toValues = (m: number[]) =>
     .flat()
     .join(" ");
 
-export const CVD_CHOICES: { mode: CvdMode; label: string }[] = [
-  { mode: "none", label: "Off" },
-  { mode: "protanopia", label: "Protanopia (no red cones)" },
-  { mode: "deuteranopia", label: "Deuteranopia (no green cones)" },
-  { mode: "tritanopia", label: "Tritanopia (no blue cones)" },
-  { mode: "achromatopsia", label: "Achromatopsia (no color)" },
+export const CVD_CHOICES: {
+  mode: CvdMode;
+  label: string;
+  short: string;
+}[] = [
+  { mode: "none", label: "Off", short: "color vision" },
+  {
+    mode: "protanopia",
+    label: "Protanopia (no red cones)",
+    short: "protanopia",
+  },
+  {
+    mode: "deuteranopia",
+    label: "Deuteranopia (no green cones)",
+    short: "deuteranopia",
+  },
+  {
+    mode: "tritanopia",
+    label: "Tritanopia (no blue cones)",
+    short: "tritanopia",
+  },
+  {
+    mode: "achromatopsia",
+    label: "Achromatopsia (no color)",
+    short: "achromatopsia",
+  },
 ];
 
 /** CSS filter value for a mode; undefined for "none". */
 export const cvdFilter = (mode: CvdMode) =>
   mode === "none" ? undefined : `url(#cvd-${mode})`;
+
+/**
+ * Compact simulation picker for the view toolbars (2D chip row, 3D HUD)
+ * — view-wide, so it lives with the view chrome, not the per-device
+ * inspector (Taylor 2026-08-17). Styling comes from the call site.
+ */
+export function CvdChip({ className }: { className?: string }) {
+  const cvdMode = useSettingsStore((s) => s.cvdMode);
+  const setCvdMode = useSettingsStore((s) => s.setCvdMode);
+  const active = CVD_CHOICES.find((c) => c.mode === cvdMode);
+  return (
+    <Select
+      value={cvdMode}
+      onValueChange={(v) => v && setCvdMode(v as CvdMode)}
+    >
+      <SelectTrigger
+        size="sm"
+        aria-label="Color-vision simulation"
+        title="Simulate color-vision deficiencies over the 2D and 3D views (Machado 2009 matrices, fully local)"
+        className={cn("h-7 data-[size=sm]:h-7", className)}
+      >
+        <SelectValue>{active?.short ?? "color vision"}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {CVD_CHOICES.map((c) => (
+          <SelectItem key={c.mode} value={c.mode}>
+            {c.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** Invisible filter definitions; mount once near the app root. */
 export function CvdFilters() {

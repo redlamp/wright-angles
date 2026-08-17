@@ -10,16 +10,8 @@ import {
 import { cn } from "@/lib/utils";
 import { deviceAngles, formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
-import { useSettingsStore, type CvdMode } from "@/stores/settings-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
-import { CVD_CHOICES } from "@/components/cvd-filters";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { nextZ } from "./floating-panel";
 
 /**
@@ -27,9 +19,9 @@ import { nextZ } from "./floating-panel";
  * 2D or 3D view (or the comparison table — selection is one app-wide
  * store) opens this floating card. Details + hide/show, movable by its
  * header, and idles at 40% alpha so it reads as an annotation over the
- * scene rather than a window; full opacity on hover. Debug-overlay
- * toggles (topic 10) live in its bottom section — color-vision
- * simulation first.
+ * scene rather than a window; full opacity on hover. View-wide tools
+ * (color-vision sim etc.) live with the view toolbars, not here —
+ * only device-scoped controls belong on this card (Taylor).
  */
 export function DeviceInspector() {
   const selectedId = useUiStore((s) => s.selectedDeviceId);
@@ -41,8 +33,6 @@ export function DeviceInspector() {
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const unit = useSettingsStore((s) => s.unit);
-  const cvdMode = useSettingsStore((s) => s.cvdMode);
-  const setCvdMode = useSettingsStore((s) => s.setCvdMode);
 
   // Session-only position: right-anchored until the first drag.
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -174,36 +164,6 @@ export function DeviceInspector() {
         </button>
       </div>
 
-      {/* Debug overlays (plan 3.4 / topic 10) — view-wide simulation
-          toggles ride along with whichever device is inspected. */}
-      <div className="space-y-1.5 border-t border-border px-2.5 py-2">
-        <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
-          Debug overlays
-        </span>
-        <label className="flex items-center justify-between gap-2 text-base text-muted-foreground">
-          Color vision
-          <Select
-            value={cvdMode}
-            onValueChange={(v) => v && setCvdMode(v as CvdMode)}
-          >
-            <SelectTrigger size="sm" aria-label="Color-vision simulation">
-              <SelectValue>
-                {CVD_CHOICES.find((c) => c.mode === cvdMode)?.label ?? "Off"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {CVD_CHOICES.map((c) => (
-                <SelectItem key={c.mode} value={c.mode}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-        <p className="text-sm leading-4.5 text-muted-foreground/70">
-          Simulates on both the 2D and 3D views (Machado 2009).
-        </p>
-      </div>
     </div>
   );
 }
