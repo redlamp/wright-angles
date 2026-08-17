@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMediaStore } from "@/stores/media-store";
+import { usePlaybackStore } from "@/stores/playback-store";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
 import { useViewerStore } from "@/stores/viewer-store";
 
@@ -35,7 +37,7 @@ const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "Drag", does: "Pan the 2D composition (click selects)" },
   { keys: "Double-click", does: "Recenter the 2D composition" },
   { keys: "Esc", does: "Deselect / close this sheet" },
-  { keys: "X", does: "Crop the active media", soon: true },
+  { keys: "X", does: "Crop the active media (again clears the crop)" },
   { keys: "O", does: "OCR overlay", soon: true },
   { keys: "?", does: "This cheat sheet" },
 ];
@@ -73,6 +75,22 @@ export function Hotkeys() {
       const panel = PANEL_KEYS[key];
       if (panel) {
         ui.togglePanel(panel);
+        return;
+      }
+      if (key === "x") {
+        // Toggle cropping on the active media: seed the freeform window
+        // (pausing any playback, same as clicking Custom…), or clear an
+        // existing crop back to None.
+        const media = useMediaStore.getState();
+        const item = media.items.find((i) => i.id === media.activeId);
+        if (!item) return;
+        if (item.crop) {
+          media.setCrop(item.id, undefined);
+        } else {
+          const pb = usePlaybackStore.getState();
+          if (pb.animated && pb.playing) pb.setPlaying(false);
+          media.setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+        }
         return;
       }
       if (key === "1") viewer.setScenario("standing");
