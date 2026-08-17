@@ -21,21 +21,21 @@ import {
   boxMetricsOnDevice,
 } from "@/lib/display-math";
 import {
+  ASPECT_PRESETS,
+  aspectCrop,
   boxInCrop,
   cropOf,
-  cropScaleStyle,
   cropsEqual,
   dragCrop,
   effectiveDims,
   isFullFrame,
-  presetCrop,
   viewBoxStyle,
   type CropHandle,
-  type CropPreset,
 } from "@/lib/media-crop";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { GENERATED_KINDS, useMediaStore } from "@/stores/media-store";
+import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
@@ -382,48 +382,11 @@ function NameField({ item }: { item: MediaItem }) {
   );
 }
 
-/**
- * Contain-fits the cropped region inside the 16:9 preview box with plain
- * CSS — SyncedVideo and the GIF follower canvas take no style prop, so
- * object-view-box can't be applied to them; instead the full-frame child
- * is oversized/offset behind an overflow clip shaped to the effective
- * dims. The parent is the flex-centered aspect-video box.
- */
-function PreviewCropFrame({
-  item,
-  children,
-}: {
-  item: MediaItem;
-  children: React.ReactNode;
-}) {
-  const eff = effectiveDims(item);
-  const wide = eff.width / eff.height >= 16 / 9;
-  return (
-    <div
-      className="relative overflow-hidden"
-      style={{
-        aspectRatio: `${eff.width} / ${eff.height}`,
-        ...(wide ? { width: "100%" } : { height: "100%" }),
-      }}
-    >
-      <div className="absolute" style={cropScaleStyle(item)}>
-        {children}
-      </div>
-    </div>
-  );
+/** Crop interaction pauses animated media; the user resumes manually. */
+function pauseIfAnimated() {
+  const playback = usePlaybackStore.getState();
+  if (playback.animated && playback.playing) playback.setPlaying(false);
 }
-
-type AspectSnap = "free" | "16:9" | "16:10";
-const SNAP_RATIO: Record<AspectSnap, number | null> = {
-  free: null,
-  "16:9": 16 / 9,
-  "16:10": 16 / 10,
-};
-const NEXT_SNAP: Record<AspectSnap, AspectSnap> = {
-  free: "16:9",
-  "16:9": "16:10",
-  "16:10": "free",
-};
 
 const CROP_HANDLES: { id: CropHandle; className: string }[] = [
   { id: "nw", className: "top-0 left-0 cursor-nwse-resize" },
@@ -436,20 +399,25 @@ const CROP_HANDLES: { id: CropHandle; className: string }[] = [
   { id: "w", className: "top-1/2 left-0 cursor-ew-resize" },
 ];
 
-/** Keyed by item id at the callsite so drafts reset when the item changes. */
-function CropEditor({
+/**
+ * Direct-manipulation crop editor drawn OVER the full-frame media in the
+ * Active Media preview — rendered whenever a crop is in place, so the
+ * window is always draggable and resizable right where the media shows.
+ * Drags update a local draft for smooth feedback and commit through the
+ * same setCrop path the preset buttons use on release; releasing at an
+ * effectively full-frame window clears the crop. The host contain-fits
+ * the intrinsic frame inside the flex-centered aspect-video box so the
+ * percentage-positioned window lines up with image pixels.
+ */
+function CropOverlayFrame({
   item,
-  objectUrl,
-  onApply,
-  onCancel,
+  children,
 }: {
   item: MediaItem;
-  objectUrl: string;
-  onApply: (crop: MediaCrop | undefined) => void;
-  onCancel: () => void;
+  children: React.ReactNode;
 }) {
-  const [draft, setDraft] = useState<MediaCrop>(() => ({ ...cropOf(item) }));
-  const [snap, setSnap] = useState<AspectSnap>("free");
+  const setCrop = useMediaStore((s) => s.setCrop);
+  const [draft, setDraft] = useState<MediaCrop | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
     handle: CropHandle;
@@ -458,15 +426,21 @@ function CropEditor({
     base: MediaCrop;
   } | null>(null);
 
+  const crop = draft ?? cropOf(item);
+  const wide = item.width / item.height >= 16 / 9;
+
   // The handle id rides on data-handle so one handler serves all nine
   // drag surfaces (a curried closure trips the react-compiler ref lint).
   const onDragStart = (e: React.PointerEvent<HTMLElement>) => {
+    // Keep the drag from reaching the media or anything beneath it.
     e.stopPropagation();
+    e.preventDefault();
+    pauseIfAnimated();
     drag.current = {
       handle: (e.currentTarget.dataset.handle ?? "move") as CropHandle,
       startX: e.clientX,
       startY: e.clientY,
-      base: draft,
+      base: cropOf(item),
     };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -476,123 +450,94 @@ function CropEditor({
     if (!d || !host || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
     const r = host.getBoundingClientRect();
     if (!r.width || !r.height) return;
-    const ratio = SNAP_RATIO[snap];
     setDraft(
       dragCrop(
         d.base,
         d.handle,
         (e.clientX - d.startX) / r.width,
         (e.clientY - d.startY) / r.height,
-        // Aspect lock in normalized units: pixel ratio × (H/W).
-        ratio ? (ratio * item.height) / item.width : null,
+        null,
       ),
     );
   };
   const onDragEnd = () => {
+    if (!drag.current) return;
     drag.current = null;
+    if (draft) setCrop(item.id, isFullFrame(draft) ? undefined : draft);
+    setDraft(null);
   };
 
   return (
-    <div className="space-y-1.5">
+    <div
+      ref={hostRef}
+      className="relative touch-none select-none"
+      style={{
+        aspectRatio: `${item.width} / ${item.height}`,
+        ...(wide ? { width: "100%" } : { height: "100%" }),
+      }}
+    >
+      {children}
+      {/* The crop window; the oversized shadow is the outside scrim. */}
       <div
-        ref={hostRef}
-        className="relative touch-none overflow-hidden rounded-md bg-black/40 select-none"
-        style={{ aspectRatio: `${item.width} / ${item.height}` }}
+        className="absolute cursor-move touch-none"
+        style={{
+          left: `${crop.x * 100}%`,
+          top: `${crop.y * 100}%`,
+          width: `${crop.w * 100}%`,
+          height: `${crop.h * 100}%`,
+          boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
+          outline: "1px solid rgba(255,255,255,0.9)",
+        }}
+        data-handle="move"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={objectUrl}
-          alt=""
-          draggable={false}
-          className="absolute inset-0 size-full"
-        />
-        {/* The crop window; the oversized shadow is the outside scrim. */}
-        <div
-          className="absolute cursor-move touch-none"
-          style={{
-            left: `${draft.x * 100}%`,
-            top: `${draft.y * 100}%`,
-            width: `${draft.w * 100}%`,
-            height: `${draft.h * 100}%`,
-            boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
-            outline: "1px solid rgba(255,255,255,0.9)",
-          }}
-          data-handle="move"
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-        >
-          {CROP_HANDLES.map(({ id, className }) => (
-            <div
-              key={id}
-              data-handle={id}
-              className={cn(
-                "absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-[2px] border border-black/60 bg-white",
-                className,
-              )}
-              onPointerDown={onDragStart}
-              onPointerMove={onDragMove}
-              onPointerUp={onDragEnd}
-            />
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          title="Cycle aspect snap for resize handles"
-          className="ctl-quiet h-8 px-2 font-mono text-xs"
-          onClick={() => setSnap(NEXT_SNAP[snap])}
-        >
-          snap · {snap}
-        </button>
-        <span className="min-w-0 flex-1 truncate text-right font-mono text-xs text-muted-foreground">
-          {Math.round(draft.w * item.width)}×{Math.round(draft.h * item.height)}
-          px
-        </span>
-        <Button
-          size="sm"
-          onClick={() => onApply(isFullFrame(draft) ? undefined : draft)}
-        >
-          Apply
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
+        {CROP_HANDLES.map(({ id, className }) => (
+          <div
+            key={id}
+            data-handle={id}
+            className={cn(
+              // A 16px hit target around a smaller visual knob.
+              "absolute flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center",
+              className,
+            )}
+            onPointerDown={onDragStart}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            onPointerCancel={onDragEnd}
+          >
+            <div className="pointer-events-none size-2.5 rounded-[2px] border border-black/60 bg-white" />
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-const CROP_PRESETS: { kind: CropPreset; label: string }[] = [
-  { kind: "bottom-16-9", label: "Bottom 16:9" },
-  { kind: "center-16-9", label: "Center 16:9" },
-  { kind: "square", label: "Square center" },
-];
-
-/** Crop presets + the inline freeform editor. Video crops use the poster. */
-function CropSection({
-  item,
-  objectUrl,
-}: {
-  item: MediaItem;
-  objectUrl: string;
-}) {
+/**
+ * One compact row: None · standard aspect ratios · Custom. The highlight
+ * derives from the stored crop alone: None for no (or effectively
+ * full-frame) crop; an aspect button when the crop equals that preset's
+ * largest centered window; Custom for anything else — including a preset
+ * freely adjusted on the overlay until it no longer matches.
+ */
+function CropSection({ item }: { item: MediaItem }) {
   const setCrop = useMediaStore((s) => s.setCrop);
-  const [editing, setEditing] = useState(false);
 
-  // Which option is in effect right now: no crop (or an effectively
-  // full-frame one) → None; a crop matching a preset within EPS → that
-  // preset; any other crop is the freeform editor's doing → Custom.
   const current = cropOf(item);
   const noCrop = !item.crop || isFullFrame(current);
-  const presets = CROP_PRESETS.map(({ kind, label }) => {
-    const crop = presetCrop(kind, item.width, item.height);
+  const presets = ASPECT_PRESETS.map(({ label, ratio }) => {
+    const crop = aspectCrop(ratio, item.width, item.height);
+    // An exact-aspect image makes this preset the full frame — that is
+    // "None", so the button is inert rather than a second None.
+    const wholeFrame = isFullFrame(crop);
     return {
-      kind,
       label,
       crop,
-      active: !noCrop && crop !== null && cropsEqual(current, crop),
+      wholeFrame,
+      active: !noCrop && !wholeFrame && cropsEqual(current, crop),
     };
   });
   const customActive = !noCrop && !presets.some((p) => p.active);
@@ -602,54 +547,51 @@ function CropSection({
       <div className="flex h-5 items-center justify-between">
         <SectionLabel>Crop</SectionLabel>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1">
         <Button
           variant={noCrop ? "default" : "secondary"}
           size="sm"
+          className="h-6 px-1.5 text-xs"
           aria-pressed={noCrop}
           title="Show the full frame, uncropped"
-          onClick={() => {
-            setCrop(item.id, undefined);
-            setEditing(false);
-          }}
+          onClick={() => setCrop(item.id, undefined)}
         >
           None
         </Button>
-        {presets.map(({ kind, label, crop, active }) => (
+        {presets.map(({ label, crop, wholeFrame, active }) => (
           <Button
-            key={kind}
+            key={label}
             variant={active ? "default" : "secondary"}
             size="sm"
+            className="h-6 px-1.5 text-xs"
             aria-pressed={active}
-            disabled={!crop}
-            title={crop ? undefined : "The image is already this shape"}
-            onClick={() => crop && setCrop(item.id, crop)}
+            disabled={wholeFrame}
+            title={
+              wholeFrame
+                ? "The image is already this shape"
+                : `Largest centered ${label} window`
+            }
+            onClick={() => setCrop(item.id, crop)}
           >
             {label}
           </Button>
         ))}
         <Button
-          variant={editing || customActive ? "default" : "secondary"}
+          variant={customActive ? "default" : "secondary"}
           size="sm"
+          className="h-6 px-1.5 text-xs"
           aria-pressed={customActive}
-          aria-expanded={editing}
-          onClick={() => setEditing((v) => !v)}
+          title="Freeform crop — drag the window on the preview above"
+          onClick={() => {
+            pauseIfAnimated();
+            // Start a centered ~80% window; with a crop already there,
+            // the overlay is live and this is just the highlight state.
+            if (noCrop) setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+          }}
         >
           Custom…
         </Button>
       </div>
-      {editing ? (
-        <CropEditor
-          key={item.id}
-          item={item}
-          objectUrl={objectUrl}
-          onApply={(crop) => {
-            setCrop(item.id, crop);
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -906,32 +848,44 @@ function DetailCard({ item }: { item: MediaItem }) {
     <div className="space-y-2.5 p-2.5">
       <SectionLabel>Active media</SectionLabel>
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
-        {item.kind === "video" && videoUrl ? (
-          item.crop ? (
-            <PreviewCropFrame item={item}>
-              <SyncedVideo src={videoUrl} className="size-full" />
-            </PreviewCropFrame>
-          ) : (
-            <SyncedVideo src={videoUrl} className="size-full object-contain" />
-          )
+        {item.crop ? (
+          // With a crop in place the preview shows the FULL frame with
+          // the crop window drawn over it — the always-live crop editor.
+          <CropOverlayFrame item={item}>
+            {item.kind === "video" && videoUrl ? (
+              <SyncedVideo
+                src={videoUrl}
+                className="absolute inset-0 size-full"
+              />
+            ) : item.type === "image/gif" ? (
+              <GifView
+                url={objectUrl}
+                alt={item.name}
+                className="absolute inset-0 size-full"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={objectUrl}
+                alt={item.name}
+                draggable={false}
+                className="absolute inset-0 size-full"
+              />
+            )}
+          </CropOverlayFrame>
+        ) : item.kind === "video" && videoUrl ? (
+          <SyncedVideo src={videoUrl} className="size-full object-contain" />
         ) : item.type === "image/gif" ? (
-          item.crop ? (
-            <PreviewCropFrame item={item}>
-              <GifView url={objectUrl} alt={item.name} className="size-full" />
-            </PreviewCropFrame>
-          ) : (
-            <GifView
-              url={objectUrl}
-              alt={item.name}
-              className="size-full object-contain"
-            />
-          )
+          <GifView
+            url={objectUrl}
+            alt={item.name}
+            className="size-full object-contain"
+          />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={objectUrl}
             alt={item.name}
-            style={viewBoxStyle(item)}
             className="size-full object-contain"
           />
         )}
@@ -961,7 +915,7 @@ function DetailCard({ item }: { item: MediaItem }) {
         </div>
       </div>
 
-      <CropSection item={item} objectUrl={objectUrl} />
+      <CropSection item={item} />
 
       <TextDetectionSection item={item} />
 
