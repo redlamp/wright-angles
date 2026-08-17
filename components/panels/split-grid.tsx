@@ -36,7 +36,14 @@ export function SplitGrid({
         gridTemplateColumns: `${collapsed ? 0 : splitPx}px 5px minmax(0, 1fr)`,
       }}
     >
-      <div className={cn("min-h-0 min-w-0 overflow-hidden", collapsed && "invisible")}>
+      {/* Single-cell grid so the tab's own column root stretches to the
+          full panel height (flex/scroll chains depend on it). */}
+      <div
+        className={cn(
+          "grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden",
+          collapsed && "invisible",
+        )}
+      >
         {left}
       </div>
       <div

@@ -648,68 +648,59 @@ function CropSection({ item }: { item: MediaItem }) {
       active: wholeFrame ? noCrop : !noCrop && cropsEqual(current, crop),
     };
   });
-  const nativeMatch = presets.some((p) => p.wholeFrame);
-  const noneActive = noCrop && !nativeMatch;
-  const customActive = !noCrop && !presets.some((p) => p.active);
+  const value =
+    presets.find((p) => p.active)?.label ?? (noCrop ? "none" : "custom");
+
+  const applyChoice = (v: string | null) => {
+    if (v === null) return;
+    if (v === "none") {
+      setCrop(item.id, undefined);
+      return;
+    }
+    if (v === "custom") {
+      pauseIfAnimated();
+      if (noCrop) {
+        // Start a centered ~80% window.
+        setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+      } else {
+        // Entering Custom FROM a preset (Taylor): keep the window
+        // where it is, nudged a hair (0.4%) off the preset match
+        // so Custom takes the highlight and edits are freeform.
+        const c = cropOf(item);
+        setCrop(item.id, { ...c, w: c.w * 0.996, h: c.h * 0.996 });
+      }
+      return;
+    }
+    const preset = presets.find((p) => p.label === v);
+    if (preset) setCrop(item.id, preset.wholeFrame ? undefined : preset.crop);
+  };
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex h-5 items-center justify-between">
-        <SectionLabel>Crop</SectionLabel>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        <Button
-          variant={noneActive ? "default" : "secondary"}
-          size="sm"
-          className="h-6 px-1.5 text-sm"
-          aria-pressed={noneActive}
-          title="Show the full frame, uncropped"
-          onClick={() => setCrop(item.id, undefined)}
-        >
-          None
-        </Button>
-        {presets.map(({ label, crop, wholeFrame, active }) => (
-          <Button
-            key={label}
-            variant={active ? "default" : "secondary"}
-            size="sm"
-            className="h-6 px-1.5 text-sm"
-            aria-pressed={active}
-            title={
-              wholeFrame
-                ? `The image is natively ${label}`
-                : `Largest centered ${label} window`
-            }
-            onClick={() =>
-              setCrop(item.id, wholeFrame ? undefined : crop)
-            }
-          >
-            {label}
-          </Button>
-        ))}
-        <Button
-          variant={customActive ? "default" : "secondary"}
-          size="sm"
-          className="h-6 px-1.5 text-sm"
-          aria-pressed={customActive}
-          title="Freeform crop — drag the window on the preview above"
-          onClick={() => {
-            pauseIfAnimated();
-            if (noCrop) {
-              // Start a centered ~80% window.
-              setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
-            } else {
-              // Entering Custom FROM a preset (Taylor): keep the window
-              // where it is, nudged a hair (0.4%) off the preset match
-              // so Custom takes the highlight and edits are freeform.
-              const c = cropOf(item);
-              setCrop(item.id, { ...c, w: c.w * 0.996, h: c.h * 0.996 });
-            }
-          }}
-        >
-          Custom…
-        </Button>
-      </div>
+    <div className="flex h-9 items-center justify-between gap-2">
+      <SectionLabel>Crop</SectionLabel>
+      <Select value={value} onValueChange={applyChoice}>
+        <SelectTrigger size="sm" aria-label="Crop aspect">
+          <SelectValue>
+            {value === "none"
+              ? "None"
+              : value === "custom"
+                ? "Custom"
+                : presets.find((p) => p.active)?.wholeFrame
+                  ? `${value} (native)`
+                  : value}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">None — full frame</SelectItem>
+          {presets.map(({ label, wholeFrame }) => (
+            <SelectItem key={label} value={label}>
+              {label}
+              {wholeFrame ? " (native)" : ""}
+            </SelectItem>
+          ))}
+          <SelectItem value="custom">Custom — drag on the preview</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -825,6 +816,16 @@ function ScanResults({
   // User-adjustable list height (session-local).
   const [listH, setListH] = useState(160);
   const resize = useRef<{ startY: number; base: number } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Selecting a box (on the media, in a view) reveals its row: the
+  // list is short, so the selection is often scrolled out of sight.
+  useEffect(() => {
+    if (!selectedBoxId) return;
+    listRef.current
+      ?.querySelector(`[data-box-id="${CSS.escape(selectedBoxId)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedBoxId]);
 
   const rows = lines
     .map((line, i) => {
@@ -840,10 +841,15 @@ function ScanResults({
 
   return (
     <div className="space-y-1">
-      <div className="space-y-0.5 overflow-y-auto" style={{ height: listH }}>
+      <div
+        ref={listRef}
+        className="space-y-0.5 overflow-y-auto"
+        style={{ height: listH }}
+      >
         {rows.map(({ line, i, arcmin, shownPx }) => (
           <button
             key={line.id}
+            data-box-id={line.id}
             type="button"
             className={cn(
               "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
@@ -1346,22 +1352,6 @@ function DetailCard({ item }: { item: MediaItem }) {
 
       <CropSection item={item} />
 
-      <TextDetectionSection
-        item={item}
-        scan={effectiveScan}
-        running={scanRunning}
-        failed={scanFailed}
-        showBoxes={showScanBoxes}
-        onToggleBoxes={() => setShowScanBoxes(!showScanBoxes)}
-        onDetect={() => void detect()}
-        onClear={clearCurrent}
-        animated={animated}
-        unscannedCount={unscannedCount}
-        onScanAll={() => void scanAll()}
-        note={keyframeNote}
-        onClearAll={() => clearDetection(item.id)}
-      />
-
       <label className="flex h-9 items-center justify-between gap-2 text-base text-muted-foreground">
         <span className="flex items-center gap-1.5">
           Reference size
@@ -1385,7 +1375,7 @@ function DetailCard({ item }: { item: MediaItem }) {
           value={String(item.referenceHeight)}
           onValueChange={(v) => setReferenceHeight(item.id, Number(v))}
         >
-          <SelectTrigger size="sm" className="w-30">
+          <SelectTrigger size="sm">
             <SelectValue>
               {item.referenceHeight}p
               {item.referenceHeight === item.height ? " (native)" : ""}
@@ -1402,6 +1392,22 @@ function DetailCard({ item }: { item: MediaItem }) {
           </SelectContent>
         </Select>
       </label>
+
+      <TextDetectionSection
+        item={item}
+        scan={effectiveScan}
+        running={scanRunning}
+        failed={scanFailed}
+        showBoxes={showScanBoxes}
+        onToggleBoxes={() => setShowScanBoxes(!showScanBoxes)}
+        onDetect={() => void detect()}
+        onClear={clearCurrent}
+        animated={animated}
+        unscannedCount={unscannedCount}
+        onScanAll={() => void scanAll()}
+        note={keyframeNote}
+        onClearAll={() => clearDetection(item.id)}
+      />
 
     </div>
   );
