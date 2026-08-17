@@ -64,7 +64,7 @@ function DetailWindow({ id }: { id: string }) {
           className="size-2.5 shrink-0 rounded-full"
           style={{ background: device.color }}
         />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        <span className="min-w-0 flex-1 truncate text-base font-medium">
           {device.label}
         </span>
         <Button

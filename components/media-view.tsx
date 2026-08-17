@@ -247,7 +247,7 @@ export function TransportControls() {
             ))
           : null}
       </div>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+      <span className="shrink-0 font-mono text-sm text-muted-foreground">
         {fmtTime(timeSec)}
         {durationSec ? ` / ${fmtTime(durationSec)}` : ""}
       </span>

@@ -50,7 +50,7 @@ export function WorkbenchPanel() {
               type="button"
               aria-pressed={t.id === tab}
               className={cn(
-                "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-xs transition-colors",
+                "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-sm transition-colors",
                 t.id === tab
                   ? "panel-inset text-foreground ring-1 ring-ring ring-inset"
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",

@@ -87,7 +87,7 @@ export function Onboarding() {
                 front of you.
               </DialogDescription>
             </DialogHeader>
-            <p className="text-xs leading-4.5 text-muted-foreground">
+            <p className="text-sm leading-4.5 text-muted-foreground">
               For that to be honest, it needs to know one thing first: what
               screen you&apos;re sitting at, and how far away it is.
             </p>
@@ -140,7 +140,7 @@ export function Onboarding() {
 
               <div className="grid grid-cols-2 gap-2.5">
                 <label className="space-y-1">
-                  <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                     Diagonal (in)
                   </span>
                   <NumberStepper
@@ -158,7 +158,7 @@ export function Onboarding() {
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                     Distance (cm)
                   </span>
                   <NumberStepper
@@ -177,7 +177,7 @@ export function Onboarding() {
               </div>
 
               <div className="space-y-1">
-                <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
                   Resolution
                 </span>
                 <div className="flex items-center gap-1.5">
@@ -203,7 +203,7 @@ export function Onboarding() {
                     max={7680}
                     className="h-8 flex-1"
                   />
-                  <span className="text-xs text-muted-foreground">×</span>
+                  <span className="text-sm text-muted-foreground">×</span>
                   <NumberStepper
                     ariaLabel="vertical resolution"
                     value={draft.resolution.h}
@@ -229,7 +229,7 @@ export function Onboarding() {
                 </div>
               </div>
 
-              <p className="panel-inset rounded-md px-2.5 py-1.5 font-mono text-xs text-muted-foreground">
+              <p className="panel-inset rounded-md px-2.5 py-1.5 font-mono text-sm text-muted-foreground">
                 {(draft.diagonalIn * CM_PER_IN).toFixed(0)} cm diagonal ·
                 fills {angles.horizontalDeg.toFixed(0)}° of your view ·{" "}
                 {angles.ppd.toFixed(0)} px/°

@@ -35,7 +35,7 @@ export function SegmentedToggle<T extends string>({
           key={o.value}
           type="button"
           className={cn(
-            "h-full flex-1 rounded-[6px] text-xs transition-colors",
+            "h-full flex-1 rounded-[6px] text-sm transition-colors",
             o.value === value
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:text-foreground",
@@ -58,7 +58,7 @@ function Section({
 }) {
   return (
     <div className="space-y-1">
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </span>
       {children}
@@ -89,7 +89,7 @@ function StorageUsage() {
   const pct = usage.quota > 0 ? (usage.used / usage.quota) * 100 : 0;
   return (
     <div className="panel-inset space-y-1 rounded-md px-2.5 py-2">
-      <div className="flex justify-between font-mono text-xs text-muted-foreground">
+      <div className="flex justify-between font-mono text-sm text-muted-foreground">
         <span>{mb(usage.used)} MB used</span>
         <span>{mb(usage.quota)} MB available</span>
       </div>
@@ -152,7 +152,7 @@ export function SettingsPanel() {
             <Button
               variant="secondary"
               size="sm"
-              className="h-8 text-xs"
+              className="h-8 text-sm"
               onClick={downloadSetup}
             >
               <DownloadIcon className="size-3.5" /> Export
@@ -160,7 +160,7 @@ export function SettingsPanel() {
             <Button
               variant="secondary"
               size="sm"
-              className="h-8 text-xs"
+              className="h-8 text-sm"
               onClick={() => importRef.current?.click()}
             >
               <UploadIcon className="size-3.5" /> Import
@@ -179,12 +179,12 @@ export function SettingsPanel() {
             }}
           />
           {importError ? (
-            <p className="text-xs text-destructive">{importError}</p>
+            <p className="text-sm text-destructive">{importError}</p>
           ) : null}
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-full justify-start text-xs text-muted-foreground hover:text-foreground"
+            className="h-8 w-full justify-start text-sm text-muted-foreground hover:text-foreground"
             onClick={() => setOnboarded(false)}
           >
             <SparklesIcon className="size-3.5" /> Run setup assistant again
@@ -227,7 +227,7 @@ export function SettingsPanel() {
         </Section>
 
         <Section label="Readouts">
-          <label className="flex h-8 items-center justify-between text-xs">
+          <label className="flex h-8 items-center justify-between text-sm">
             Legibility bands (ISO 16′ / 20′)
             <Switch checked={showBands} onCheckedChange={setShowBands} />
           </label>
@@ -237,7 +237,7 @@ export function SettingsPanel() {
           <StorageUsage />
         </Section>
 
-        <div className="panel-inset flex items-start gap-2 rounded-md px-2.5 py-2 text-xs leading-4 text-muted-foreground">
+        <div className="panel-inset flex items-start gap-2 rounded-md px-2.5 py-2 text-sm leading-4 text-muted-foreground">
           <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             Wright Angles has no server. Devices, settings, and images live
@@ -249,14 +249,14 @@ export function SettingsPanel() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="h-8 flex-1 rounded-md bg-destructive text-xs text-white transition-opacity hover:opacity-90"
+              className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
               onClick={() => void wipeEverything()}
             >
               Really wipe everything
             </button>
             <button
               type="button"
-              className="ctl-quiet h-8 flex-1 text-xs"
+              className="ctl-quiet h-8 flex-1 text-sm"
               onClick={() => setArmed(false)}
             >
               Cancel
@@ -265,7 +265,7 @@ export function SettingsPanel() {
         ) : (
           <button
             type="button"
-            className="h-8 w-full rounded-md border border-destructive/40 text-xs text-destructive transition-colors hover:bg-destructive/10"
+            className="h-8 w-full rounded-md border border-destructive/40 text-sm text-destructive transition-colors hover:bg-destructive/10"
             onClick={() => setArmed(true)}
           >
             Wipe local data…

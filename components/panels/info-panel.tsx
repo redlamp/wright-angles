@@ -12,7 +12,7 @@ export function InfoPanel() {
       defaultPosition={{ x: 420, y: 360 }}
       width={320}
     >
-      <div className="space-y-2 p-3 text-sm leading-5 text-muted-foreground">
+      <div className="space-y-2 p-3 text-base leading-5 text-muted-foreground">
         <p>
           An <span className="text-foreground">arc minute</span> is 1/60th of
           a degree of your field of view. It measures how big something{" "}
@@ -27,7 +27,7 @@ export function InfoPanel() {
           device at its true angular size relative to the screen you&apos;re
           sitting at, so those judgements stop being guesses.
         </p>
-        <p className="text-xs">
+        <p className="text-sm">
           The same math set the console and handheld font sizes for Disco
           Elysium: The Final Cut.
         </p>

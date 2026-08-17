@@ -697,7 +697,7 @@ export function DisplayArea() {
           {/* Cycle label corners so tightly nested rects stay readable. */}
           <span
             className={
-              "absolute px-1 font-mono text-xs leading-4 whitespace-nowrap " +
+              "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap " +
               [
                 "top-0 left-0 -translate-y-full pb-0.5",
                 "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
@@ -799,7 +799,7 @@ export function DisplayArea() {
       })()}
 
       {rects.length === 0 ? (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40">
+        <div className="absolute inset-0 flex items-center justify-center text-base text-white/40">
           No visible devices — toggle one on in the Device Manager.
         </div>
       ) : null}
@@ -807,7 +807,7 @@ export function DisplayArea() {
 
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
         {scalePct !== null ? (
-          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-xs text-white/60">
+          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-sm text-white/60">
             {viewportActive
               ? scalePct >= 99 && scalePct <= 101
                 ? "1:1 physical scale · drag to pan"
@@ -827,7 +827,7 @@ export function DisplayArea() {
                   : "Draw measurement boxes on the image"
               }
               className={cn(
-                "flex h-6 w-24 items-center justify-center gap-1 rounded-md font-mono text-xs transition-colors",
+                "flex h-7 w-28 items-center justify-center gap-1 rounded-md font-mono text-sm transition-colors",
                 drawMode
                   ? "bg-white/25 text-white"
                   : "bg-black/50 text-white/60 hover:text-white",
@@ -841,7 +841,7 @@ export function DisplayArea() {
           <button
             type="button"
             title="Center the composition on the physical screen or in this window"
-            className="h-6 w-28 rounded-md bg-black/50 font-mono text-xs text-white/60 transition-colors hover:text-white"
+            className="h-7 w-36 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
             onClick={() => {
               setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
               setPanOffset({ x: 0, y: 0 });
@@ -856,7 +856,7 @@ export function DisplayArea() {
                 ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
                 : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
             }
-            className="h-6 w-20 rounded-md bg-black/50 font-mono text-xs text-white/60 transition-colors hover:text-white"
+            className="h-7 w-24 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
             onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
           >
             {viewportActive ? "viewport" : "fit"}
@@ -864,7 +864,7 @@ export function DisplayArea() {
           <button
             type="button"
             title="Export this view as a PNG reference image"
-            className="flex h-6 w-28 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-xs text-white/60 transition-colors hover:text-white"
+            className="flex h-7 w-32 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
             onClick={() => void exportView()}
           >
             <DownloadIcon className="size-3" /> export view
