@@ -847,6 +847,65 @@ function DetailCard({ item }: { item: MediaItem }) {
   return (
     <div className="space-y-2.5 p-2.5">
       <SectionLabel>Active media</SectionLabel>
+
+      {/* Name row: rename inline, remove via the trashcan (5.1). */}
+      <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <NameField key={item.id} item={item} />
+        </div>
+        <button
+          type="button"
+          title="Remove from library"
+          aria-label="Remove from library"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
+          onClick={() => setArmed(true)}
+        >
+          <Trash2Icon className="size-4" />
+        </button>
+      </div>
+      {armed ? (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
+            onClick={() => void remove(item.id)}
+          >
+            Really remove
+          </button>
+          <button
+            type="button"
+            className="ctl-quiet h-8 flex-1 text-sm"
+            onClick={() => setArmed(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {/* Details grid (5.2): the same two cells for every media item —
+          what the simulation displays vs what the file is. */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className="panel-inset rounded-md px-2.5 py-1.5">
+          <div className="text-xs tracking-wide text-muted-foreground uppercase">
+            Display{item.crop ? " · cropped" : ""}
+          </div>
+          <div className="font-mono text-xs leading-5">
+            {eff.width}×{eff.height} · {aspect.w}:{aspect.h}
+            {item.kind === "video" && item.duration
+              ? ` · ${Math.round(item.duration)}s`
+              : ""}
+          </div>
+        </div>
+        <div className="panel-inset rounded-md px-2.5 py-1.5">
+          <div className="text-xs tracking-wide text-muted-foreground uppercase">
+            Source
+          </div>
+          <div className="font-mono text-xs leading-5">
+            {item.width}×{item.height}
+          </div>
+        </div>
+      </div>
+
       <div className="panel-inset flex aspect-video items-center justify-center overflow-hidden rounded-md bg-black/40">
         {item.crop ? (
           // With a crop in place the preview shows the FULL frame with
@@ -893,28 +952,6 @@ function DetailCard({ item }: { item: MediaItem }) {
 
       <TransportControls />
 
-      <NameField key={item.id} item={item} />
-
-      {/* Measurements: what the simulation actually uses. */}
-      <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
-        <div>
-          {eff.width}×{eff.height}px {item.crop ? "cropped" : "native"} ·{" "}
-          {aspect.w}:{aspect.h}
-          {item.kind === "video" && item.duration
-            ? ` · ${Math.round(item.duration)}s`
-            : ""}
-        </div>
-        {item.crop ? (
-          <div>
-            cropped from {item.width}×{item.height}px native
-          </div>
-        ) : null}
-        <div>
-          shown as {item.referenceHeight}p content
-          {item.referenceHeight !== item.height ? " (scaled)" : ""}
-        </div>
-      </div>
-
       <CropSection item={item} />
 
       <TextDetectionSection item={item} />
@@ -960,33 +997,6 @@ function DetailCard({ item }: { item: MediaItem }) {
         </Select>
       </label>
 
-      {armed ? (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
-            onClick={() => void remove(item.id)}
-          >
-            Really remove
-          </button>
-          <button
-            type="button"
-            className="ctl-quiet h-8 flex-1 text-sm"
-            onClick={() => setArmed(false)}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-center text-destructive hover:bg-destructive/10 hover:text-destructive"
-          onClick={() => setArmed(true)}
-        >
-          <Trash2Icon className="size-4" /> Remove from library…
-        </Button>
-      )}
     </div>
   );
 }
