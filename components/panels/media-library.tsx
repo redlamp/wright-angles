@@ -38,6 +38,7 @@ import { usePlaybackStore } from "@/stores/playback-store";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { captureFrameAt } from "@/lib/frame-capture";
 import { activeKeyframe, withScan } from "@/lib/scan-keyframes";
+import { groupTextLines } from "@/lib/text-groups";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
@@ -630,7 +631,23 @@ interface ScanLine {
   text: string;
   confidence: number;
   box: { x: number; y: number; w: number; h: number };
+  /** Text block (lib/text-groups); drives the shared size + tint. */
+  groupId?: number;
+  /** Descender-aware group font-size estimate in source px. */
+  sizePx?: number;
 }
+
+/** Distinct tints for text groups (7.3's visual indicator). */
+const GROUP_COLORS = [
+  "#5b9bd5",
+  "#c58af9",
+  "#4dd0a6",
+  "#f28bb2",
+  "#e6c04f",
+  "#7fd0e8",
+];
+const groupColor = (groupId: number | undefined) =>
+  groupId === undefined ? "#f5a524" : GROUP_COLORS[groupId % GROUP_COLORS.length];
 
 const scanBandColor = (arcmin: number) =>
   arcmin >= ACUITY.comfortableTextArcmin
@@ -661,16 +678,17 @@ function ScanBoxesOverlay({ lines }: { lines: ScanLine[] }) {
           type="button"
           aria-label={`Select detected line ${i + 1}`}
           className={cn(
-            "absolute border",
-            line.id === selectedBoxId
-              ? "z-10 border-2 border-white"
-              : "border-[#f5a524]/80 hover:border-white/80",
+            "absolute border hover:border-white/80",
+            line.id === selectedBoxId && "z-10 border-2",
           )}
           style={{
             left: `${line.box.x * 100}%`,
             top: `${line.box.y * 100}%`,
             width: `${line.box.w * 100}%`,
             height: `${line.box.h * 100}%`,
+            // Group tint (7.3): boxes in one block share a color.
+            borderColor:
+              line.id === selectedBoxId ? "#ffffff" : groupColor(line.groupId),
           }}
           onClick={(e) => {
             e.stopPropagation();
@@ -701,19 +719,19 @@ function ScanResults({
   const rows = lines
     .map((line, i) => {
       const inCrop = boxInCrop(line.box, crop);
-      const arcmin = boxMetricsOnDevice(
-        line.box.h / crop.h,
-        eff,
-        thisDevice,
-      ).arcmin;
-      return { line, i, inCrop, arcmin };
+      // Group-corrected height when available (descender-aware, plan
+      // 7.2), else the raw ink box.
+      const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
+      const arcmin = boxMetricsOnDevice(hNorm / crop.h, eff, thisDevice).arcmin;
+      const shownPx = Math.round(line.sizePx ?? line.box.h * item.height);
+      return { line, i, inCrop, arcmin, shownPx };
     })
     .filter((r) => r.inCrop !== null);
 
   return (
     <div className="space-y-1">
       <div className="space-y-0.5 overflow-y-auto" style={{ height: listH }}>
-        {rows.map(({ line, i, arcmin }) => (
+        {rows.map(({ line, i, arcmin, shownPx }) => (
           <button
             key={line.id}
             type="button"
@@ -727,6 +745,17 @@ function ScanResults({
               selectBox(line.id === selectedBoxId ? null : line.id)
             }
           >
+            {/* Group tint: lines sharing a block share a dot color and
+                a font-size estimate (7.3). */}
+            <span
+              className="size-2 shrink-0 rounded-full"
+              title={
+                line.groupId !== undefined
+                  ? `Text group ${line.groupId + 1} — size shared across the block`
+                  : undefined
+              }
+              style={{ background: groupColor(line.groupId) }}
+            />
             <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
               {i + 1}
             </span>
@@ -736,9 +765,15 @@ function ScanResults({
             >
               {line.text}
             </span>
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">
-              {Math.round(line.box.h * item.height)}px ·{" "}
-              {Math.round(line.confidence)}%
+            <span
+              className="shrink-0 font-mono text-xs text-muted-foreground"
+              title={
+                line.sizePx
+                  ? "Group-corrected font size (raw ink box may be shorter)"
+                  : undefined
+              }
+            >
+              {shownPx}px · {Math.round(line.confidence)}%
             </span>
             <span
               className="shrink-0 font-mono text-xs"
@@ -958,7 +993,7 @@ function DetailCard({ item }: { item: MediaItem }) {
       : null
     : scan;
 
-  /** OCR one frame URL into keyframe lines (ids for selection only). */
+  /** OCR one frame URL into grouped, size-corrected scan lines. */
   const ocrFrame = async (url: string) => {
     const { detectTextLines, largestByArea, medianHeightPx } = await import(
       "@/lib/ocr"
@@ -968,12 +1003,21 @@ function DetailCard({ item }: { item: MediaItem }) {
       await detectTextLines(url, intrinsic, item.crop),
       MAX_DETECTED_BOXES,
     );
+    // Group neighbouring lines into blocks; every member shares the
+    // block's descender-aware size so no-descender lines stop
+    // under-reporting (plan 7.1–7.2).
+    const { groupOf, groups } = groupTextLines(
+      raw.map((l) => l.box),
+      intrinsic,
+    );
     return {
-      lines: raw.map((l) => ({
+      lines: raw.map((l, i) => ({
         id: newBoxId(),
         text: l.text,
         confidence: l.confidence,
         box: l.box,
+        groupId: groupOf[i],
+        sizePx: groups[groupOf[i]].sizePx,
       })),
       medianPx: medianHeightPx(raw, intrinsic),
     };
@@ -1005,7 +1049,8 @@ function DetailCard({ item }: { item: MediaItem }) {
         // Client-only dynamic import: the OCR module (and the Tesseract
         // worker behind it) never loads during prerender.
         const { lines, medianPx } = await ocrFrame(objectUrl);
-        for (const line of lines) addBox(item.id, { id: line.id, ...line.box });
+        for (const line of lines)
+          addBox(item.id, { id: line.id, label: line.text, ...line.box });
         setScan({ lines, medianPx });
       }
       setShowScanBoxes(true);

@@ -77,6 +77,8 @@ export interface HighlightBox {
   y: number;
   w: number;
   h: number;
+  /** OCR-read text when the box came from a scan ("Box N" fallback). */
+  label?: string;
 }
 
 /**
@@ -129,6 +131,13 @@ export interface KeyframeLine {
   text: string;
   confidence: number;
   box: { x: number; y: number; w: number; h: number };
+  /** Text block this line belongs to (lib/text-groups). */
+  groupId?: number;
+  /**
+   * Descender-aware font-size estimate in source px, shared by the
+   * line's group — the ink box under-measures lines without descenders.
+   */
+  sizePx?: number;
 }
 
 export interface ScanKeyframe {
