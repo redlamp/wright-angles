@@ -42,6 +42,23 @@ export function formatDistance(distanceCm: number, unit: LengthUnit): string {
   return `${ft}′ ${rem}″`;
 }
 
+/**
+ * Perceptual (log) mapping between a viewing distance and a 0..1
+ * slider position. A linear 10..400cm track spends most of its length
+ * on far distances where a centimeter barely matters; log spacing
+ * gives handheld/desk distances the same room as TV/projector ones.
+ * Distances outside [min, max] clamp to the track ends.
+ */
+export function distToSlider(cm: number, min: number, max: number): number {
+  const t = Math.log(cm / min) / Math.log(max / min);
+  return Math.min(1, Math.max(0, t));
+}
+
+/** Inverse of {@link distToSlider}: slider position t∈[0,1] → cm. */
+export function sliderToDist(t: number, min: number, max: number): number {
+  return min * Math.pow(max / min, t);
+}
+
 const DEG_PER_RAD = 180 / Math.PI;
 
 /**

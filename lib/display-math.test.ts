@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   aspectFromResolution,
   deviceAngles,
+  distToSlider,
   formatDistance,
   imageScaleOnHost,
   physicalSizeCm,
@@ -10,6 +11,7 @@ import {
   ppi,
   simulatedSizeOnHostPx,
   sizeForArcmin,
+  sliderToDist,
   subtenseArcmin,
 } from "./display-math";
 import type { Device } from "./types";
@@ -209,6 +211,35 @@ describe("formatDistance", () => {
   test("inch remainder carries into the foot count, never 12″", () => {
     // 121.8cm = 47.95in → rounds to 48 → 4′ 0″, not 3′ 12″.
     expect(formatDistance(121.8, "in")).toBe("4′ 0″");
+  });
+});
+
+describe("perceptual distance slider (log mapping)", () => {
+  test("endpoints map to the track ends", () => {
+    expect(distToSlider(10, 10, 400)).toBe(0);
+    expect(distToSlider(400, 10, 400)).toBe(1);
+    expect(sliderToDist(0, 10, 400)).toBeCloseTo(10, 9);
+    expect(sliderToDist(1, 10, 400)).toBeCloseTo(400, 9);
+  });
+
+  test("round-trips across the range", () => {
+    for (const cm of [10, 36, 70, 63.2, 150, 400]) {
+      expect(sliderToDist(distToSlider(cm, 10, 400), 10, 400)).toBeCloseTo(
+        cm,
+        6,
+      );
+    }
+  });
+
+  test("track midpoint of 10..400 is the geometric mean ≈ 63.2cm", () => {
+    // sqrt(10 · 400) = 63.246 — desk distance sits mid-track instead of
+    // being crushed into the first sixth of a linear slider.
+    expect(sliderToDist(0.5, 10, 400)).toBeCloseTo(63.246, 2);
+  });
+
+  test("out-of-range distances clamp (stepper allows up to 9999cm)", () => {
+    expect(distToSlider(5, 10, 400)).toBe(0);
+    expect(distToSlider(9999, 10, 400)).toBe(1);
   });
 });
 

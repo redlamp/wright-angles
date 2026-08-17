@@ -23,6 +23,8 @@ import {
   CM_PER_IN,
   aspectFromResolution,
   deviceAngles,
+  distToSlider,
+  sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -273,13 +275,28 @@ export function DeviceEditor({
           <DistanceUnitFlip />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
+          {/* Log-spaced track: handheld/desk distances get as much
+              travel as TV/projector ones. Distances past the slider
+              max (stepper goes to 9999) pin the thumb at 1. */}
           <Slider
-            min={DIST_MIN_CM}
-            max={DIST_SLIDER_MAX_CM}
-            step={1}
-            value={Math.min(device.distanceCm, DIST_SLIDER_MAX_CM)}
+            min={0}
+            max={1}
+            step={0.001}
+            value={distToSlider(
+              device.distanceCm,
+              DIST_MIN_CM,
+              DIST_SLIDER_MAX_CM,
+            )}
             onValueChange={(v) =>
-              onPatch({ distanceCm: Array.isArray(v) ? v[0] : v })
+              onPatch({
+                distanceCm: Math.round(
+                  sliderToDist(
+                    Array.isArray(v) ? v[0] : v,
+                    DIST_MIN_CM,
+                    DIST_SLIDER_MAX_CM,
+                  ),
+                ),
+              })
             }
           />
           <DistanceStepper
