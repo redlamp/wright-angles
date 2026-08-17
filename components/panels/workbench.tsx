@@ -17,9 +17,9 @@ import { PerceptionReportContent } from "./perception-report";
  */
 
 const TABS: { id: WorkbenchTab; label: string; icon: typeof MonitorIcon }[] = [
-  { id: "devices", label: "Device Manager", icon: MonitorIcon },
   { id: "media", label: "Media Library", icon: ImageIcon },
   { id: "report", label: "Perception Report", icon: GaugeIcon },
+  { id: "devices", label: "Device Manager", icon: MonitorIcon },
 ];
 
 export function WorkbenchPanel() {
@@ -63,14 +63,14 @@ export function WorkbenchPanel() {
           ))}
         </div>
         <div className="min-h-0 flex-1">
-          <div className={cn("h-full", tab !== "devices" && "hidden")}>
-            <DeviceManagerContent />
-          </div>
           <div className={cn("h-full", tab !== "media" && "hidden")}>
             <MediaLibraryContent />
           </div>
           <div className={cn("h-full", tab !== "report" && "hidden")}>
             <PerceptionReportContent />
+          </div>
+          <div className={cn("h-full", tab !== "devices" && "hidden")}>
+            <DeviceManagerContent />
           </div>
         </div>
       </div>
