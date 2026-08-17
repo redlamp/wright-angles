@@ -10,13 +10,13 @@ loop; all dev machines had stored state and sailed past it).
 
 - [x] 1.1 Fresh-visitor crash on the live site — fixed in v0.3.1;
       fresh-state smoke test added to the promotion gates (see 12.2).
-- [ ] 1.2 Comparison table: column widths must not shift when the sort
+- [x] 1.2 Comparison table: column widths must not shift when the sort
       arrow moves — reserve the arrow's space.
-- [ ] 1.3 Comparison table: clicking a row selects that device in the
+- [x] 1.3 Comparison table: clicking a row selects that device in the
       2D and 3D views (shared selection store).
 - [ ] 1.4 Comparison table: font sizes up to the new type scale (topic 2).
-- [ ] 1.5 Crop: the active preset is visibly highlighted; "Adjust"
-      renamed "Custom".
+- [ ] 1.5 Crop: active state highlighted; "Custom" rename — shipped,
+      then superseded same morning by the 5.4 aspect redesign.
 - [ ] 1.6 Gamepad pose: hold is too high — lower it; forearms roughly
       10° tilted up from horizontal.
 - [ ] 1.7 Standing desk: top sits just below the figure's elbow.
@@ -50,15 +50,15 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 4. Hotkeys
 
-- [ ] 4.1 m media · d devices · p perception · c comparison ·
-      s settings · Tab 2D/3D toggle (suppressed while typing in
-      inputs).
-- [ ] 4.2 Confirmed additions (Taylor 2026-08-17): o OCR overlay ·
-      x crop · 1/2/3 stances · q/w/e input types · ? cheat-sheet
-      overlay (needs building — doesn't exist yet) · Esc deselect.
-- [ ] 4.3 2D interaction change: drop Space-to-pan. Left mouse
-      selects on click; dragging pans by default (drag threshold
-      distinguishes the two).
+- [ ] 4.1 BUILT, verify: m media · d devices · p perception ·
+      c comparison · s settings · Tab 2D/3D toggle (suppressed while
+      typing in inputs).
+- [ ] 4.2 BUILT except x/o (wire once crop v2 and the OCR overlay
+      exist — listed "soon" in the sheet): 1/2/3 stances · q/w/e
+      input types · ? cheat-sheet overlay · Esc deselect.
+- [ ] 4.3 BUILT, verify: Space-pan dropped; left mouse selects on a
+      stationary click, pans past a 4px drag threshold; double-click
+      recenters; measure mode and buttons exempt.
 
 ## 5. Active media panel redesign (Taylor spec)
 
@@ -67,9 +67,13 @@ loop; all dev machines had stored state and sailed past it).
 - [ ] 5.2 Details as consistent grid cells on one line: display size +
       source size; drop the unclear "shown as".
 - [ ] 5.3 The media itself, then timeline.
-- [ ] 5.4 Crop: active option highlighted; "Custom" (né Adjust) puts
-      the crop handles OVER the existing media view — no second
-      instance of the content.
+- [ ] 5.4 Crop v2 (Taylor 2026-08-17): ONE row of aspect-ratio
+      presets — None · 4:3 · 5:4 · 16:9 · 16:10 · 21:9 · 32:9 ·
+      Custom (Bottom/Center variants removed). Any active crop draws
+      as drag/resize handles OVER the media display at the top — no
+      second instance; freeform edits flip the highlight to Custom.
+      Entering crop interaction pauses the playhead when the media
+      has a timeline.
 - [ ] 5.5 Text detection: visible progress confirmation while
       scanning; when done, basic stats + buttons through to the
       comparison and perception panels.
