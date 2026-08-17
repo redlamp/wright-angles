@@ -23,6 +23,8 @@ interface UiState {
   setPanelHeight: (id: PanelId, height: number) => void;
   viewMode: ViewMode;
   togglePanel: (id: PanelId) => void;
+  /** Open (never close) a panel — deep links from other panels. */
+  openPanel: (id: PanelId) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
   setPanelWidth: (id: PanelId, width: number) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -65,6 +67,10 @@ export const useUiStore = create<UiState>()(
       togglePanel: (id) =>
         set((s) => ({
           openPanels: { ...s.openPanels, [id]: !s.openPanels[id] },
+        })),
+      openPanel: (id) =>
+        set((s) => ({
+          openPanels: { ...s.openPanels, [id]: true },
         })),
       setPanelPosition: (id, pos) =>
         set((s) => ({
