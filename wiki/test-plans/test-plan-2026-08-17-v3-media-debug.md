@@ -67,17 +67,19 @@ loop; all dev machines had stored state and sailed past it).
 - [ ] 5.2 BUILT, verify: DISPLAY / SOURCE grid cells above the media,
       identical layout for every item; shown-as removed.
 - [ ] 5.3 BUILT with 5.1–5.2: name → details → media → timeline order.
-- [ ] 5.4 Crop v2 (Taylor 2026-08-17): ONE row of aspect-ratio
-      presets — None · 4:3 · 5:4 · 16:9 · 16:10 · 21:9 · 32:9 ·
-      Custom (Bottom/Center variants removed). Any active crop draws
-      as drag/resize handles OVER the media display at the top — no
-      second instance; freeform edits flip the highlight to Custom.
-      Entering crop interaction pauses the playhead when the media
-      has a timeline.
-- [ ] 5.5 Text detection: visible progress confirmation while
-      scanning; when done, basic stats + buttons through to the
-      comparison and perception panels.
-- [ ] 5.6 Reference size gets a "?" hover tooltip explaining its use.
+- [ ] 5.4 BUILT, verify: crop v2 — one aspect row (None · 4:3 · 5:4 ·
+      16:9 · 16:10 · 21:9 · 32:9 · Custom), overlay editor on the
+      media, playhead pauses on crop interaction, native-aspect
+      images highlight their ratio button.
+- [ ] 5.5 BUILT, verify: scan status line (batch shows "Scanning k of
+      n…"), post-scan links open the comparison table and perception
+      report.
+- [ ] 5.6 BUILT, verify: reference size "?" tooltip.
+- [ ] 5.7 BUILT, verify (Taylor's 10:43 batch): scan boxes over the
+      media (no second image), eye toggle by the section header,
+      Detect + Clear on the header line, resizable results list,
+      local-only note centered IN the title bar, always two columns,
+      independent column scrolling.
 
 ## 6. Perception report v2 — Miller columns
 
@@ -88,22 +90,20 @@ loop; all dev machines had stored state and sailed past it).
 - [ ] 6.3 Miller columns: "All devices" selected by default, "My
       Display" listed; selecting a device narrows column 2 to that
       device's report.
-- [ ] 6.4 Measured boxes labeled with their OCR text when readable
-      ("HEALTH 47/100"), falling back to "Box 1".
+- [ ] 6.4 BUILT, verify: OCR-sourced measure boxes carry their read
+      text as a label; the report names boxes by it, else "Box 1".
 - [ ] 6.5 This Device is blessed (foundation of the vision model);
       a selected device's details render NEXT TO This Device's for
       comparison.
 
 ## 7. OCR quality — descenders + text grouping
 
-- [ ] 7.1 Group nearby detected lines (infer word wrap and line
-      spacing) and assume one font size per group.
-- [ ] 7.2 Descender-aware sizing: a line without descenders currently
-      measures only its visible ink and under-reports the font size;
-      use the group's tallest metrics (and cap-height inference) so
-      all lines in a group agree.
-- [ ] 7.3 Visual indicator for groups in the overlay/inspector
-      (shared outline tint or group badge).
+- [ ] 7.1 BUILT, verify: lib/text-groups clusters lines into blocks
+      (gap, column alignment, height-ratio gates); 7 pinned tests.
+- [ ] 7.2 BUILT, verify: group size = tallest member capped at 1.4×
+      the member median; arcmin verdicts and shown px use it.
+- [ ] 7.3 BUILT, verify: group tint dots in the list and matching
+      outline colors on the media overlay.
 - [ ] 7.4 Test steps: scan a screenshot containing a paragraph plus a
       short all-cap line; before = the cap line reports smaller px;
       after = both report the group size, and the group indicator
@@ -118,12 +118,16 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 9. Video OCR keyframes (Taylor: user-set, batch or piecemeal)
 
-- [ ] 9.1 User sets OCR keyframes on the timeline; scans run per
-      keyframe (batch queue or one-at-a-time).
-- [ ] 9.2 Markers drawn on the timeline; `<` / `>` jump to
-      previous/next marker and pause; Space toggles play/pause.
-- [ ] 9.3 A keyframe's scan stays displayed until the playhead passes
-      the next marker.
+- [ ] 9.1 BUILT, verify: bookmark button places/removes keyframes at
+      the playhead; Scan frame scans one, Scan all batches the
+      unscanned in order (engine frame → local OCR).
+- [ ] 9.2 BUILT, verify: diamond markers under the timeline (filled =
+      scanned) click-seek+pause; `<`/`>` (`,`/`.`) jump markers and
+      pause; Space toggles play/pause.
+- [ ] 9.3 BUILT, verify: the active keyframe's boxes/list persist
+      until the playhead passes the next marker; Clear keeps markers,
+      drops scans. All 9.x built without a browser (extension was
+      down) — gates green, needs the visual pass.
 
 ## 10. Beyond-text debug overlays (later; toggles live in the device
     panel, 3.4)
