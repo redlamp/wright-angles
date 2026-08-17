@@ -39,6 +39,7 @@ import DeviceRect, {
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
+import { useScreenViewport } from "@/components/display-area";
 import SceneHud, { FPS_NODE_ID } from "./scene-hud";
 import { SCENE_PALETTES } from "./scene-palette";
 
@@ -453,9 +454,42 @@ export default function SceneView({
     () => headOnFovDeg(thisDevice, displayMode),
     [thisDevice, displayMode],
   );
+  // The flight lands on WHATEVER 2D's framing is (Taylor 2026-08-17):
+  // replicate the 2D content-center offset from the window center —
+  // pan plus, in screen-locked viewport mode, the monitor-center
+  // anchor — and shift the head-on camera laterally by it, converted
+  // to cm at This Device's plane. (Camera +x shows content further
+  // right, +y further down, matching client-px axes.)
+  const panOffset = useUiStore((s) => s.panOffset);
+  const displayCenter = useSettingsStore((s) => s.displayCenter);
+  const vp = useScreenViewport();
+  let headOnX = 0;
+  let headOnY = 0;
+  if (typeof window !== "undefined") {
+    const res = thisDevice.resolution;
+    const viewportActive = displayMode === "viewport" && vp !== null;
+    let dxPx = panOffset.x;
+    let dyPx = panOffset.y;
+    if (viewportActive && vp && displayCenter === "screen") {
+      dxPx += vp.screenW / 2 - vp.clientX - window.innerWidth / 2;
+      dyPx += vp.screenH / 2 - vp.clientY - window.innerHeight / 2;
+    }
+    const k =
+      viewportActive && vp
+        ? vp.screenW / res.w
+        : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+    if (k > 0) {
+      const cmPerCss =
+        physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect).heightCm /
+        res.h /
+        k;
+      headOnX = dxPx * cmPerCss;
+      headOnY = dyPx * cmPerCss;
+    }
+  }
   const headOnPose: CameraPose = {
-    position: [0, eyeH, 0],
-    target: [0, eyeH, farZ],
+    position: [headOnX, eyeH + headOnY, 0],
+    target: [headOnX, eyeH + headOnY, farZ],
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
