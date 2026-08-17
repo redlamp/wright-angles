@@ -1,7 +1,12 @@
 "use client";
 
 import { create } from "zustand";
-import type { HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
+import type {
+  HighlightBox,
+  MediaCrop,
+  MediaItem,
+  ScanKeyframe,
+} from "@/lib/types";
 import {
   idbClearMedia,
   idbDeleteMedia,
@@ -119,6 +124,11 @@ interface MediaState {
   setReferenceHeight: (id: string, referenceHeight: number) => void;
   /** Set or clear (undefined) the item's crop window. */
   setCrop: (id: string, crop: MediaCrop | undefined) => void;
+  /** Replace the item's OCR keyframe list (empty/undefined clears it). */
+  setScanKeyframes: (
+    id: string,
+    scanKeyframes: ScanKeyframe[] | undefined,
+  ) => void;
   wipeAll: () => Promise<void>;
 }
 
@@ -417,6 +427,21 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           return rest;
         }
         return { ...i, crop };
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
+  setScanKeyframes: (id, scanKeyframes) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        if (!scanKeyframes || scanKeyframes.length === 0) {
+          const rest = { ...i };
+          delete rest.scanKeyframes;
+          return rest;
+        }
+        return { ...i, scanKeyframes };
       }),
     }));
     persistMeta(get, id);

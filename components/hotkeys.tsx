@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  nextKeyframeTime,
+  prevKeyframeTime,
+} from "@/lib/scan-keyframes";
 import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
@@ -37,6 +41,8 @@ const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "Drag", does: "Pan the 2D composition (click selects)" },
   { keys: "Double-click", does: "Recenter the 2D composition" },
   { keys: "Esc", does: "Deselect / close this sheet" },
+  { keys: "Space", does: "Play / pause timeline media" },
+  { keys: "< / >", does: "Previous / next OCR keyframe (and pause)" },
   { keys: "X", does: "Crop the active media (again clears the crop)" },
   { keys: "O", does: "OCR overlay", soon: true },
   { keys: "?", does: "This cheat sheet" },
@@ -77,6 +83,29 @@ export function Hotkeys() {
         ui.togglePanel(panel);
         return;
       }
+      // Transport keys act only when timeline media is active.
+      const pb = usePlaybackStore.getState();
+      if (e.key === " " && pb.animated) {
+        e.preventDefault();
+        pb.setPlaying(!pb.playing);
+        return;
+      }
+      if ((e.key === "," || e.key === "<" || e.key === "." || e.key === ">") && pb.animated) {
+        const media = useMediaStore.getState();
+        const kfs =
+          media.items.find((i) => i.id === media.activeId)?.scanKeyframes ??
+          [];
+        const back = e.key === "," || e.key === "<";
+        const t = back
+          ? prevKeyframeTime(kfs, pb.timeSec)
+          : nextKeyframeTime(kfs, pb.timeSec);
+        if (t !== null) {
+          pb.setPlaying(false);
+          pb.seek(t);
+        }
+        return;
+      }
+
       if (key === "x") {
         // Toggle cropping on the active media: seed the freeform window
         // (pausing any playback, same as clicking Custom…), or clear an
