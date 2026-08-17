@@ -44,6 +44,14 @@ import {
 } from "@/lib/scan-actions";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   useAnnotationStore,
   type ScanColorMode,
 } from "@/stores/annotation-store";
@@ -81,13 +89,17 @@ const REFERENCE_CHOICES = [720, 1080, 1440, 2160];
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 type ViewMode = "grid" | "list";
-type SortMode = "added-asc" | "added-desc" | "name";
+type SortMode = "custom" | "added-asc" | "added-desc" | "name";
 
 const SORT_LABELS: Record<SortMode, string> = {
+  custom: "Custom order",
   "added-desc": "Newest first",
   "added-asc": "Oldest first",
   name: "By name",
 };
+
+/** Internal drag MIME so a tile drag never reads as a file import. */
+export const MEDIA_DRAG_MIME = "application/x-wright-media";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -243,21 +255,80 @@ function LibraryList() {
   const objectUrls = useMediaStore((s) => s.objectUrls);
   const activeId = useMediaStore((s) => s.activeId);
   const setActive = useMediaStore((s) => s.setActive);
+  const reorderItem = useMediaStore((s) => s.reorderItem);
 
   const [view, setView] = useState<ViewMode>("grid");
-  const [sort, setSort] = useState<SortMode>("added-desc");
+  const [sort, setSort] = useState<SortMode>("custom");
+  /** Drop target while dragging a tile: index + which side. */
+  const [dropAt, setDropAt] = useState<{ idx: number; after: boolean } | null>(
+    null,
+  );
 
   const sorted = useMemo(() => {
     const arr = [...items];
     if (sort === "name") {
       arr.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
+    } else if (sort !== "custom") {
       arr.sort((a, b) =>
         sort === "added-asc" ? a.addedAt - b.addedAt : b.addedAt - a.addedAt,
       );
     }
+    // Custom: the store order IS the manual order.
     return arr;
   }, [items, sort]);
+
+  /** Tile drag handlers (shared by grid and list): reorder, don't
+   * re-import — the custom MIME keeps the window drop zone out of it. */
+  const dragProps = (item: MediaItem, idx: number, axis: "x" | "y") => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.setData(MEDIA_DRAG_MIME, item.id);
+      e.dataTransfer.effectAllowed = "move";
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes(MEDIA_DRAG_MIME)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const r = e.currentTarget.getBoundingClientRect();
+      const after =
+        axis === "x"
+          ? e.clientX > r.left + r.width / 2
+          : e.clientY > r.top + r.height / 2;
+      setDropAt({ idx, after });
+    },
+    onDrop: (e: React.DragEvent) => {
+      const id = e.dataTransfer.getData(MEDIA_DRAG_MIME);
+      setDropAt(null);
+      if (!id || id === item.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Reorder against the STORE order; adjust for the removal shift.
+      const r = e.currentTarget.getBoundingClientRect();
+      const after =
+        axis === "x"
+          ? e.clientX > r.left + r.width / 2
+          : e.clientY > r.top + r.height / 2;
+      const storeItems = useMediaStore.getState().items;
+      const targetIdx = storeItems.findIndex((i) => i.id === item.id);
+      const fromIdx = storeItems.findIndex((i) => i.id === id);
+      if (targetIdx < 0 || fromIdx < 0) return;
+      let to = targetIdx + (after ? 1 : 0);
+      if (fromIdx < to) to -= 1;
+      reorderItem(id, to);
+      setSort("custom");
+    },
+    onDragEnd: () => setDropAt(null),
+  });
+
+  const dropEdge = (idx: number, axis: "x" | "y") =>
+    dropAt?.idx === idx
+      ? {
+          boxShadow:
+            axis === "x"
+              ? `inset ${dropAt.after ? "-3px" : "3px"} 0 0 var(--ring)`
+              : `inset 0 ${dropAt.after ? "-3px" : "3px"} 0 var(--ring)`,
+        }
+      : undefined;
 
   return (
     <div className="border-t border-border">
@@ -311,7 +382,7 @@ function LibraryList() {
         </p>
       ) : view === "grid" ? (
         <div className="grid grid-cols-3 gap-1.5 px-2.5 pb-2.5">
-          {sorted.map((item) => (
+          {sorted.map((item, idx) => (
             <button
               key={item.id}
               type="button"
@@ -321,13 +392,16 @@ function LibraryList() {
                   ? "ring-2 ring-ring"
                   : "opacity-80 hover:opacity-100",
               )}
+              style={dropEdge(idx, "x")}
               title={item.name}
               onClick={() => setActive(item.id)}
+              {...dragProps(item, idx, "x")}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={objectUrls[item.id]}
                 alt={item.name}
+                draggable={false}
                 className="size-full object-cover"
               />
             </button>
@@ -335,7 +409,7 @@ function LibraryList() {
         </div>
       ) : (
         <div className="space-y-0.5 px-2.5 pb-2.5">
-          {sorted.map((item) => (
+          {sorted.map((item, idx) => (
             <button
               key={item.id}
               type="button"
@@ -345,13 +419,16 @@ function LibraryList() {
                   ? "panel-inset ring-1 ring-ring ring-inset"
                   : "hover:bg-muted/50",
               )}
+              style={dropEdge(idx, "y")}
               onClick={() => setActive(item.id)}
+              {...dragProps(item, idx, "y")}
             >
               <span className="block h-6 w-10 shrink-0 overflow-hidden rounded bg-black/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={objectUrls[item.id]}
                   alt=""
+                  draggable={false}
                   className="size-full object-cover"
                 />
               </span>
@@ -1167,24 +1244,32 @@ function DetailCard({ item }: { item: MediaItem }) {
           <Trash2Icon className="size-4" />
         </button>
       </div>
-      {armed ? (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="h-8 flex-1 rounded-md bg-destructive text-base text-white transition-opacity hover:opacity-90"
-            onClick={() => void remove(item.id)}
-          >
-            Really remove
-          </button>
-          <button
-            type="button"
-            className="ctl-quiet h-8 flex-1 text-base"
-            onClick={() => setArmed(false)}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : null}
+      {/* Deleting confirms in a dialog, not an inline row (Taylor). */}
+      <Dialog open={armed} onOpenChange={setArmed}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove from library?</DialogTitle>
+            <DialogDescription>
+              “{item.name}” and its boxes, crop, and scans will be deleted
+              from this browser. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setArmed(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setArmed(false);
+                void remove(item.id);
+              }}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Details grid (5.2): the same two cells for every media item —
           what the simulation displays vs what the file is. */}

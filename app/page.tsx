@@ -13,6 +13,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
 import { DisplayArea } from "@/components/display-area";
 import { WorkbenchPanel } from "@/components/panels/workbench";
+import { MEDIA_DRAG_MIME } from "@/components/panels/media-library";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
 import { ComparisonTablePanel } from "@/components/panels/comparison-table";
 import { InfoPanel } from "@/components/panels/info-panel";
@@ -107,8 +108,12 @@ export default function Home() {
   }, [theme]);
 
   // Whole-window image drop, anywhere — the media panel need not be open.
-  const isFileDrag = (e: DragEvent | React.DragEvent) =>
-    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  // Internal library reorders carry their own MIME and must never be
+  // mistaken for an import.
+  const isFileDrag = (e: DragEvent | React.DragEvent) => {
+    const types = Array.from(e.dataTransfer?.types ?? []);
+    return types.includes("Files") && !types.includes(MEDIA_DRAG_MIME);
+  };
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     if (!isFileDrag(e)) return;
