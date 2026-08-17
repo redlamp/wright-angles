@@ -48,6 +48,9 @@ interface UiState {
    */
   workbenchSplitPx: number;
   setWorkbenchSplitPx: (px: number) => void;
+  /** First column collapsed to give the second the full panel width. */
+  workbenchLeftCollapsed: boolean;
+  toggleWorkbenchLeft: () => void;
   /** Device whose detail flyout is open beside the Device Manager. */
   openDetailId: string | null;
   /** Pinned device-detail windows and their positions. */
@@ -123,6 +126,9 @@ export const useUiStore = create<UiState>()(
       workbenchSplitPx: 280,
       setWorkbenchSplitPx: (px) =>
         set({ workbenchSplitPx: Math.min(520, Math.max(200, Math.round(px))) }),
+      workbenchLeftCollapsed: false,
+      toggleWorkbenchLeft: () =>
+        set((s) => ({ workbenchLeftCollapsed: !s.workbenchLeftCollapsed })),
       openDetailId: null,
       pinnedDetails: {},
       openDetail: (openDetailId) => set({ openDetailId }),

@@ -342,7 +342,7 @@ function LibraryList() {
   return (
     <div className="border-t border-border">
       <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 truncate whitespace-nowrap">
           <SectionLabel>Library · {items.length}</SectionLabel>
         </div>
         <div className="panel-inset flex items-center gap-0.5 rounded-md p-0.5">
