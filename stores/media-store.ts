@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   HighlightBox,
+  KeyframeLine,
   MediaCrop,
   MediaItem,
   ScanKeyframe,
@@ -130,6 +131,11 @@ interface MediaState {
    * indistinguishable) and every scan keyframe.
    */
   clearDetection: (id: string) => void;
+  /** Persist (or clear) an image's one-shot scan on the item. */
+  setScan: (
+    id: string,
+    scan: { lines: KeyframeLine[]; medianPx: number } | undefined,
+  ) => void;
   /** Replace the item's OCR keyframe list (empty/undefined clears it). */
   setScanKeyframes: (
     id: string,
@@ -445,7 +451,23 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
         const rest = { ...i };
         delete rest.boxes;
         delete rest.scanKeyframes;
+        delete rest.scan;
         return rest;
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
+  setScan: (id, scan) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        if (!scan) {
+          const rest = { ...i };
+          delete rest.scan;
+          return rest;
+        }
+        return { ...i, scan };
       }),
     }));
     persistMeta(get, id);

@@ -123,6 +123,12 @@ export interface MediaItem {
    * on screen until the playhead passes the NEXT keyframe.
    */
   scanKeyframes?: ScanKeyframe[];
+  /**
+   * The image's one-shot OCR scan (group/size data behind the panel
+   * overlay + list). Persisted so returning to the item shows the scan
+   * again; the derived measure boxes live in `boxes` as always.
+   */
+  scan?: { lines: KeyframeLine[]; medianPx: number };
 }
 
 /** One text line detected on a keyframe's frame (full-image normalized). */
