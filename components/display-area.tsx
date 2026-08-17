@@ -383,7 +383,7 @@ function PixelLoupe({
         className="block"
       />
       <div className="px-1.5 py-0.5 font-mono text-sm leading-4.5 text-white/70">
-        {Math.floor(sx)},{Math.floor(sy)} px · 1px ≈{" "}
+        {Math.floor(sx)}, {Math.floor(sy)} px · 1px ≈{" "}
         {arcminPerPx.toFixed(2)}′
       </div>
     </div>
