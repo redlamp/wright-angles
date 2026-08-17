@@ -12,10 +12,8 @@ import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
 import { DisplayArea } from "@/components/display-area";
-import { DeviceManagerPanel } from "@/components/panels/device-manager";
+import { WorkbenchPanel } from "@/components/panels/workbench";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
-import { MediaLibraryPanel } from "@/components/panels/media-library";
-import { PerceptionReportPanel } from "@/components/panels/perception-report";
 import { ComparisonTablePanel } from "@/components/panels/comparison-table";
 import { InfoPanel } from "@/components/panels/info-panel";
 import { SettingsPanel } from "@/components/panels/settings-panel";
@@ -173,10 +171,8 @@ export default function Home() {
         <>
           <Hotkeys />
           <Sidebar />
-          <DeviceManagerPanel />
+          <WorkbenchPanel />
           <DeviceDetailWindows />
-          <MediaLibraryPanel />
-          <PerceptionReportPanel />
           <ComparisonTablePanel />
           <InfoPanel />
           <SettingsPanel />

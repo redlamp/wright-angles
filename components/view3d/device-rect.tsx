@@ -287,6 +287,7 @@ export default function DeviceRect({
   contentBoxes,
   selectedBoxId,
   boxColorMode = "rating",
+  zBias,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
@@ -334,6 +335,8 @@ export default function DeviceRect({
   selectedBoxId?: string | null;
   /** Global scan color mode: block tints vs per-device verdict bands. */
   boxColorMode?: "group" | "rating";
+  /** Sub-millimeter z stagger against same-distance devices. */
+  zBias?: number;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
   const lp = labels ?? ZERO_LABELS;
@@ -532,7 +535,10 @@ export default function DeviceRect({
   return (
     <group
       ref={rectRef}
-      position={[0, centerY, device.distanceCm]}
+      // zBias staggers co-planar screens by well under a millimeter so
+      // two devices at the SAME distance never z-fight; far too small
+      // to read as a distance change.
+      position={[0, centerY, device.distanceCm + (zBias ?? 0)]}
       onClick={
         onSelect
           ? (e) => {

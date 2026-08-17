@@ -17,10 +17,14 @@ import { useViewerStore } from "@/stores/viewer-store";
  * 2D/3D flip — the app is pointer-first and Taylor chose the tradeoff.
  */
 
-const PANEL_KEYS: Record<string, PanelId> = {
-  m: "media",
+/** d/m/p drive the workbench tabs; c/s stay standalone panels. */
+const TAB_KEYS: Record<string, "devices" | "media" | "report"> = {
   d: "devices",
+  m: "media",
   p: "report",
+};
+
+const PANEL_KEYS: Record<string, PanelId> = {
   c: "table",
   s: "settings",
 };
@@ -34,7 +38,8 @@ const isTyping = (t: EventTarget | null) =>
 
 /** Rows for the cheat-sheet overlay; `soon` = mapped but not built yet. */
 const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
-  { keys: "M / D / P / C / S", does: "Toggle Media · Devices · Perception · Comparison · Settings" },
+  { keys: "D / M / P", does: "Workbench tabs: Devices · Media · Perception" },
+  { keys: "C / S", does: "Toggle Comparison · Settings" },
   { keys: "Tab", does: "Switch between 2D and 3D view" },
   { keys: "1 / 2 / 3", does: "Stance: Standing · On a couch · At a desk" },
   { keys: "Q / W / E", does: "Input: Handheld · Gamepad · Mouse & KB" },
@@ -78,6 +83,11 @@ export function Hotkeys() {
       }
 
       const key = e.key.toLowerCase();
+      const tab = TAB_KEYS[key];
+      if (tab) {
+        ui.toggleWorkbenchTab(tab);
+        return;
+      }
       const panel = PANEL_KEYS[key];
       if (panel) {
         ui.togglePanel(panel);

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import {
   EyeIcon,
   EyeOffIcon,
-  GaugeIcon,
+  LayoutGridIcon,
   ScanTextIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -31,7 +31,8 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
-import { FloatingPanel } from "./floating-panel";
+import { useUiStore } from "@/stores/ui-store";
+import { CornerDownRightIcon } from "lucide-react";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
 
@@ -134,7 +135,8 @@ function buildTextEntries(item: MediaItem): TextEntry[] {
   return entries;
 }
 
-export function PerceptionReportPanel() {
+/** Perception Report tab content (hosted by the workbench panel). */
+export function PerceptionReportContent() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const showBands = useSettingsStore((s) => s.showLegibilityBands);
@@ -151,6 +153,7 @@ export function PerceptionReportPanel() {
   const setShowTextBoxes = useAnnotationStore((s) => s.setShowTextBoxes);
   const activeItem = items.find((i) => i.id === activeId) ?? null;
 
+  const openWorkbenchTab = useUiStore((s) => s.openWorkbenchTab);
   const [column, setColumn] = useState<"all" | "mine" | string>("all");
   const pickedDevice =
     column !== "all" && column !== "mine"
@@ -249,48 +252,58 @@ export function PerceptionReportPanel() {
             </>
           )}
         </div>
-        {selected ? <SpecLines d={d} /> : null}
       </button>
     );
   };
 
+  /** Selection details pin to the BOTTOM of the column — list items
+   * keep a constant height (Taylor 17:48). */
+  const detailsDevice =
+    mode === "mine" ? thisDevice : mode === "device" ? pickedDevice : null;
+
   return (
-    <FloatingPanel
-      id="report"
-      title="Perception Report"
-      icon={GaugeIcon}
-      defaultPosition={{ x: 760, y: 16 }}
-      width={620}
-      maxWidth="none"
-      resizableHeight
-    >
       <div
-        className="grid h-full max-h-[calc(100vh-8rem)]"
+        className="grid h-full min-h-0"
         style={{ gridTemplateColumns: "230px minmax(0, 1fr)" }}
       >
         {/* Column 1: device details — All Devices, My Device (in the
-            list, per Taylor), every project device incl. hidden. */}
-        <div className="min-h-0 space-y-0.5 overflow-y-scroll border-r border-border p-1.5">
-          <button
-            type="button"
-            className={cn(
-              "w-full rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors",
-              column === "all"
-                ? "panel-inset ring-1 ring-ring ring-inset"
-                : "hover:bg-muted/50",
-            )}
-            onClick={() => setColumn("all")}
-          >
-            All Devices
-          </button>
-          {deviceEntry(thisDevice, true)}
-          {devices.map((d) => deviceEntry(d, false))}
-          {mode === "all" ? (
-            <p className="px-2 pt-1 text-xs leading-4.5 text-muted-foreground">
-              What you see on {thisDevice.label} at{" "}
-              {formatDistance(thisDevice.distanceCm, unit)} is not what
-              people see elsewhere — {"select a device to expand it."}
-            </p>
+            list, per Taylor), every project device incl. hidden.
+            Selection specs pin to the bottom so rows never resize. */}
+        <div className="flex min-h-0 flex-col border-r border-border">
+          <div className="min-h-0 flex-1 space-y-0.5 overflow-y-scroll p-1.5">
+            <button
+              type="button"
+              className={cn(
+                "mb-1 flex h-8 w-full items-center gap-1.5 rounded-md border border-border px-2 text-left text-sm font-medium transition-colors",
+                column === "all"
+                  ? "panel-inset ring-1 ring-ring ring-inset"
+                  : "hover:bg-muted/50",
+              )}
+              onClick={() => setColumn("all")}
+            >
+              <LayoutGridIcon className="size-3.5 text-muted-foreground" />
+              All Devices
+            </button>
+            {deviceEntry(thisDevice, true)}
+            {devices.map((d) => deviceEntry(d, false))}
+            {mode === "all" ? (
+              <p className="px-2 pt-1 text-xs leading-4.5 text-muted-foreground">
+                What you see on {thisDevice.label} at{" "}
+                {formatDistance(thisDevice.distanceCm, unit)} is not what
+                people see elsewhere — {"select a device to expand it."}
+              </p>
+            ) : null}
+          </div>
+          {detailsDevice ? (
+            <div className="shrink-0 border-t border-border px-2.5 py-2 text-xs">
+              <span
+                className="font-medium"
+                style={{ color: detailsDevice.color }}
+              >
+                {detailsDevice.label}
+              </span>
+              <SpecLines d={detailsDevice} />
+            </div>
           ) : null}
         </div>
 
@@ -366,8 +379,16 @@ export function PerceptionReportPanel() {
             </p>
           ) : null}
           {!activeItem ? (
-            <p className="panel-inset rounded-md px-2.5 py-2 text-xs text-muted-foreground">
-              No active media. Pick something in the Media Library.
+            <p className="panel-inset flex items-center gap-1 rounded-md px-2.5 py-2 text-xs text-muted-foreground">
+              No active media.
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
+                onClick={() => openWorkbenchTab("media")}
+              >
+                <CornerDownRightIcon className="size-3.5" />
+                Media Library
+              </button>
             </p>
           ) : textEntries.length === 0 ? (
             <p className="panel-inset rounded-md px-2.5 py-2 text-xs text-muted-foreground">
@@ -476,6 +497,5 @@ export function PerceptionReportPanel() {
           ) : null}
         </div>
       </div>
-    </FloatingPanel>
   );
 }

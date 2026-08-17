@@ -6,7 +6,6 @@ import {
   EllipsisVerticalIcon,
   EyeIcon,
   EyeOffIcon,
-  MonitorIcon,
   PinIcon,
   PlusIcon,
   Trash2Icon,
@@ -29,7 +28,6 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
-import { FloatingPanel } from "./floating-panel";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -692,15 +690,15 @@ function AddDeviceMenu() {
  */
 const DEFAULT_DEVICES_PANEL_POS = { x: 64, y: 16 };
 
-/** Detail flyout beside the Device Manager, pinnable into its own window. */
+/** Detail flyout beside the workbench, pinnable into its own window. */
 function DetailFlyout() {
   const openDetailId = useUiStore((s) => s.openDetailId);
   const openDetail = useUiStore((s) => s.openDetail);
   const pinDetail = useUiStore((s) => s.pinDetail);
   const panelPos = useUiStore(
-    (s) => s.panelPositions.devices ?? DEFAULT_DEVICES_PANEL_POS,
+    (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
   );
-  const panelWidth = useUiStore((s) => s.panelWidths.devices ?? 380);
+  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 620);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
@@ -771,7 +769,8 @@ function DetailFlyout() {
   );
 }
 
-export function DeviceManagerPanel() {
+/** Device Manager tab content (hosted by the workbench panel). */
+export function DeviceManagerContent() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
@@ -802,14 +801,8 @@ export function DeviceManagerPanel() {
   const clearMarker = () => setInsertIdx(null);
 
   return (
-    <FloatingPanel
-      id="devices"
-      title="Device Manager"
-      icon={MonitorIcon}
-      defaultPosition={{ x: 64, y: 16 }}
-      width={380}
-    >
-      <div className="max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto">
+    <div className="h-full">
+      <div className="h-full min-h-0 overflow-x-clip overflow-y-auto">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
@@ -853,6 +846,6 @@ export function DeviceManagerPanel() {
         </div>
       </div>
       <DetailFlyout />
-    </FloatingPanel>
+    </div>
   );
 }
