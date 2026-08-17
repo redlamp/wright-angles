@@ -19,6 +19,8 @@ const eslintConfig = defineConfig([
     // Obsidian vault internals (gitignored, but eslint scans the disk):
     // community plugins drop their own JS here.
     "wiki/.obsidian/**",
+    // Agent worktrees (each carries its own .next generated output).
+    ".claude/worktrees/**",
   ]),
 ]);
 
