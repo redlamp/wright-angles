@@ -18,7 +18,7 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
-import { physicalSizeCm } from "@/lib/display-math";
+import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import type { ScenePalette } from "./scene-palette";
@@ -174,6 +174,68 @@ export interface ScreenMedia {
  * component only knows itself). All values are cm; zeros = the default
  * centered placement.
  */
+/**
+ * A measure box / detected line shown ON the 3D screens, in crop-space
+ * coordinates (already passed through boxInCrop by scene-view).
+ */
+export interface ContentBox {
+  id: string;
+  rect: { x: number; y: number; w: number; h: number };
+  /** Crop-relative height used for the per-device legibility color. */
+  hMeasure: number;
+}
+
+const bandColor = (arcmin: number) =>
+  arcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : arcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
+
+/**
+ * Outline loop for a content-space rect on the screen surface. The
+ * shared texture is U-mirrored (the viewer at -Z sees back faces), so
+ * content-left lands at local +x; curved panels bend the horizontal
+ * edges along the same chord math as the screen itself, on a slightly
+ * viewer-side radius so the lines never z-fight the content.
+ */
+function boxLoopPoints(
+  rect: { x: number; y: number; w: number; h: number },
+  fitW: number,
+  fitH: number,
+  R: number,
+): [number, number, number][] {
+  const yTop = fitH / 2 - rect.y * fitH;
+  const yBot = yTop - rect.h * fitH;
+  const xAt = (fImg: number) => fitW / 2 - fImg * fitW;
+  if (!R) {
+    const x0 = xAt(rect.x + rect.w);
+    const x1 = xAt(rect.x);
+    const z = -0.3;
+    return [
+      [x0, yTop, z],
+      [x1, yTop, z],
+      [x1, yBot, z],
+      [x0, yBot, z],
+      [x0, yTop, z],
+    ];
+  }
+  const r = R - 0.5;
+  const arc = fitW / r;
+  const at = (fImg: number, y: number): [number, number, number] => {
+    const u = xAt(fImg) / fitW; // -0.5..0.5 across the arc
+    return [r * Math.sin(arc * u), y, -R + r * Math.cos(arc * u)];
+  };
+  const N = 8;
+  const pts: [number, number, number][] = [];
+  for (let i = 0; i <= N; i++)
+    pts.push(at(rect.x + (rect.w * i) / N, yTop));
+  for (let i = 0; i <= N; i++)
+    pts.push(at(rect.x + rect.w - (rect.w * i) / N, yBot));
+  pts.push(at(rect.x, yTop));
+  return pts;
+}
+
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
   nameX: number;
@@ -219,6 +281,8 @@ export default function DeviceRect({
   onSelect,
   onDistanceDrag,
   onDragState,
+  contentBoxes,
+  selectedBoxId,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
@@ -260,6 +324,10 @@ export default function DeviceRect({
   onDistanceDrag?: (distanceCm: number) => void;
   /** Reports node-drag start/end so the parent can pause OrbitControls. */
   onDragState?: (dragging: boolean) => void;
+  /** Measure boxes + active-keyframe lines drawn on the screen. */
+  contentBoxes?: ContentBox[];
+  /** App-wide selected box for the white highlight. */
+  selectedBoxId?: string | null;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
   const lp = labels ?? ZERO_LABELS;
@@ -553,6 +621,30 @@ export default function DeviceRect({
           />
         </mesh>
       )}
+
+      {/* Measure boxes / detected lines ON this screen, colored by THIS
+          device's legibility verdict — the same text can be green on
+          the TV and red on the handheld. */}
+      {media && fit && contentBoxes && contentBoxes.length > 0
+        ? contentBoxes.map((cb) => {
+            const arcmin = boxMetricsOnDevice(
+              cb.hMeasure,
+              { width: media.width, height: media.height },
+              device,
+            ).arcmin;
+            const sel = cb.id === selectedBoxId;
+            return (
+              <Line
+                key={cb.id}
+                points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
+                color={sel ? "#ffffff" : bandColor(arcmin)}
+                lineWidth={sel ? 2.5 : 1.25}
+                transparent
+                opacity={sel ? 1 : 0.9}
+              />
+            );
+          })
+        : null}
 
       {SHOW_LABELS ? (
         <Billboard position={[lp.nameX, heightCm / 2 + 3 + lp.nameLift, 0]}>

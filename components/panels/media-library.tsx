@@ -14,7 +14,7 @@ import {
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { MediaCrop, MediaItem } from "@/lib/types";
+import type { Device, MediaCrop, MediaItem } from "@/lib/types";
 import {
   ACUITY,
   aspectFromResolution,
@@ -661,13 +661,42 @@ const scanBandColor = (arcmin: number) =>
  * outlined and numbered, plus a per-line table (text, px height,
  * confidence, arcmin on This Device). Rows select their measure box.
  */
+/** Color modes for scan visuals: block tints or legibility verdicts. */
+type ScanColorMode = "group" | "rating";
+
+const scanLineColor = (
+  line: ScanLine,
+  mode: ScanColorMode,
+  item: MediaItem,
+  thisDevice: Device,
+): string => {
+  if (mode === "group") return groupColor(line.groupId);
+  const crop = cropOf(item);
+  const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
+  const arcmin = boxMetricsOnDevice(
+    hNorm / crop.h,
+    effectiveDims(item),
+    thisDevice,
+  ).arcmin;
+  return scanBandColor(arcmin);
+};
+
 /**
  * Detected-line outlines drawn over the top media display, in full-frame
  * coordinates (rendered inside CropOverlayFrame's intrinsic-aspect host —
  * per Taylor, no second image area). Clicking an outline selects its
  * measure box, same as a list row.
  */
-function ScanBoxesOverlay({ lines }: { lines: ScanLine[] }) {
+function ScanBoxesOverlay({
+  lines,
+  item,
+  colorMode,
+}: {
+  lines: ScanLine[];
+  item: MediaItem;
+  colorMode: ScanColorMode;
+}) {
+  const thisDevice = useDeviceStore((s) => s.thisDevice);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   return (
@@ -686,9 +715,10 @@ function ScanBoxesOverlay({ lines }: { lines: ScanLine[] }) {
             top: `${line.box.y * 100}%`,
             width: `${line.box.w * 100}%`,
             height: `${line.box.h * 100}%`,
-            // Group tint (7.3): boxes in one block share a color.
             borderColor:
-              line.id === selectedBoxId ? "#ffffff" : groupColor(line.groupId),
+              line.id === selectedBoxId
+                ? "#ffffff"
+                : scanLineColor(line, colorMode, item, thisDevice),
           }}
           onClick={(e) => {
             e.stopPropagation();
@@ -703,9 +733,11 @@ function ScanBoxesOverlay({ lines }: { lines: ScanLine[] }) {
 function ScanResults({
   item,
   lines,
+  colorMode,
 }: {
   item: MediaItem;
   lines: ScanLine[];
+  colorMode: ScanColorMode;
 }) {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
@@ -745,16 +777,23 @@ function ScanResults({
               selectBox(line.id === selectedBoxId ? null : line.id)
             }
           >
-            {/* Group tint: lines sharing a block share a dot color and
-                a font-size estimate (7.3). */}
+            {/* Dot follows the color mode: block tint (7.3) or the
+                legibility verdict band. */}
             <span
               className="size-2 shrink-0 rounded-full"
               title={
-                line.groupId !== undefined
-                  ? `Text group ${line.groupId + 1} — size shared across the block`
-                  : undefined
+                colorMode === "group"
+                  ? line.groupId !== undefined
+                    ? `Text group ${line.groupId + 1} — size shared across the block`
+                    : undefined
+                  : "Legibility on This Device (ISO 16′ / 20′ bands)"
               }
-              style={{ background: groupColor(line.groupId) }}
+              style={{
+                background:
+                  colorMode === "group"
+                    ? groupColor(line.groupId)
+                    : scanBandColor(arcmin),
+              }}
             />
             <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">
               {i + 1}
@@ -833,6 +872,9 @@ function TextDetectionSection({
   unscannedCount = 0,
   onScanAll,
   note,
+  colorMode,
+  onColorMode,
+  onResetAll,
 }: {
   item: MediaItem;
   scan: ScanRun | null;
@@ -848,34 +890,46 @@ function TextDetectionSection({
   onScanAll?: () => void;
   /** Status line override (keyframe context / batch progress). */
   note?: string | null;
+  colorMode: ScanColorMode;
+  onColorMode: (m: ScanColorMode) => void;
+  onResetAll: () => void;
 }) {
   const canScan = item.kind === "image" || animated;
   const hasLines = !!scan && scan.lines.length > 0;
+  const hasAnyDetection =
+    hasLines ||
+    (item.boxes?.length ?? 0) > 0 ||
+    (item.scanKeyframes?.length ?? 0) > 0;
+  const [resetArmed, setResetArmed] = useState(false);
 
   return (
     <div className="space-y-1.5">
       <div className="flex h-6 items-center justify-between gap-1">
         <span className="flex items-center gap-1.5">
+          {/* Eye LEFT of the label, styled as a real button (Taylor). */}
+          <button
+            type="button"
+            aria-pressed={showBoxes}
+            title={
+              showBoxes
+                ? "Hide detected boxes on the preview"
+                : "Show detected boxes on the preview"
+            }
+            className={cn(
+              "panel-inset flex size-6 items-center justify-center rounded-md transition-colors",
+              showBoxes
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={onToggleBoxes}
+          >
+            {showBoxes ? (
+              <EyeIcon className="size-3.5" />
+            ) : (
+              <EyeOffIcon className="size-3.5" />
+            )}
+          </button>
           <SectionLabel>Text detection</SectionLabel>
-          {hasLines ? (
-            <button
-              type="button"
-              aria-pressed={showBoxes}
-              title={
-                showBoxes
-                  ? "Hide detected boxes on the preview"
-                  : "Show detected boxes on the preview"
-              }
-              className="text-muted-foreground transition-colors hover:text-foreground"
-              onClick={onToggleBoxes}
-            >
-              {showBoxes ? (
-                <EyeIcon className="size-3.5" />
-              ) : (
-                <EyeOffIcon className="size-3.5" />
-              )}
-            </button>
-          ) : null}
         </span>
         <span className="flex items-center gap-1">
           <Button
@@ -928,26 +982,99 @@ function TextDetectionSection({
               Clear detected
             </Button>
           ) : null}
+          {hasAnyDetection ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-destructive"
+              title="Remove EVERY box and keyframe on this media — including ones from older sessions"
+              onClick={() => setResetArmed(true)}
+            >
+              Reset all…
+            </Button>
+          ) : null}
         </span>
       </div>
+      {resetArmed ? (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="h-7 flex-1 rounded-md bg-destructive text-xs text-white transition-opacity hover:opacity-90"
+            onClick={() => {
+              setResetArmed(false);
+              onResetAll();
+            }}
+          >
+            Really remove all boxes + keyframes
+          </button>
+          <button
+            type="button"
+            className="ctl-quiet h-7 flex-1 text-xs"
+            onClick={() => setResetArmed(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {failed ? (
         <p className="text-xs text-muted-foreground">
           Couldn&apos;t detect text — see console.
         </p>
-      ) : animated ? (
-        note ? (
-          <p className="text-xs text-muted-foreground">{note}</p>
-        ) : null
-      ) : scan ? (
-        <p className="text-xs text-muted-foreground">
-          {scan.lines.length === 0
-            ? "No text found."
-            : `${scan.lines.length} text line${
-                scan.lines.length === 1 ? "" : "s"
-              } → boxes · median ${Math.round(scan.medianPx)}px tall`}
-        </p>
       ) : null}
-      {hasLines ? <ScanResults item={item} lines={scan.lines} /> : null}
+      <div className="flex items-center justify-between gap-2">
+        {failed ? null : animated ? (
+          note ? (
+            <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+              {note}
+            </p>
+          ) : (
+            <span className="flex-1" />
+          )
+        ) : scan ? (
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+            {scan.lines.length === 0
+              ? "No text found."
+              : `${scan.lines.length} text line${
+                  scan.lines.length === 1 ? "" : "s"
+                } → boxes · median ${Math.round(scan.medianPx)}px tall`}
+          </p>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {hasLines ? (
+          <span className="panel-inset flex h-6 shrink-0 items-center gap-0.5 rounded-md p-0.5">
+            {(
+              [
+                { id: "group", label: "Groups" },
+                { id: "rating", label: "Sizes" },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                aria-pressed={colorMode === m.id}
+                title={
+                  m.id === "group"
+                    ? "Color by text block"
+                    : "Color by legibility verdict on This Device"
+                }
+                className={cn(
+                  "h-full rounded-[5px] px-1.5 text-xs transition-colors",
+                  colorMode === m.id
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => onColorMode(m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </div>
+      {hasLines ? (
+        <ScanResults item={item} lines={scan.lines} colorMode={colorMode} />
+      ) : null}
       {hasLines ? <ScanFollowThrough /> : null}
     </div>
   );
@@ -1008,6 +1135,8 @@ function DetailCard({ item }: { item: MediaItem }) {
   const [scanFailed, setScanFailed] = useState(false);
   const [showScanBoxes, setShowScanBoxes] = useState(true);
   const [batchNote, setBatchNote] = useState<string | null>(null);
+  const [colorMode, setColorMode] = useState<ScanColorMode>("group");
+  const clearDetection = useMediaStore((s) => s.clearDetection);
 
   const animated = isAnimatedItem(item);
   const timeSec = usePlaybackStore((s) => s.timeSec);
@@ -1208,7 +1337,11 @@ function DetailCard({ item }: { item: MediaItem }) {
           item={item}
           overlay={
             showScanBoxes && effectiveScan && effectiveScan.lines.length > 0 ? (
-              <ScanBoxesOverlay lines={effectiveScan.lines} />
+              <ScanBoxesOverlay
+                lines={effectiveScan.lines}
+                item={item}
+                colorMode={colorMode}
+              />
             ) : null
           }
         >
@@ -1252,6 +1385,12 @@ function DetailCard({ item }: { item: MediaItem }) {
         unscannedCount={unscannedCount}
         onScanAll={() => void scanAll()}
         note={keyframeNote}
+        colorMode={colorMode}
+        onColorMode={setColorMode}
+        onResetAll={() => {
+          clearDetection(item.id);
+          setScan(null);
+        }}
       />
 
       <label className="flex h-9 items-center justify-between gap-2 text-sm text-muted-foreground">
