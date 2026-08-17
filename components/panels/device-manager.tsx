@@ -10,7 +10,6 @@ import {
   PlusIcon,
   RotateCwSquareIcon,
   Trash2Icon,
-  XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
@@ -719,38 +718,47 @@ function AddDeviceMenu() {
  */
 const DEFAULT_DEVICES_PANEL_POS = { x: 64, y: 16 };
 
-/** Detail flyout beside the workbench, pinnable into its own window. */
-function DetailFlyout() {
+/**
+ * Column 2 of the Device Manager tab: the editor for the selected row
+ * (This Device by default), pinnable into its own window — the old
+ * floating flyout, embedded (Taylor 2026-08-17: two columns like the
+ * Media Library and Perception Report).
+ */
+function EditorColumn() {
   const openDetailId = useUiStore((s) => s.openDetailId);
-  const openDetail = useUiStore((s) => s.openDetail);
   const pinDetail = useUiStore((s) => s.pinDetail);
   const panelPos = useUiStore(
     (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
   );
-  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 620);
+  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 640);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const removeDevice = useDeviceStore((s) => s.removeDevice);
   const duplicateDevice = useDeviceStore((s) => s.duplicateDevice);
+  const openDetail = useUiStore((s) => s.openDetail);
 
-  if (!openDetailId) return null;
-  const isThis = thisDevice.id === openDetailId;
-  const device = isThis
-    ? thisDevice
-    : devices.find((d) => d.id === openDetailId);
-  if (!device) return null;
+  const device =
+    (openDetailId && thisDevice.id !== openDetailId
+      ? devices.find((d) => d.id === openDetailId)
+      : thisDevice) ?? thisDevice;
+  const isThis = device.id === thisDevice.id;
 
   return (
-    <div className="panel-frame absolute top-0 left-full ml-2 w-80 rounded-lg border border-border">
-      <div className="flex h-9 items-center gap-2 border-b border-border px-2.5">
+    <div className="flex min-h-0 flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
         <span
           className="size-2.5 shrink-0 rounded-full"
           style={{ background: device.color }}
         />
         <span className="min-w-0 flex-1 truncate text-base font-medium">
           {device.label}
+          {isThis ? (
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              This Device
+            </span>
+          ) : null}
         </span>
         <Button
           variant="ghost"
@@ -767,17 +775,8 @@ function DetailFlyout() {
         >
           <PinIcon className="size-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close details"
-          className="size-7 text-muted-foreground hover:text-foreground"
-          onClick={() => openDetail(null)}
-        >
-          <XIcon className="size-4" />
-        </Button>
       </div>
-      <div className="max-h-[calc(100vh-10rem)] overflow-x-clip overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-x-clip overflow-y-scroll">
         <DeviceEditor
           device={device}
           onPatch={(patch) =>
@@ -830,8 +829,11 @@ export function DeviceManagerContent() {
   const clearMarker = () => setInsertIdx(null);
 
   return (
-    <div className="h-full">
-      <div className="h-full min-h-0 overflow-x-clip overflow-y-auto">
+    <div
+      className="grid h-full min-h-0"
+      style={{ gridTemplateColumns: "300px minmax(0, 1fr)" }}
+    >
+      <div className="min-h-0 overflow-x-clip overflow-y-scroll border-r border-border">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
@@ -874,7 +876,7 @@ export function DeviceManagerContent() {
           <AddDeviceMenu />
         </div>
       </div>
-      <DetailFlyout />
+      <EditorColumn />
     </div>
   );
 }
