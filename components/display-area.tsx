@@ -323,6 +323,7 @@ export function DisplayArea() {
   const setDisplayCenter = useSettingsStore((s) => s.setDisplayCenter);
   const panOffset = useUiStore((s) => s.panOffset);
   const setPanOffset = useUiStore((s) => s.setPanOffset);
+  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
   const vp = useScreenViewport();
   const viewportActive = displayMode === "viewport" && vp !== null;
 
@@ -537,6 +538,12 @@ export function DisplayArea() {
             style={{
               outline: `2px solid ${device.color}`,
               outlineOffset: -1,
+              // Selection affordance: a soft ring just outside the rect's
+              // own outline (shared selection with the table and 3D view).
+              boxShadow:
+                device.id === selectedDeviceId
+                  ? `0 0 0 4px ${device.color}59`
+                  : undefined,
               // Fill also backs the letterbox bars when content doesn't
               // cover the panel (16:9 image on a 32:9 display).
               background:

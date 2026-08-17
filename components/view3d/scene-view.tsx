@@ -27,6 +27,7 @@ import { effectiveDims } from "@/lib/media-crop";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
+import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
 import DeviceRect, { type LabelPlacement } from "./device-rect";
@@ -406,7 +407,9 @@ export default function SceneView({
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // App-wide selection (shared with the comparison table and 2D view).
+  const selectedId = useUiStore((s) => s.selectedDeviceId);
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const [nodeDragging, setNodeDragging] = useState(false);
   // Live (tweened) eye height shared by the sight line and every rect's
   // projection origin, so they glide with the figure on stance changes.
@@ -449,9 +452,7 @@ export default function SceneView({
         projectTo={farZ + 5}
         showProjection={showProjection}
         selected={selectedId === d.id}
-        onSelect={() =>
-          setSelectedId((cur) => (cur === d.id ? null : d.id))
-        }
+        onSelect={() => selectDevice(selectedId === d.id ? null : d.id)}
         onDistanceDrag={(distanceCm) =>
           d.id === thisDevice.id
             ? updateThisDevice({ distanceCm })
@@ -475,7 +476,7 @@ export default function SceneView({
         // continuously — the single biggest GPU cost in the app.
         frameloop="demand"
         dpr={[1, 1.5]}
-        onPointerMissed={() => setSelectedId(null)}
+        onPointerMissed={() => selectDevice(null)}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.
         gl={{ preserveDrawingBuffer: true }}
