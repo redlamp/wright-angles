@@ -17,9 +17,11 @@ export const SEAT_Y: Record<Exclude<Scenario, "standing">, number> = {
 
 /**
  * Standing-desk work surface (world cm). Fixed like the seat heights —
- * near elbow height for the authored 175cm frame.
+ * just below elbow height for the authored 175cm frame: standing elbow
+ * sits at rootY 95 + SHOULDER_Y 47 − UPPER 26 = 116, minus ~4cm
+ * clearance so the top lands below the elbow (1.7).
  */
-export const STAND_DESK_TOP = 108;
+export const STAND_DESK_TOP = 112;
 
 // Lit (unlike everything else in the scene) so the capsules and boxes
 // shade and their forms read; the figure lights in scene-view exist
@@ -125,12 +127,14 @@ function makePose(
     };
   }
   if (input === "gamepad") {
-    // Relaxed controller hold: elbows at the sides, hands together
-    // just below the sternum — the couch-gamer default.
+    // Relaxed controller hold: upper arms hanging near-vertical, so the
+    // elbow lands near root-local y≈22 (shoulder 47 − upper 26, plus a
+    // little forward drift), forearms raked ~10° above horizontal —
+    // wrist y ≈ 22 + 22·sin10° ≈ 26, reach z ≈ 22·cos10° ≈ 21 (1.6).
     return {
       ...body,
-      wrist: { x: 6, y: 42, z: 2 + 26 / s },
-      pole: { x: 0.4, y: -1, z: -0.4 },
+      wrist: { x: 7, y: 26, z: 2 + 21 / s },
+      pole: { x: 0.4, y: -1, z: -0.35 },
     };
   }
   // Mouse & keyboard: hands on the work surface for this scenario —
