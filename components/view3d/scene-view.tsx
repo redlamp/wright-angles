@@ -22,7 +22,7 @@ import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
-import { physicalSizeCm } from "@/lib/display-math";
+import { formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { effectiveDims } from "@/lib/media-crop";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -380,6 +380,7 @@ export default function SceneView({
 
   const displayMode = useSettingsStore((s) => s.displayMode);
   const displayFill = useSettingsStore((s) => s.displayFill);
+  const unit = useSettingsStore((s) => s.unit);
 
   const labelPlacements = useMemo(
     () => computeLabelPlacements(visible, scenario, eyeH),
@@ -445,6 +446,7 @@ export default function SceneView({
         device={d}
         centerY={d.elevation?.[scenario] ?? eyeH}
         poseKey={scenario}
+        distLabel={formatDistance(d.distanceCm, unit)}
         palette={palette}
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}

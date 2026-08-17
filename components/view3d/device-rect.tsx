@@ -207,6 +207,7 @@ export default function DeviceRect({
   device,
   centerY,
   poseKey,
+  distLabel,
   palette,
   media,
   displayFill,
@@ -227,6 +228,11 @@ export default function DeviceRect({
    * tweens, one without (the height slider) snaps.
    */
   poseKey?: string;
+  /**
+   * Pre-formatted distance readout in the user's unit (this component
+   * stays store-free); falls back to whole centimeters.
+   */
+  distLabel?: string;
   palette: ScenePalette;
   media?: ScreenMedia | null;
   /**
@@ -438,7 +444,7 @@ export default function DeviceRect({
   // Letterbox backing behind media content, matching the 2D view's fill.
   const backing = displayFill === "device-color" ? device.color : "#000000";
 
-  const distLabel = `${Math.round(device.distanceCm)} cm`;
+  const shownDistLabel = distLabel ?? `${Math.round(device.distanceCm)} cm`;
   const distLiftRef = useRef<Group>(null);
 
   const body =
@@ -630,7 +636,7 @@ export default function DeviceRect({
                   onSync={raiseDistLabel}
                   {...(dragHandlers ?? {})}
                 >
-                  {distLabel}
+                  {shownDistLabel}
                 </Text>
               </group>
             </group>
