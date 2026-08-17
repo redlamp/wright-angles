@@ -41,12 +41,14 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 3. Device side panel (click-to-inspect)
 
-- [ ] 3.1 Clicking a device in 2D or 3D opens a control panel to the
-      side: device details + hide/show toggle.
-- [ ] 3.2 Panel has a header and is movable; idles at 40% alpha, full
-      opacity on hover, quick tween between states.
-- [ ] 3.3 Selection is shared app-wide (same store as 1.3).
-- [ ] 3.4 Later: Stage-4 debug overlay toggles (topic 10) live here.
+- [ ] 3.1 BUILT, verify: clicking a device in 2D or 3D opens the
+      inspector card — details + hide/show eye + Device Manager link.
+- [ ] 3.2 BUILT, verify: header + movable; idles at 40% alpha, full
+      opacity on hover (150ms tween).
+- [ ] 3.3 BUILT, verify: selection is shared app-wide (same store as
+      1.3); Esc closes.
+- [ ] 3.4 BUILT: Debug overlays section exists in the inspector;
+      color-vision sim (10.5) is its first toggle.
 
 ## 4. Hotkeys
 
@@ -136,7 +138,10 @@ loop; all dev machines had stored state and sailed past it).
 - [ ] 10.2 Pixel loupe with px + arcmin ruler.
 - [ ] 10.3 TV safe-area overlays.
 - [ ] 10.4 Sub-acuity detail warning (<1′ strokes).
-- [ ] 10.5 Color-vision simulation.
+- [ ] 10.5 Color-vision simulation — BUILT, verify: Machado 2009
+      matrices (protan/deutan/tritan + 709 achromatopsia) as SVG
+      linearRGB filters over the 2D/3D view layers only; control in
+      the inspector's Debug overlays section; persisted.
 
 ## 11. Backlog (triaged by Taylor 2026-08-17)
 
