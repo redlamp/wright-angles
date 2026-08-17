@@ -109,6 +109,8 @@ export interface MediaItem {
    */
   referenceHeight: number;
   addedAt: number;
+  /** Manual library position (drag-reorder); unset items sort last. */
+  sortIndex?: number;
   /** Measurement boxes drawn over this item. */
   boxes?: HighlightBox[];
   /**

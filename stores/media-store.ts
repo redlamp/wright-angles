@@ -130,6 +130,8 @@ interface MediaState {
    * (including hand-drawn — stale unlabeled scan boxes are
    * indistinguishable) and every scan keyframe.
    */
+  /** Move an item to a library position; persists the manual order. */
+  reorderItem: (id: string, toIndex: number) => void;
   clearDetection: (id: string) => void;
   /** Persist (or clear) an image's one-shot scan on the item. */
   setScan: (
@@ -249,7 +251,13 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           }
           return meta;
         })
-        .sort((a, b) => a.addedAt - b.addedAt);
+        // Manual order wins; items never reordered keep insertion order
+        // (sortIndex is a small int, addedAt an epoch — unordered items
+        // sort after every manually placed one, i.e. append).
+        .sort(
+          (a, b) =>
+            (a.sortIndex ?? a.addedAt) - (b.sortIndex ?? b.addedAt),
+        );
       set((s) => ({
         items,
         objectUrls: urls,
@@ -442,6 +450,19 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       }),
     }));
     persistMeta(get, id);
+  },
+
+  reorderItem: (id, toIndex) => {
+    set((s) => {
+      const from = s.items.findIndex((i) => i.id === id);
+      if (from < 0) return s;
+      const items = [...s.items];
+      const [moved] = items.splice(from, 1);
+      items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
+      // The array order becomes the persisted manual order.
+      return { items: items.map((i, idx) => ({ ...i, sortIndex: idx })) };
+    });
+    for (const i of get().items) persistMeta(get, i.id);
   },
 
   clearDetection: (id) => {
