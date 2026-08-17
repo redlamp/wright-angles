@@ -56,31 +56,43 @@ Taylor reviews in the morning.
 
 ## 4. Overnight build: debug overlays (topic 10, all approved)
 
-- [ ] 4.1 (10.3) TV safe-area overlays: action-safe 93% / title-safe
-      90% frames per device rect in 2D, behind an overlays toggle.
-- [ ] 4.2 (10.1) Contrast probe: per scanned box, text-vs-background
-      estimate from the pixels, WCAG ratio badge with AA flags in the
-      detection list.
-- [ ] 4.3 (10.4) Sub-acuity warning: flag text whose strokes render
-      below ~1′ on any visible device (stroke ≈ cap-height / 7).
-- [ ] 4.4 (10.2) Pixel loupe: magnifier over the 2D composition with
-      px grid and arcmin ruler.
+All four BUILT overnight behind the new "overlays" menu chip in the
+2D toolbar (next to color vision). Verify:
+
+- [ ] 4.1 (10.3) TV safe areas: SMPTE action-safe 93% (white dashed) /
+      title-safe 90% (amber dashed) frames on every device rect,
+      labeled on rects wide enough.
+- [ ] 4.2 (10.1) Contrast badges: Otsu text-vs-background estimate per
+      scanned box; WCAG ratio in the detection list (green ≥4.5 AA,
+      amber ≥3 large-text AA, red below). Static images only — video
+      keyframe rows show an unavailable dash.
+- [ ] 4.3 (10.4) Sub-acuity warning: red triangle on detection rows
+      (This Device) and report device chips when cap-height < 7′
+      (stroke ≈ cap/7 → below the 1′ limit). Always on — it is a
+      warning, not an overlay.
+- [ ] 4.4 (10.2) Pixel loupe: cursor-following 8× magnifier over This
+      Device's rect — pixel grid, amber crosshair, source-px + "1px ≈
+      N′" readout. Static images only.
 
 ## 5. Overnight build: approved backlog (topic 11) + report tweak
 
-- [ ] 5.1 (11.2) Credit-card calibration: dialog from Settings —
-      match an on-screen card outline to a real card, derives and
-      applies This Device's true diagonal.
-- [ ] 5.2 (11.5a) EXIF/metadata strip on static-image import
-      (canvas re-encode; GIFs/videos untouched).
-- [ ] 5.3 (11.5b) Non-linear viewing-distance slider (log scale
-      10–400cm; stepper stays cm).
-- [ ] 5.4 (11.3) Measure boxes mirrored into 3D — believed already
-      shipped as curvature-aware outlines in the world view; verify
-      and call out if the intent was different (e.g. baked into the
-      screen texture).
-- [ ] 5.6 (6.5) Report: selected device's spec block renders beside
-      This Device's for comparison.
+All BUILT overnight. Verify:
+
+- [ ] 5.1 (11.2) Credit-card calibration: Settings → "Calibrate
+      screen size…" — match the on-screen card outline (slider or
+      edge drag) to a real card; Apply writes the implied diagonal to
+      This Device. Warns when browser zoom would skew it.
+- [ ] 5.2 (11.5a) EXIF/metadata strip on static-image import (canvas
+      re-encode, same MIME; GIFs/videos untouched; falls back to the
+      original bytes if encoding fails).
+- [ ] 5.3 (11.5b) Non-linear viewing-distance slider in the device
+      editor (log scale 10–400cm; cm stepper unchanged; >400cm pins
+      the thumb).
+- [ ] 5.4 (11.3) CONFIRMED already shipped: measure boxes render in
+      the 3D world as curvature-aware outlines on each screen. Call
+      out if the intent was baked-into-texture instead.
+- [ ] 5.6 (6.5) Report: selecting a device splits the bottom spec
+      strip — This Device baseline left, selection right.
 
 ## 6. Notes for the morning
 
