@@ -1,90 +1,147 @@
-# Test Plan — v0.3.0 Ship + Media Debug Track (2026-08-17)
+# Test Plan v3.1 — Numbered Backlog (2026-08-17)
 
-Supersedes [[test-plan-2026-08-15-v2-sprint]] for new work; its Round 4
-items (input types, shadows, grab cursors, shaded mannequin) still
-apply if unticked.
+Every topic and item is numbered for call-outs ("do 6.3", "skip 10").
+v0.3.0 was accepted by Taylor except the items reopened below.
+**v0.3.1 hotfix shipped** the same morning: production crashed for
+every fresh visitor (unstable zustand selector fallback → React #185
+loop; all dev machines had stored state and sailed past it).
 
-## v0.3.0 acceptance (live at redlamp.github.io/wright-angles)
+## 1. Fit & finish (reopened from acceptance)
 
-- [x] Site deploys and loads clean from the v0.3.0 merge; no console
-      errors; OCR assets load from `/wright-angles/ocr/` (fully local).
-- [x] Comparison table: sortable, CSV export, sub-retina PPD flags.
-- [x] Crop: presets + freeform; crop respected by 2D, 3D texture UVs,
-      measure boxes, OCR mapping, and export.
-- [ ] OCR inspector: scan → numbered outlines + per-line rows (text,
-      px, confidence, This-Device arcmin); row click → measure box.
-- [x] GIF + video: single master decode, transport (play/pause, seek,
-      loop) drives 2D and 3D identically.
-- [x] Stance × input matrix: all 9 combos pose sensibly; standing desk
-      appears only for Standing + Mouse & KB.
-- [x] Stance order reads Standing · On a couch · At a desk (dev,
-      post-v0.3.0).
+- [x] 1.1 Fresh-visitor crash on the live site — fixed in v0.3.1;
+      fresh-state smoke test added to the promotion gates (see 12.2).
+- [ ] 1.2 Comparison table: column widths must not shift when the sort
+      arrow moves — reserve the arrow's space.
+- [ ] 1.3 Comparison table: clicking a row selects that device in the
+      2D and 3D views (shared selection store).
+- [ ] 1.4 Comparison table: font sizes up to the new type scale (topic 2).
+- [ ] 1.5 Crop: the active preset is visibly highlighted; "Adjust"
+      renamed "Custom".
+- [ ] 1.6 Gamepad pose: hold is too high — lower it; forearms roughly
+      10° tilted up from horizontal.
+- [ ] 1.7 Standing desk: top sits just below the figure's elbow.
+- [ ] 1.8 3D labels render in Barlow (vendored for troika), not the
+      generic drei default.
+- [ ] 1.9 Console hygiene: THREE.Clock deprecation is R3F-internal
+      (upstream, no action); GPOS/GSUB font-table warnings come from
+      troika's font parser — revisit after 1.8; rAF-violation and HMR
+      lines are dev-only. Documented, not fixable app-side today.
 
-## Media debug track — pushing past plain OCR
+## 2. Design system — type scale (Taylor: current text "would fail
+   the legibility test")
 
-The active-media gateway idea ([[design-active-media-gateway]]) grows
-into a debug toolset driven by the CONTENT of the loaded image/video.
-Proposed stages, roughly in dependency order:
+- [ ] 2.1 Agree the scale. Proposal on the table: 14px base UI /
+      13px secondary + numeric readouts (tabular) / 12px absolute
+      floor (captions only — kill every 10–11px) / 15–16px panel
+      titles. Barlow throughout, Share Tech Mono for readouts.
+- [ ] 2.2 Roll out across worst offenders first: comparison table,
+      media library, scene HUD, panel chrome, onboarding.
 
-### Stage 1 — OCR results become first-class overlays
+## 3. Device side panel (click-to-inspect)
 
-- [x] Persist scan results per media item (IndexedDB, keyed by media +
-      crop) so a scan survives panel close/reopen and reload.
-- [x] Overlay toggle in the 2D view itself (not just the library
-      panel): boxes drawn over the true-scale image.
-- [x] Verdict coloring: each line tinted by its arcmin verdict for a
-      chosen reference device (≥20′ ok / 16–20′ caution / <16′ fail),
-      switchable between devices.
-- [x] Multi-select lines → batch-create measure boxes.
+- [ ] 3.1 Clicking a device in 2D or 3D opens a control panel to the
+      side: device details + hide/show toggle.
+- [ ] 3.2 Panel has a header and is movable; idles at 40% alpha, full
+      opacity on hover, quick tween between states.
+- [ ] 3.3 Selection is shared app-wide (same store as 1.3).
+- [ ] 3.4 Later: Stage-4 debug overlay toggles (topic 10) live here.
 
-### Stage 2 — Legibility matrix & report
+## 4. Hotkeys
 
-- [ ] Line × device matrix: every OCR line's arcmin on every visible
-      device, worst offenders surfaced first.
-- [ ] Summary verdict per device ("12 of 40 lines under ISO minimum at
-      couch distance").
-- [ ] Export the audit (CSV / markdown) alongside the PNG export.
+- [ ] 4.1 m media · d devices · p perception · c comparison ·
+      s settings · Tab 2D/3D toggle (suppressed while typing in
+      inputs).
+- [ ] 4.2 Candidate additions (Taylor open to suggestions):
+      Esc deselect/close topmost, x crop mode, o OCR overlay,
+      1/2/3 stances, ? hotkey cheat-sheet.
 
-### Stage 3 — Video timeline debugging
+## 5. Active media panel redesign (Taylor spec)
 
-- [x] Scan the CURRENT FRAME at the playhead (engine canvas is already
-      the single decode source — feed it to the OCR worker).
-- [x] Frame results stamped with timestamp; a strip of scanned frames
-      to jump between.
-- [x] Track one region (e.g. subtitles) across scans to see size
-      changes over time.
+- [ ] 5.1 Row 1: media name, right-aligned red trashcan button =
+      remove from library.
+- [ ] 5.2 Details as consistent grid cells on one line: display size +
+      source size; drop the unclear "shown as".
+- [ ] 5.3 The media itself, then timeline.
+- [ ] 5.4 Crop: active option highlighted; "Custom" (né Adjust) puts
+      the crop handles OVER the existing media view — no second
+      instance of the content.
+- [ ] 5.5 Text detection: visible progress confirmation while
+      scanning; when done, basic stats + buttons through to the
+      comparison and perception panels.
+- [ ] 5.6 Reference size gets a "?" hover tooltip explaining its use.
 
-### Stage 4 — Beyond text (rank these)
+## 6. Perception report v2 — Miller columns
 
-- [ ] Contrast probe: text-vs-background luminance sampled from pixels
-      per OCR box → WCAG ratio flags (research already in
-      [[platform-accessibility-guidelines]]).
-- [ ] Pixel loupe: hover magnifier showing source pixels with a px +
-      arcmin ruler at each device's distance.
-- [ ] TV safe-area overlays (5% action/title safe) on the media.
-- [ ] Sub-acuity detail warning: strokes/gaps under 1′ at distance
-      (edge-detection pass).
-- [ ] Color-vision simulation (protan/deutan/tritan) on active media.
+- [ ] 6.1 Window resizable, wider by default.
+- [ ] 6.2 Lists ALL project devices, including ones hidden from
+      2D/3D. BUG: distances render in inches when the unit setting
+      says cm — must follow the setting.
+- [ ] 6.3 Miller columns: "All devices" selected by default, "My
+      Display" listed; selecting a device narrows column 2 to that
+      device's report.
+- [ ] 6.4 Measured boxes labeled with their OCR text when readable
+      ("HEALTH 47/100"), falling back to "Box 1".
+- [ ] 6.5 This Device is blessed (foundation of the vision model);
+      a selected device's details render NEXT TO This Device's for
+      comparison.
 
-## Other candidate areas (carry-over + new)
+## 7. OCR quality — descenders + text grouping
 
-- [ ] Browser-zoom ≠ 100% warning (1:1 silently wrong).
-- [ ] Credit-card calibration for true PPI.
-- [ ] Measure boxes mirrored into the 3D screen texture.
-- [ ] Per-device media assignment + hot-zone switching (PRD).
-- [ ] Shareable setup links (URL hash).
-- [ ] Keyboard shortcuts; EXIF strip; non-linear distance slider.
-- [ ] Pose polish: gamepad and couch-lap wrist targets after Taylor
-      flips through the matrix.
-- [ ] Process: return to feature branches (`feature/<name>` → dev).
-- [ ] Licensing decision for the repo (open since v0.1).
+- [ ] 7.1 Group nearby detected lines (infer word wrap and line
+      spacing) and assume one font size per group.
+- [ ] 7.2 Descender-aware sizing: a line without descenders currently
+      measures only its visible ink and under-reports the font size;
+      use the group's tallest metrics (and cap-height inference) so
+      all lines in a group agree.
+- [ ] 7.3 Visual indicator for groups in the overlay/inspector
+      (shared outline tint or group badge).
+- [ ] 7.4 Test steps: scan a screenshot containing a paragraph plus a
+      short all-cap line; before = the cap line reports smaller px;
+      after = both report the group size, and the group indicator
+      wraps both.
 
-## Open questions for Taylor
+## 8. OCR → perception report (approved; ties into 7's groups)
 
-1. Which Stage 1–4 items matter most for the AAA-studio workflow?
-2. Verdict coloring: default reference device = This Device, or the
-   currently selected device?
-3. Video scanning: on-demand per frame only, or auto-scan at a cadence
-   (every Nth second) with a progress readout?
-4. Should OCR results feed the perception report ("smallest text in
-   this shot is X′ on device Y")?
+- [ ] 8.1 Scan results (grouped) feed the report's measured-box list.
+- [ ] 8.2 How to test: load a UI screenshot → Text detection → open
+      Perception Report → the boxes appear with their text labels and
+      per-device arcmin verdicts; smallest text in shot is called out.
+
+## 9. Video OCR keyframes (Taylor: user-set, batch or piecemeal)
+
+- [ ] 9.1 User sets OCR keyframes on the timeline; scans run per
+      keyframe (batch queue or one-at-a-time).
+- [ ] 9.2 Markers drawn on the timeline; `<` / `>` jump to
+      previous/next marker and pause; Space toggles play/pause.
+- [ ] 9.3 A keyframe's scan stays displayed until the playhead passes
+      the next marker.
+
+## 10. Beyond-text debug overlays (later; toggles live in the device
+    panel, 3.4)
+
+- [ ] 10.1 Contrast probe (text vs background → WCAG flags).
+- [ ] 10.2 Pixel loupe with px + arcmin ruler.
+- [ ] 10.3 TV safe-area overlays.
+- [ ] 10.4 Sub-acuity detail warning (<1′ strokes).
+- [ ] 10.5 Color-vision simulation.
+
+## 11. Backlog (triaged by Taylor 2026-08-17)
+
+- [ ] 11.1 Browser-zoom ≠ 100% warning. (approved)
+- [ ] 11.2 Credit-card calibration. (approved)
+- [ ] 11.3 Measure boxes mirrored into the 3D texture. (approved)
+- [ ] 11.4 Per-device media assignment — awaiting Taylor's read on the
+      spec (explained in chat 2026-08-17): each device can hold its
+      own image; hot zones in the 2D overlay switch which device's
+      content is active under the cursor.
+- [ ] 11.5 EXIF strip on import; non-linear distance slider.
+- [ ] 11.6 Shareable setup links — DEFERRED (implies shared data).
+- [ ] 11.7 Licensing — breakout session, scheduled separately.
+
+## 12. Process
+
+- [x] 12.1 Feature branches (`feature/*`, `fix/*` → dev, `--no-ff`) —
+      in effect as of the v0.3.1 hotfix.
+- [ ] 12.2 Promotion gate addition: fresh-state smoke test — clear
+      site storage, load, confirm boot — before every dev → main.
+      This is the class of bug that took down v0.3.0.
