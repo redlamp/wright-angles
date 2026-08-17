@@ -196,11 +196,13 @@ describe("formatDistance", () => {
   test("cm rounds whole", () => {
     expect(formatDistance(74.4, "cm")).toBe("74 cm");
   });
-  test("inches below three feet keep a decimal", () => {
-    expect(formatDistance(36, "in")).toBe("14.2 in");
-    expect(formatDistance(70, "in")).toBe("27.6 in");
+  test("under a foot: plain inches in half-inch steps", () => {
+    expect(formatDistance(25, "in")).toBe("10″"); // 9.84 → 10
+    expect(formatDistance(24, "in")).toBe("9.5″"); // 9.45 → 9.5
   });
-  test("three feet and beyond read feet-and-inches", () => {
+  test("a foot and beyond read feet-and-inches", () => {
+    expect(formatDistance(36, "in")).toBe("1′ 2″");
+    expect(formatDistance(70, "in")).toBe("2′ 4″");
     expect(formatDistance(200, "in")).toBe("6′ 7″");
     expect(formatDistance(91.44, "in")).toBe("3′ 0″");
   });
