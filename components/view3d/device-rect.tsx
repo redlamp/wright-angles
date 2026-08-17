@@ -25,6 +25,13 @@ import type { ScenePalette } from "./scene-palette";
 
 const SHOW_LABELS = true;
 
+/**
+ * Barlow Medium for the 3D labels, matching the app's primary typeface.
+ * troika-three-text can't read the CSS-registered @fontsource faces (or
+ * .woff2), so a static .woff copy ships in public/fonts (see its README).
+ */
+const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/fonts/barlow-latin-500-normal.woff`;
+
 /** Matches the viewer figure's pose tween so stance changes move in sync. */
 const TWEEN_S = 0.5;
 const easeInOutCubic = (t: number) =>
@@ -544,6 +551,7 @@ export default function DeviceRect({
       {SHOW_LABELS ? (
         <Billboard position={[lp.nameX, heightCm / 2 + 3 + lp.nameLift, 0]}>
           <Text
+            font={FONT_URL}
             fontSize={nameSize}
             color={device.color}
             anchorX="center"
@@ -609,6 +617,7 @@ export default function DeviceRect({
               {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
               <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
                 <Text
+                  font={FONT_URL}
                   fontSize={5}
                   color={device.color}
                   anchorX="left"
