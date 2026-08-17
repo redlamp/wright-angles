@@ -16,10 +16,17 @@ interface AnnotationState {
    * the Media Library, Perception Report, 2D view, and 3D view.
    */
   showTextBoxes: boolean;
+  /** Debug overlays (plan topic 10) — session tools, global parity. */
+  showSafeAreas: boolean;
+  showContrast: boolean;
+  loupeOn: boolean;
   setDrawMode: (v: boolean) => void;
   selectBox: (id: string | null) => void;
   setScanColorMode: (m: ScanColorMode) => void;
   setShowTextBoxes: (v: boolean) => void;
+  setShowSafeAreas: (v: boolean) => void;
+  setShowContrast: (v: boolean) => void;
+  setLoupeOn: (v: boolean) => void;
 }
 
 export const useAnnotationStore = create<AnnotationState>()((set) => ({
@@ -27,9 +34,15 @@ export const useAnnotationStore = create<AnnotationState>()((set) => ({
   selectedBoxId: null,
   scanColorMode: "group",
   showTextBoxes: true,
+  showSafeAreas: false,
+  showContrast: false,
+  loupeOn: false,
   setDrawMode: (drawMode) =>
     set((s) => ({ drawMode, selectedBoxId: drawMode ? s.selectedBoxId : null })),
   selectBox: (selectedBoxId) => set({ selectedBoxId }),
   setScanColorMode: (scanColorMode) => set({ scanColorMode }),
   setShowTextBoxes: (showTextBoxes) => set({ showTextBoxes }),
+  setShowSafeAreas: (showSafeAreas) => set({ showSafeAreas }),
+  setShowContrast: (showContrast) => set({ showContrast }),
+  setLoupeOn: (loupeOn) => set({ loupeOn }),
 }));

@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon, PencilRulerIcon } from "lucide-react";
+import { DownloadIcon, LayersIcon, PencilRulerIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
@@ -132,6 +138,88 @@ function CropFrame({
     >
       <div className="absolute" style={cropScaleStyle(item)}>
         {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Debug-overlays menu chip (plan topic 10): safe areas, contrast
+ * badges, pixel loupe. Session-only toggles with app-wide parity.
+ */
+function OverlaysChip() {
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const setShowSafeAreas = useAnnotationStore((s) => s.setShowSafeAreas);
+  const showContrast = useAnnotationStore((s) => s.showContrast);
+  const setShowContrast = useAnnotationStore((s) => s.setShowContrast);
+  const loupeOn = useAnnotationStore((s) => s.loupeOn);
+  const setLoupeOn = useAnnotationStore((s) => s.setLoupeOn);
+  const anyOn = showSafeAreas || showContrast || loupeOn;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "flex h-7 items-center gap-1 rounded-md px-2.5 font-mono text-sm transition-colors",
+          anyOn
+            ? "bg-white/25 text-white"
+            : "bg-black/50 text-white/60 hover:text-white",
+        )}
+        title="Debug overlays: safe areas, contrast badges, pixel loupe"
+      >
+        <LayersIcon className="size-3" />
+        overlays
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuCheckboxItem
+          checked={showSafeAreas}
+          onCheckedChange={setShowSafeAreas}
+        >
+          TV safe areas (93% / 90%)
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={showContrast}
+          onCheckedChange={setShowContrast}
+        >
+          Contrast badges on scanned text
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={loupeOn}
+          onCheckedChange={setLoupeOn}
+        >
+          Pixel loupe
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * SMPTE ST 2046-1 safe-area frames, relative to the DISPLAY (not the
+ * media): action-safe 93%, title-safe 90%. Overlaid per device rect so
+ * TV-bound UI can be judged against every screen at once.
+ */
+function SafeAreas({ large }: { large: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      <div
+        className="absolute border border-dashed border-white/50"
+        style={{ inset: "3.5%" }}
+      >
+        {large ? (
+          <span className="absolute top-0 left-1 font-mono text-sm text-white/50">
+            action 93%
+          </span>
+        ) : null}
+      </div>
+      <div
+        className="absolute border border-dashed border-[#f5a524]/60"
+        style={{ inset: "5%" }}
+      >
+        {large ? (
+          <span className="absolute bottom-0 left-1 font-mono text-sm text-[#f5a524]/70">
+            title 90%
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -375,6 +463,7 @@ export function DisplayArea() {
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
   const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
@@ -802,6 +891,7 @@ export function DisplayArea() {
                 isHost={!!device.isThis && !drawMode}
               />
             ) : null}
+            {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
           </div>
           {/* Cycle label corners so tightly nested rects stay readable. */}
           <span
@@ -955,6 +1045,7 @@ export function DisplayArea() {
               {drawMode ? "done" : "measure"}
             </button>
           ) : null}
+          <OverlaysChip />
           <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
           <button
             type="button"
