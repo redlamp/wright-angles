@@ -300,3 +300,16 @@ export const ACUITY = {
   /** ISO 9241-303 required capability band (20–22′). */
   comfortableTextArcmin: 20,
 } as const;
+
+/**
+ * Typical text stroke width ≈ cap height / 7 (regular-weight faces run
+ * roughly 1/6–1/8). Strokes rendered below the 1′ acuity limit vanish
+ * even when the letterforms technically fit — the sub-acuity warning
+ * (plan 10.4).
+ */
+export const STROKE_PER_CAP = 1 / 7;
+
+/** True when text of this cap-height angular size has sub-1′ strokes. */
+export function strokesSubAcuity(capArcmin: number): boolean {
+  return capArcmin * STROKE_PER_CAP < ACUITY.detailLimitArcmin;
+}

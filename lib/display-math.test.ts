@@ -12,6 +12,7 @@ import {
   simulatedSizeOnHostPx,
   sizeForArcmin,
   sliderToDist,
+  strokesSubAcuity,
   subtenseArcmin,
 } from "./display-math";
 import type { Device } from "./types";
@@ -243,3 +244,14 @@ describe("perceptual distance slider (log mapping)", () => {
   });
 });
 
+
+describe("strokesSubAcuity", () => {
+  test("boundary sits at 7 arcmin cap height", () => {
+    expect(strokesSubAcuity(6.9)).toBe(true);
+    expect(strokesSubAcuity(7.1)).toBe(false);
+  });
+
+  test("comfortable text is safely above the limit", () => {
+    expect(strokesSubAcuity(20)).toBe(false);
+  });
+});
