@@ -8,6 +8,7 @@ import {
   EyeOffIcon,
   PinIcon,
   PlusIcon,
+  RotateCwSquareIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -184,7 +185,16 @@ export function DeviceEditor({
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
   const sizeInches = sizeUnit === "in";
-  const aspectLabel = `${device.aspect.w}:${device.aspect.h}`;
+  // Show the conventional name for the ratio (within tolerance — phone
+  // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
+  // itself, never raw pixel pairs.
+  const ratio = device.aspect.w / device.aspect.h;
+  const aspectMatch = COMMON_ASPECTS.find(
+    (a) => Math.abs(a.w / a.h - ratio) < 0.01,
+  );
+  const aspectLabel = aspectMatch
+    ? aspectMatch.label
+    : `${ratio.toFixed(2)}:1`;
   const scenarioLabel =
     SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
   const elevation = device.elevation?.[scenario];
@@ -196,7 +206,8 @@ export function DeviceEditor({
 
   return (
     <div className="space-y-3 px-2.5 pt-2 pb-3">
-      <div className="grid grid-cols-2 gap-2">
+      {/* Name and Label stack on their own lines (Taylor 2026-08-17). */}
+      <div className="grid grid-cols-1 gap-2">
         <label className="min-w-0 space-y-1">
           <Microlabel>Device name</Microlabel>
           <Input
@@ -322,6 +333,24 @@ export function DeviceEditor({
               onPatch({ resolution: { ...device.resolution, h } });
             }}
           />
+          <Button
+            variant="ghost"
+            size="xs"
+            className="shrink-0"
+            title="Rotate 90° — swap the panel orientation"
+            aria-label="Rotate the display 90 degrees"
+            onClick={() =>
+              onPatch({
+                resolution: {
+                  w: device.resolution.h,
+                  h: device.resolution.w,
+                },
+                aspect: { w: device.aspect.h, h: device.aspect.w },
+              })
+            }
+          >
+            <RotateCwSquareIcon className="size-4" />
+          </Button>
         </div>
         {COMMON_RESOLUTIONS[aspectLabel] ? (
           <div className="flex flex-wrap gap-1 pt-0.5">

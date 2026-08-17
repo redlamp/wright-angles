@@ -20,6 +20,7 @@ import { SettingsPanel } from "@/components/panels/settings-panel";
 import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
 import { useUiStore } from "@/stores/ui-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useResolvedTheme } from "@/lib/use-theme";
 import {
   disposeEngine,
@@ -153,6 +154,11 @@ export default function Home() {
               <SceneView
                 exiting={exiting3d}
                 onExited={() => {
+                  // Land 2D centered (screen mode, no pan) so it lines
+                  // up with the head-on pose the camera just flew to
+                  // (Taylor 2026-08-17).
+                  useSettingsStore.getState().setDisplayCenter("screen");
+                  useUiStore.getState().setPanOffset({ x: 0, y: 0 });
                   // Reveal the live 2D beneath, THEN unmount the canvas.
                   setSceneShown(false);
                   handoffTimer.current = window.setTimeout(() => {
