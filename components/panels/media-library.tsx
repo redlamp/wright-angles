@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDownAZIcon,
+  ClockArrowDownIcon,
+  ClockArrowUpIcon,
   CornerDownRightIcon,
   EyeIcon,
   EyeOffIcon,
   FolderDownIcon,
+  GripVerticalIcon,
   LayoutGridIcon,
   ListIcon,
   ScanTextIcon,
@@ -57,6 +61,7 @@ import {
 } from "@/stores/annotation-store";
 import { useSettingsStore, type DisplayFill } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
+import { SplitGrid } from "./split-grid";
 import {
   GifView,
   SyncedVideo,
@@ -91,12 +96,16 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 type ViewMode = "grid" | "list";
 type SortMode = "custom" | "added-asc" | "added-desc" | "name";
 
-const SORT_LABELS: Record<SortMode, string> = {
-  custom: "Custom order",
-  "added-desc": "Newest first",
-  "added-asc": "Oldest first",
-  name: "By name",
-};
+const SORT_MODES: {
+  mode: SortMode;
+  label: string;
+  icon: typeof GripVerticalIcon;
+}[] = [
+  { mode: "custom", label: "Custom order", icon: GripVerticalIcon },
+  { mode: "added-desc", label: "Newest first", icon: ClockArrowDownIcon },
+  { mode: "added-asc", label: "Oldest first", icon: ClockArrowUpIcon },
+  { mode: "name", label: "By name", icon: ArrowDownAZIcon },
+];
 
 /** Internal drag MIME so a tile drag never reads as a file import. */
 export const MEDIA_DRAG_MIME = "application/x-wright-media";
@@ -257,7 +266,7 @@ function LibraryList() {
   const setActive = useMediaStore((s) => s.setActive);
   const reorderItem = useMediaStore((s) => s.reorderItem);
 
-  const [view, setView] = useState<ViewMode>("grid");
+  const [view, setView] = useState<ViewMode>("list");
   const [sort, setSort] = useState<SortMode>("custom");
   /** Drop target while dragging a tile: index + which side. */
   const [dropAt, setDropAt] = useState<{ idx: number; after: boolean } | null>(
@@ -336,20 +345,26 @@ function LibraryList() {
         <div className="min-w-0 flex-1">
           <SectionLabel>Library · {items.length}</SectionLabel>
         </div>
-        <Select value={sort} onValueChange={(v) => setSort(v as SortMode)}>
-          <SelectTrigger size="sm" className="w-32" aria-label="Sort by">
-            {/* base-ui SelectValue renders the raw value unless given
-                children — show the human label, untruncated. */}
-            <SelectValue>{SORT_LABELS[sort]}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(SORT_LABELS) as SortMode[]).map((k) => (
-              <SelectItem key={k} value={k}>
-                {SORT_LABELS[k]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="panel-inset flex items-center gap-0.5 rounded-md p-0.5">
+          {SORT_MODES.map(({ mode, label, icon: Icon }) => (
+            <button
+              key={mode}
+              type="button"
+              aria-label={label}
+              aria-pressed={sort === mode}
+              title={label}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-[6px] transition-colors",
+                sort === mode
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setSort(mode)}
+            >
+              <Icon className="size-4" />
+            </button>
+          ))}
+        </div>
         <div className="panel-inset flex items-center gap-0.5 rounded-md p-0.5">
           {(
             [
@@ -414,7 +429,7 @@ function LibraryList() {
               key={item.id}
               type="button"
               className={cn(
-                "flex h-9 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors",
+                "flex h-12 w-full items-center gap-2.5 rounded-md px-1.5 text-left transition-colors",
                 item.id === activeId
                   ? "panel-inset ring-1 ring-ring ring-inset"
                   : "hover:bg-muted/50",
@@ -423,7 +438,7 @@ function LibraryList() {
               onClick={() => setActive(item.id)}
               {...dragProps(item, idx, "y")}
             >
-              <span className="block h-6 w-10 shrink-0 overflow-hidden rounded bg-black/40">
+              <span className="block h-9 w-16 shrink-0 overflow-hidden rounded bg-black/40">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={objectUrls[item.id]}
@@ -434,9 +449,6 @@ function LibraryList() {
               </span>
               <span className="min-w-0 flex-1 truncate text-base" title={item.name}>
                 {item.name}
-              </span>
-              <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                {item.width}×{item.height}
               </span>
             </button>
           ))}
@@ -1433,11 +1445,6 @@ export function MediaLibraryContent() {
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const active = items.find((i) => i.id === activeId);
-  const splitPct = useUiStore((s) => s.mediaSplitPct);
-  const setSplitPct = useUiStore((s) => s.setMediaSplitPct);
-
-  const bodyRef = useRef<HTMLDivElement>(null);
-
   const detailColumn = (
     // Scrollbar always reserved so incoming content (scan lists, crop
     // rows) doesn't pop the layout width (Taylor 2026-08-17).
@@ -1454,35 +1461,15 @@ export function MediaLibraryContent() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-        <div
-          ref={bodyRef}
-          className="grid min-h-0 flex-1 overflow-x-clip"
-          style={{ gridTemplateColumns: `${splitPct}% 5px minmax(0, 1fr)` }}
-        >
-          {/* Library and active media scroll independently. */}
-          <div className="min-h-0 min-w-0 overflow-y-auto">
-            <Toolbar />
-            <LibraryList />
-          </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize library columns"
-            className="cursor-col-resize touch-none border-x border-border bg-transparent transition-colors hover:bg-ring/40"
-            onPointerDown={(e) => {
-              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-            }}
-            onPointerMove={(e) => {
-              if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
-              const host = bodyRef.current;
-              if (!host) return;
-              const r = host.getBoundingClientRect();
-              setSplitPct(((e.clientX - r.left) / r.width) * 100);
-            }}
-          />
-          {detailColumn}
+    <SplitGrid
+      // Library and active media scroll independently.
+      left={
+        <div className="min-h-0 min-w-0 overflow-y-auto">
+          <Toolbar />
+          <LibraryList />
         </div>
-    </div>
+      }
+      right={detailColumn}
+    />
   );
 }
