@@ -385,13 +385,14 @@ export default function SceneView({
   // in the rect). Selection highlights follow the annotation store.
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const scanColorMode = useAnnotationStore((s) => s.scanColorMode);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
   const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
   // Plain computation (no manual memo): it's a handful of array ops and
   // the demand frameloop only renders on real changes anyway — and the
   // react-compiler can memoize it itself where profitable.
   const contentBoxes: ContentBox[] = [];
-  if (activeItem) {
+  if (activeItem && showTextBoxes) {
     const crop = cropOf(activeItem);
     const kf =
       animatedActive && activeItem.scanKeyframes
@@ -560,14 +561,13 @@ export default function SceneView({
             lights exist purely to shade the figure's forms. */}
         <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
         <directionalLight position={[-140, 220, -90]} intensity={1.3} />
+        {/* The figure fades itself on camera proximity to the head, so
+            it appears the moment the flight clears the headspace. */}
         <ViewerFigure
           scenario={scenario}
           inputType={inputType}
           heightCm={heightCm}
           palette={palette}
-          // Faded during the head-on↔orbit flight so the camera never
-          // clips through the figure's head (Taylor 2026-08-17).
-          shown={controlsOn && !exiting}
         />
         <ScenarioProps
           scenario={scenario}

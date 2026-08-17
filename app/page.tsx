@@ -4,9 +4,11 @@ import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
 import { DisplayArea } from "@/components/display-area";
@@ -38,10 +40,14 @@ export default function Home() {
   const viewMode = useUiStore((s) => s.viewMode);
   const [dropScrim, setDropScrim] = useState(false);
   // 3D stays mounted through its exit animation so the camera can fly
-  // back to the head-on pose before the 2D overlay returns.
+  // back to the head-on pose before the 2D overlay returns. The 2D view
+  // is ALWAYS mounted beneath it, so both handoffs are crossfades of
+  // the canvas over a live matching frame instead of a mount pop.
   const [show3d, setShow3d] = useState(viewMode === "3d");
+  const [sceneShown, setSceneShown] = useState(viewMode === "3d");
   const [exiting3d, setExiting3d] = useState(false);
   const [prevMode, setPrevMode] = useState(viewMode);
+  const handoffTimer = useRef<number | null>(null);
   if (viewMode !== prevMode) {
     setPrevMode(viewMode);
     if (viewMode === "3d") {
@@ -51,6 +57,22 @@ export default function Home() {
       setExiting3d(true);
     }
   }
+  // Re-entering 3D while the exit fade-out is still pending must cancel
+  // the deferred unmount.
+  useEffect(() => {
+    if (viewMode === "3d" && handoffTimer.current !== null) {
+      window.clearTimeout(handoffTimer.current);
+      handoffTimer.current = null;
+    }
+  }, [viewMode]);
+  // Mount the canvas transparent, then flip visible a frame later so
+  // the CSS transition fades it in over the matching 2D frame.
+  useEffect(() => {
+    if (show3d && !exiting3d && !sceneShown) {
+      const raf = requestAnimationFrame(() => setSceneShown(true));
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [show3d, exiting3d, sceneShown]);
   // Everything below renders from persisted client state; skipping SSR
   // output entirely avoids hydration mismatches on the static export.
   const mounted = useSyncExternalStore(
@@ -115,20 +137,33 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
-      {!mounted ? null : show3d ? (
-        <div className="absolute inset-0 duration-300 animate-in fade-in">
-          <SceneView
-            exiting={exiting3d}
-            onExited={() => {
-              setShow3d(false);
-              setExiting3d(false);
-            }}
-          />
-        </div>
-      ) : (
-        <div className="absolute inset-0 duration-300 animate-in fade-in">
-          <DisplayArea />
-        </div>
+      {!mounted ? null : (
+        <>
+          <div className="absolute inset-0">
+            <DisplayArea />
+          </div>
+          {show3d ? (
+            <div
+              className={cn(
+                "absolute inset-0 transition-opacity duration-150",
+                sceneShown ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <SceneView
+                exiting={exiting3d}
+                onExited={() => {
+                  // Reveal the live 2D beneath, THEN unmount the canvas.
+                  setSceneShown(false);
+                  handoffTimer.current = window.setTimeout(() => {
+                    handoffTimer.current = null;
+                    setShow3d(false);
+                    setExiting3d(false);
+                  }, 180);
+                }}
+              />
+            </div>
+          ) : null}
+        </>
       )}
 
       {mounted ? (
