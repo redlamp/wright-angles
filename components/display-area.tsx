@@ -327,39 +327,17 @@ export function DisplayArea() {
   const vp = useScreenViewport();
   const viewportActive = displayMode === "viewport" && vp !== null;
 
-  // Hold Space to pan the composition; double-click while held recenters.
-  const [spaceHeld, setSpaceHeld] = useState(false);
+  // Left mouse selects on click, pans on drag (plan 4.3; Space-pan
+  // dropped). A small movement threshold separates the two.
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const panDrag = useRef<{
     startX: number;
     startY: number;
     baseX: number;
     baseY: number;
+    panning: boolean;
   } | null>(null);
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (
-        e.code === "Space" &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement) &&
-        !(e.target instanceof HTMLButtonElement)
-      ) {
-        e.preventDefault();
-        setSpaceHeld(true);
-      }
-    };
-    const up = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        setSpaceHeld(false);
-        panDrag.current = null;
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
-  }, []);
+  const [panning, setPanning] = useState(false);
 
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
@@ -516,10 +494,74 @@ export function DisplayArea() {
     URL.revokeObjectURL(url);
   }, [thisDevice, devices, activeUrl, crop, displayFill]);
 
+  /** Topmost device rect (highest z = last in draw order) under a point. */
+  const deviceAt = (clientX: number, clientY: number) => {
+    const el = ref.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const px = clientX - r.left;
+    const py = clientY - r.top;
+    let hit: string | null = null;
+    for (const { device, w, h } of rects) {
+      if (
+        Math.abs(px - center.x) <= w / 2 &&
+        Math.abs(py - center.y) <= h / 2
+      ) {
+        hit = device.id; // later entries draw on top; keep the last hit
+      }
+    }
+    return hit;
+  };
+
+  /** Ignore pan/select gestures that start on interactive elements. */
+  const onInteractive = (t: EventTarget | null) =>
+    t instanceof HTMLElement && t.closest('button,[role="button"]') !== null;
+
   return (
     <div
       ref={ref}
-      className="absolute inset-0 overflow-hidden bg-[oklch(0.16_0_0)]"
+      className={cn(
+        "absolute inset-0 overflow-hidden bg-[oklch(0.16_0_0)] touch-none",
+        panning && "cursor-grabbing",
+      )}
+      onPointerDown={(e) => {
+        if (e.button !== 0 || drawMode || onInteractive(e.target)) return;
+        panDrag.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          baseX: panOffset.x,
+          baseY: panOffset.y,
+          panning: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const p = panDrag.current;
+        if (!p) return;
+        const dx = e.clientX - p.startX;
+        const dy = e.clientY - p.startY;
+        if (!p.panning && Math.hypot(dx, dy) > 4) {
+          p.panning = true;
+          setPanning(true);
+        }
+        if (p.panning) setPanOffset({ x: p.baseX + dx, y: p.baseY + dy });
+      }}
+      onPointerUp={(e) => {
+        const p = panDrag.current;
+        panDrag.current = null;
+        setPanning(false);
+        if (!p) return;
+        if (!p.panning) {
+          // A stationary click: select the device under the cursor
+          // (toggles off when it's already the selection).
+          const hit = deviceAt(e.clientX, e.clientY);
+          selectDevice(hit === selectedDeviceId ? null : hit);
+        }
+      }}
+      onDoubleClick={(e) => {
+        if (drawMode || onInteractive(e.target)) return;
+        setPanOffset({ x: 0, y: 0 });
+      }}
     >
       {rects.map(({ device, w, h }, i) => (
         <div
@@ -711,43 +753,13 @@ export function DisplayArea() {
         </div>
       ) : null}
 
-      {/* Space-held pan surface: above content and annotations, below
-          the toolbar. Double-click recenters. */}
-      {spaceHeld ? (
-        <div
-          className={cn(
-            "absolute inset-0 z-25 cursor-grab touch-none active:cursor-grabbing",
-          )}
-          onPointerDown={(e) => {
-            panDrag.current = {
-              startX: e.clientX,
-              startY: e.clientY,
-              baseX: panOffset.x,
-              baseY: panOffset.y,
-            };
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            const p = panDrag.current;
-            if (!p) return;
-            setPanOffset({
-              x: p.baseX + (e.clientX - p.startX),
-              y: p.baseY + (e.clientY - p.startY),
-            });
-          }}
-          onPointerUp={() => {
-            panDrag.current = null;
-          }}
-          onDoubleClick={() => setPanOffset({ x: 0, y: 0 })}
-        />
-      ) : null}
 
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
         {scalePct !== null ? (
           <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
             {viewportActive
               ? scalePct >= 99 && scalePct <= 101
-                ? "1:1 physical scale · hold Space to pan"
+                ? "1:1 physical scale · drag to pan"
                 : `${scalePct}% — This Device res ≠ this screen's native res`
               : scalePct === 100
                 ? "1:1 physical scale"
