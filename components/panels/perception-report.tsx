@@ -296,14 +296,35 @@ export function PerceptionReportContent() {
             ) : null}
           </div>
           {detailsDevice ? (
-            <div className="shrink-0 border-t border-border px-2.5 py-2 text-sm">
-              <span
-                className="font-medium"
-                style={{ color: detailsDevice.color }}
-              >
-                {detailsDevice.label}
-              </span>
-              <SpecLines d={detailsDevice} />
+            // This Device is the vision model's baseline (6.5): a
+            // selected device's specs render BESIDE it, not instead.
+            <div
+              className={cn(
+                "grid shrink-0 border-t border-border text-sm",
+                detailsDevice.id !== thisDevice.id &&
+                  "grid-cols-2 divide-x divide-border",
+              )}
+            >
+              {detailsDevice.id !== thisDevice.id ? (
+                <div className="min-w-0 px-2.5 py-2">
+                  <span
+                    className="font-medium"
+                    style={{ color: thisDevice.color }}
+                  >
+                    {thisDevice.label}
+                  </span>
+                  <SpecLines d={thisDevice} />
+                </div>
+              ) : null}
+              <div className="min-w-0 px-2.5 py-2">
+                <span
+                  className="font-medium"
+                  style={{ color: detailsDevice.color }}
+                >
+                  {detailsDevice.label}
+                </span>
+                <SpecLines d={detailsDevice} />
+              </div>
             </div>
           ) : null}
         </div>
