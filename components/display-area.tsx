@@ -547,6 +547,21 @@ export function DisplayArea() {
     [k, dpr],
   );
 
+  /**
+   * Browser-zoom estimate (plan 11.1). screen.width is in CSS px and
+   * ignores page zoom while devicePixelRatio scales with it, so with
+   * This Device set to this screen's real panel their product over the
+   * native width reads the zoom factor. >±2% off earns a warning —
+   * zoomed rendering breaks every physical-scale promise.
+   */
+  const zoomPct = useMemo(() => {
+    if (!vp) return null;
+    const pct = Math.round(
+      ((vp.screenW * dpr) / thisDevice.resolution.w) * 100,
+    );
+    return Math.abs(pct - 100) > 2 ? pct : null;
+  }, [vp, dpr, thisDevice.resolution.w]);
+
   // Snapshot the composition at This Device's native resolution — a
   // shareable reference PNG of the comparison (poster frame for videos).
   const exportView = useCallback(async () => {
@@ -899,6 +914,14 @@ export function DisplayArea() {
 
 
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
+        {zoomPct !== null ? (
+          <div
+            className="rounded-md bg-[#f5a524]/90 px-2 py-1 font-mono text-sm text-black"
+            title="Browser zoom (or a This Device resolution that doesn't match this screen) breaks the 1:1 physical-scale promise. Set zoom to 100% — or fix This Device — for true sizes."
+          >
+            ⚠ browser zoom ≈ {zoomPct}% — sizes are not true
+          </div>
+        ) : null}
         {scalePct !== null ? (
           <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-sm text-white/60">
             {viewportActive
