@@ -14,6 +14,7 @@ import {
   idbGetAllMedia,
   idbPutMedia,
 } from "@/lib/idb";
+import { stripImageMetadata } from "@/lib/strip-metadata";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -310,7 +311,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             activeId: s.activeId ?? meta.id,
           }));
         } else {
-          const { width, height } = await probeImage(file);
+          // Static images (JPEG/PNG/WebP) are re-encoded to shed
+          // EXIF/GPS metadata before they touch IndexedDB; GIFs and
+          // anything else pass through untouched. Falls back to the
+          // original bytes on any failure.
+          const blob = await stripImageMetadata(file);
+          const { width, height } = await probeImage(blob);
           const meta: MediaItem = {
             id: newId(),
             name: file.name,
@@ -321,8 +327,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             referenceHeight: height,
             addedAt: Date.now(),
           };
-          await idbPutMedia(meta.id, { meta, blob: file });
-          const url = URL.createObjectURL(file);
+          await idbPutMedia(meta.id, { meta, blob });
+          const url = URL.createObjectURL(blob);
           set((s) => ({
             items: [...s.items, meta],
             objectUrls: { ...s.objectUrls, [meta.id]: url },
