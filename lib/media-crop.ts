@@ -28,6 +28,16 @@ export function effectiveDims(item: Cropped): {
 
 const EPS = 1e-4;
 
+/** Field-wise equality within EPS — how the UI matches a crop to a preset. */
+export function cropsEqual(a: MediaCrop, b: MediaCrop): boolean {
+  return (
+    Math.abs(a.x - b.x) < EPS &&
+    Math.abs(a.y - b.y) < EPS &&
+    Math.abs(a.w - b.w) < EPS &&
+    Math.abs(a.h - b.h) < EPS
+  );
+}
+
 /** True when the crop covers (essentially) the whole frame. */
 export function isFullFrame(crop: MediaCrop): boolean {
   return (
