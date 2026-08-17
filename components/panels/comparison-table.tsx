@@ -182,7 +182,15 @@ export function ComparisonTablePanel() {
                   onClick={() => onSort(c.key)}
                 >
                   {c.label}
-                  {sortKey === c.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                  {/* Constant-width slot for the sort arrow: every sortable
+                      header reserves it whether sorted or not, so column
+                      widths never shift when the arrow appears or moves. */}
+                  <span
+                    aria-hidden
+                    className="inline-block w-3.5 text-center"
+                  >
+                    {sortKey === c.key ? (sortDir === 1 ? "↑" : "↓") : ""}
+                  </span>
                 </th>
               ))}
             </tr>
