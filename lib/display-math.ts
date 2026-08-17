@@ -12,12 +12,31 @@
  * pinned to it.
  */
 
-import type { Aspect, Device, Resolution } from "./types";
+import type { Aspect, Device, LengthUnit, Resolution } from "./types";
 
 export const CM_PER_IN = 2.54;
 
 export const inToCm = (v: number) => v * CM_PER_IN;
 export const cmToIn = (v: number) => v / CM_PER_IN;
+
+/**
+ * Human-readable viewing distance in the chosen unit: "74 cm",
+ * "13.8 in", and from three feet up the conventional feet-and-inches
+ * form (6′ 7″). Inch remainders round to whole inches, carrying into
+ * the foot count at 12 so 35.8 in reads 3′ 0″, never 2′ 12″.
+ */
+export function formatDistance(distanceCm: number, unit: LengthUnit): string {
+  if (unit === "cm") return `${Math.round(distanceCm)} cm`;
+  const totalIn = cmToIn(distanceCm);
+  if (totalIn < 36) return `${totalIn.toFixed(1)} in`;
+  let ft = Math.floor(totalIn / 12);
+  let rem = Math.round(totalIn - ft * 12);
+  if (rem === 12) {
+    ft += 1;
+    rem = 0;
+  }
+  return `${ft}′ ${rem}″`;
+}
 
 const DEG_PER_RAD = 180 / Math.PI;
 

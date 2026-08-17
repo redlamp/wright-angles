@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   aspectFromResolution,
   deviceAngles,
+  formatDistance,
   imageScaleOnHost,
   physicalSizeCm,
   pixelsToArcmin,
@@ -190,3 +191,22 @@ describe("simulation on host (the core overlay math)", () => {
     );
   });
 });
+
+describe("formatDistance", () => {
+  test("cm rounds whole", () => {
+    expect(formatDistance(74.4, "cm")).toBe("74 cm");
+  });
+  test("inches below three feet keep a decimal", () => {
+    expect(formatDistance(36, "in")).toBe("14.2 in");
+    expect(formatDistance(70, "in")).toBe("27.6 in");
+  });
+  test("three feet and beyond read feet-and-inches", () => {
+    expect(formatDistance(200, "in")).toBe("6′ 7″");
+    expect(formatDistance(91.44, "in")).toBe("3′ 0″");
+  });
+  test("inch remainder carries into the foot count, never 12″", () => {
+    // 121.8cm = 47.95in → rounds to 48 → 4′ 0″, not 3′ 12″.
+    expect(formatDistance(121.8, "in")).toBe("4′ 0″");
+  });
+});
+

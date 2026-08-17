@@ -8,6 +8,7 @@ import {
   apparentWidthRatio,
   boxMetricsOnDevice,
   contentPxToArcmin,
+  formatDistance,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -35,6 +36,7 @@ export function PerceptionReportPanel() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const showBands = useSettingsStore((s) => s.showLegibilityBands);
+  const unit = useSettingsStore((s) => s.unit);
   const [fontPx, setFontPx] = useState(24);
   const [refH, setRefH] = useState(1080);
   const items = useMediaStore((s) => s.items);
@@ -66,8 +68,8 @@ export function PerceptionReportPanel() {
         <p className="text-xs leading-4.5 text-muted-foreground">
           What you see on{" "}
           <span className="text-foreground">{thisDevice.label}</span> at{" "}
-          {Math.round(thisDevice.distanceCm)} cm is not what people see
-          elsewhere. Relative to your view:
+          {formatDistance(thisDevice.distanceCm, unit)} is not what people
+          see elsewhere. Relative to your view:
         </p>
 
         {visible.length === 0 ? (
@@ -93,7 +95,7 @@ export function PerceptionReportPanel() {
                       {d.label}
                     </span>
                     <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                      {Math.round(d.distanceCm)} cm
+                      {formatDistance(d.distanceCm, unit)}
                     </span>
                   </div>
                   <p className="mt-0.5 leading-4.5 text-muted-foreground">

@@ -12,6 +12,7 @@ import { useUiStore } from "@/stores/ui-store";
 import {
   ACUITY,
   boxMetricsOnDevice,
+  formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
@@ -218,6 +219,7 @@ export function DisplayArea() {
   const videoUrls = useMediaStore((s) => s.videoUrls);
   const activeId = useMediaStore((s) => s.activeId);
   const displayFill = useSettingsStore((s) => s.displayFill);
+  const unit = useSettingsStore((s) => s.unit);
 
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ w: 0, h: 0 });
@@ -470,14 +472,14 @@ export function DisplayArea() {
       g.strokeRect(x, y, w, h);
       g.fillStyle = d.color;
       g.font = `${Math.max(16, Math.round(W / 90))}px monospace`;
-      const label = `${d.label} · ${Math.round(d.distanceCm)} cm`;
+      const label = `${d.label} · ${formatDistance(d.distanceCm, unit)}`;
       g.fillText(label, x + 8, y > 30 ? y - 8 : y + 26);
     }
 
     g.fillStyle = "rgba(255,255,255,0.55)";
     g.font = `${Math.max(13, Math.round(W / 110))}px monospace`;
     g.fillText(
-      `Wright Angles — host: ${host.label} ${W}×${H} @ ${Math.round(host.distanceCm)} cm`,
+      `Wright Angles — host: ${host.label} ${W}×${H} @ ${formatDistance(host.distanceCm, unit)}`,
       16,
       H - 16,
     );
@@ -492,7 +494,7 @@ export function DisplayArea() {
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [thisDevice, devices, activeUrl, crop, displayFill]);
+  }, [thisDevice, devices, activeUrl, crop, displayFill, unit]);
 
   /** Topmost device rect (highest z = last in draw order) under a point. */
   const deviceAt = (clientX: number, clientY: number) => {
@@ -647,7 +649,7 @@ export function DisplayArea() {
             }
             style={{ color: device.color }}
           >
-            {device.label} · {Math.round(device.distanceCm)} cm
+            {device.label} · {formatDistance(device.distanceCm, unit)}
           </span>
         </div>
       ))}
