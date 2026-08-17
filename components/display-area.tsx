@@ -19,6 +19,7 @@ import {
 import { containFit } from "@/lib/fit";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
+import { groupColor } from "@/lib/text-groups";
 import {
   boxInCrop,
   cropOf,
@@ -153,6 +154,7 @@ function BoxLayer({
   media,
   boxes,
   worstByBox,
+  groupById,
   isHost,
 }: {
   rectW: number;
@@ -161,10 +163,13 @@ function BoxLayer({
   /** Measure boxes + active-keyframe lines, full-image normalized. */
   boxes: HighlightBox[];
   worstByBox: Map<string, number>;
+  /** Text-block ids for the global Groups color mode. */
+  groupById: Map<string, number>;
   isHost: boolean;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const crop = cropOf(media);
   const eff = effectiveDims(media);
   const area = containFit(eff.width, eff.height, rectW, rectH);
@@ -176,7 +181,11 @@ function BoxLayer({
         // the crop window (clipped; hidden when fully outside).
         const cb = boxInCrop(b, crop);
         if (!cb) return null;
-        const color = boxBandColor(worstByBox.get(b.id) ?? 99);
+        const gid = groupById.get(b.id);
+        const color =
+          colorMode === "group" && gid !== undefined
+            ? groupColor(gid)
+            : boxBandColor(worstByBox.get(b.id) ?? 99);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -294,6 +303,19 @@ export function DisplayArea() {
       ...kf.lines.map((l) => ({ id: l.id, label: l.text, ...l.box })),
     ];
   }, [activeItem, animatedActive, timeSec]);
+
+  // Text-block ids from the persisted scan + keyframes, for the global
+  // Groups color mode in the world views.
+  const groupById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!activeItem) return map;
+    for (const l of activeItem.scan?.lines ?? [])
+      if (l.groupId !== undefined) map.set(l.id, l.groupId);
+    for (const k of activeItem.scanKeyframes ?? [])
+      for (const l of k.lines ?? [])
+        if (l.groupId !== undefined) map.set(l.id, l.groupId);
+    return map;
+  }, [activeItem]);
 
   // Worst-case legibility per box across every visible device — the
   // "will this text survive everywhere" verdict that colors the box.
@@ -666,6 +688,7 @@ export function DisplayArea() {
                 media={activeItem}
                 boxes={overlayBoxes}
                 worstByBox={worstByBox}
+                groupById={groupById}
                 isHost={!!device.isThis && !drawMode}
               />
             ) : null}
