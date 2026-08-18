@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  ArrowLeftRightIcon,
   CopyIcon,
   CornerDownRightIcon,
   EllipsisVerticalIcon,
@@ -10,6 +11,7 @@ import {
   PinIcon,
   PlusIcon,
   RotateCwSquareIcon,
+  RulerDimensionLineIcon,
   Trash2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +27,7 @@ import {
   aspectFromResolution,
   deviceAngles,
   distToSlider,
+  formatDistance,
   sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
@@ -63,12 +66,39 @@ const DIST_SLIDER_MAX_CM = 400;
  * long the device name is: eye | color | name | distance | chevron.
  */
 const ROW_GRID =
-  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_6rem_1.75rem] items-center gap-1.5";
+  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_10rem_1.75rem] items-center gap-1.5";
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
+    </span>
+  );
+}
+
+/**
+ * Read-only distance + size for a device LIST row, icon-labeled like
+ * the text hover card's metric pairs (Taylor 2026-08-18) — editing
+ * moved to the editor column, so rows just report. Viewing distance
+ * leads, display size follows.
+ */
+function DeviceRowReadout({ device }: { device: Device }) {
+  const unit = useSettingsStore((s) => s.unit);
+  const sizeUnit = useSettingsStore((s) => s.sizeUnit);
+  const size =
+    sizeUnit === "in"
+      ? `${device.diagonalIn.toFixed(device.diagonalIn >= 100 ? 0 : 1)}″`
+      : `${Math.round(device.diagonalIn * CM_PER_IN)} cm`;
+  return (
+    <span className="flex items-center justify-end gap-3 font-mono text-sm text-muted-foreground">
+      <span className="flex items-center gap-1" title="Viewing distance">
+        <ArrowLeftRightIcon className="size-3.5" />
+        {formatDistance(device.distanceCm, unit)}
+      </span>
+      <span className="flex items-center gap-1" title="Display size (diagonal)">
+        <RulerDimensionLineIcon className="size-3.5" />
+        {size}
+      </span>
     </span>
   );
 }
@@ -239,37 +269,7 @@ export function DeviceEditor({
         </label>
       </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Microlabel>Display size · diagonal</Microlabel>
-          <UnitFlip value={sizeUnit} onChange={setSizeUnit} />
-        </div>
-        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
-          <Slider
-            min={3}
-            max={150}
-            step={0.1}
-            value={device.diagonalIn}
-            onValueChange={(v) =>
-              onPatch({ diagonalIn: Array.isArray(v) ? v[0] : v })
-            }
-          />
-          <NumberStepper
-            ariaLabel="display size"
-            value={sizeShown}
-            onChange={(v) =>
-              onPatch({ diagonalIn: sizeInches ? v : v / CM_PER_IN })
-            }
-            step={sizeInches ? 0.1 : 0.5}
-            bigStep={sizeInches ? 1 : 5}
-            min={1}
-            max={sizeInches ? 300 : 999}
-            decimals={sizeShown >= 100 ? 0 : 1}
-            className="h-7"
-          />
-        </div>
-      </div>
-
+      {/* Viewing distance above display size (Taylor 2026-08-18). */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Microlabel>Viewing distance</Microlabel>
@@ -303,6 +303,37 @@ export function DeviceEditor({
           <DistanceStepper
             distanceCm={device.distanceCm}
             onChange={(distanceCm) => onPatch({ distanceCm })}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Microlabel>Display size · diagonal</Microlabel>
+          <UnitFlip value={sizeUnit} onChange={setSizeUnit} />
+        </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
+          <Slider
+            min={3}
+            max={150}
+            step={0.1}
+            value={device.diagonalIn}
+            onValueChange={(v) =>
+              onPatch({ diagonalIn: Array.isArray(v) ? v[0] : v })
+            }
+          />
+          <NumberStepper
+            ariaLabel="display size"
+            value={sizeShown}
+            onChange={(v) =>
+              onPatch({ diagonalIn: sizeInches ? v : v / CM_PER_IN })
+            }
+            step={sizeInches ? 0.1 : 0.5}
+            bigStep={sizeInches ? 1 : 5}
+            min={1}
+            max={sizeInches ? 300 : 999}
+            decimals={sizeShown >= 100 ? 0 : 1}
+            className="h-7"
           />
         </div>
       </div>
@@ -642,10 +673,7 @@ function DeviceRow({
         >
           {device.label}
         </button>
-        <DistanceStepper
-          distanceCm={device.distanceCm}
-          onChange={(distanceCm) => onPatch({ distanceCm })}
-        />
+        <DeviceRowReadout device={device} />
         <Button
           variant="ghost"
           size="icon"
@@ -749,7 +777,7 @@ function EditorColumn() {
   const panelPos = useUiStore(
     (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
   );
-  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 640);
+  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 860);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);

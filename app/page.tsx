@@ -36,19 +36,39 @@ const SceneView = dynamic(() => import("@/components/view3d/scene-view"), {
   ssr: false,
 });
 
-export default function Home() {
-  const hydrate = useMediaStore((s) => s.hydrate);
-  const addFiles = useMediaStore((s) => s.addFiles);
-  const theme = useResolvedTheme();
+/** The ui-store's persist-hydration status as an external store. */
+const subscribeUiHydration = (cb: () => void) =>
+  useUiStore.persist.onFinishHydration(cb);
+const getUiHydrated = () => useUiStore.persist.hasHydrated();
+
+/**
+ * The 2D/3D view layers plus ALL of the transition state between them.
+ * Mounted only after the ui-store has finished rehydrating: this
+ * component's initializers read `viewMode`, and if they ran against the
+ * pre-hydration default the late-arriving stored mode would play out as
+ * a full (phantom) 3D→2D exit sequence on a plain refresh.
+ */
+function ViewStack() {
   const viewMode = useUiStore((s) => s.viewMode);
   const cvdMode = useSettingsStore((s) => s.cvdMode);
-  const [dropScrim, setDropScrim] = useState(false);
   // 3D stays mounted through its exit animation so the camera can fly
   // back to the head-on pose before the 2D overlay returns. The 2D view
   // is ALWAYS mounted beneath it, so both handoffs are crossfades of
   // the canvas over a live matching frame instead of a mount pop.
   const [show3d, setShow3d] = useState(viewMode === "3d");
   const [sceneShown, setSceneShown] = useState(viewMode === "3d");
+  // A session that BOOTS in 3D starts at the orbit pose — there's no 2D
+  // frame to fly away from. Cleared once that boot scene goes away, so
+  // later 2D→3D toggles get their entry tween (SceneView snapshots the
+  // prop at mount, so clearing never affects a live scene).
+  const [instantEntry, setInstantEntry] = useState(viewMode === "3d");
+  if (!show3d && instantEntry) setInstantEntry(false);
+  // Booting straight into 3D: keep the 2D layer hidden until the first
+  // return to 2D — otherwise it paints beneath before the canvas's
+  // first frame and the scene "snaps" over it. Revealed the moment the
+  // view flips to 2D, which is before the exit crossfade needs it.
+  const [twoDRevealed, setTwoDRevealed] = useState(viewMode !== "3d");
+  if (viewMode === "2d" && !twoDRevealed) setTwoDRevealed(true);
   const [exiting3d, setExiting3d] = useState(false);
   const [prevMode, setPrevMode] = useState(viewMode);
   const handoffTimer = useRef<number | null>(null);
@@ -77,11 +97,67 @@ export default function Home() {
       return () => cancelAnimationFrame(raf);
     }
   }, [show3d, exiting3d, sceneShown]);
+
+  return (
+    <>
+      <CvdFilters />
+      {/* Color-vision simulation wraps BOTH view layers (panels and
+          chrome stay unfiltered — the simulation is about content). */}
+      <div className="absolute inset-0" style={{ filter: cvdFilter(cvdMode) }}>
+        {/* `isolate` contains the 2D view's internal z-indexes (rect
+            stack, toolbar z-40) in their own stacking context, so the
+            later canvas sibling paints over ALL of it in 3D mode. */}
+        <div
+          className={cn(
+            "absolute inset-0 isolate",
+            !twoDRevealed && "invisible",
+          )}
+        >
+          <DisplayArea />
+        </div>
+        {show3d ? (
+          <div
+            className={cn(
+              "absolute inset-0 transition-opacity duration-150",
+              sceneShown ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <SceneView
+              instantEntry={instantEntry}
+              exiting={exiting3d}
+              onExited={() => {
+                // The camera flew to a head-on pose matching 2D's OWN
+                // framing (mode + pan untouched) — just reveal it.
+                setSceneShown(false);
+                handoffTimer.current = window.setTimeout(() => {
+                  handoffTimer.current = null;
+                  setShow3d(false);
+                  setExiting3d(false);
+                }, 180);
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+export default function Home() {
+  const hydrate = useMediaStore((s) => s.hydrate);
+  const addFiles = useMediaStore((s) => s.addFiles);
+  const theme = useResolvedTheme();
+  const [dropScrim, setDropScrim] = useState(false);
   // Everything below renders from persisted client state; skipping SSR
   // output entirely avoids hydration mismatches on the static export.
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
+    () => false,
+  );
+  const uiHydrated = useSyncExternalStore(
+    subscribeUiHydration,
+    getUiHydrated,
     () => false,
   );
 
@@ -145,46 +221,7 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
-      {!mounted ? null : (
-        <>
-          <CvdFilters />
-          {/* Color-vision simulation wraps BOTH view layers (panels and
-              chrome stay unfiltered — the simulation is about content). */}
-          <div
-            className="absolute inset-0"
-            style={{ filter: cvdFilter(cvdMode) }}
-          >
-            {/* `isolate` contains the 2D view's internal z-indexes (rect
-                stack, toolbar z-40) in their own stacking context, so the
-                later canvas sibling paints over ALL of it in 3D mode. */}
-            <div className="absolute inset-0 isolate">
-              <DisplayArea />
-            </div>
-            {show3d ? (
-              <div
-                className={cn(
-                  "absolute inset-0 transition-opacity duration-150",
-                  sceneShown ? "opacity-100" : "opacity-0",
-                )}
-              >
-                <SceneView
-                  exiting={exiting3d}
-                  onExited={() => {
-                    // The camera flew to a head-on pose matching 2D's OWN
-                    // framing (mode + pan untouched) — just reveal it.
-                    setSceneShown(false);
-                    handoffTimer.current = window.setTimeout(() => {
-                      handoffTimer.current = null;
-                      setShow3d(false);
-                      setExiting3d(false);
-                    }, 180);
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
-        </>
-      )}
+      {mounted && uiHydrated ? <ViewStack /> : null}
 
       {mounted ? (
         <>

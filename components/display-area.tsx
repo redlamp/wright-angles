@@ -686,6 +686,10 @@ export function DisplayArea() {
   const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
   const vp = useScreenViewport();
   const viewportActive = displayMode === "viewport" && vp !== null;
+  // First paint in viewport mode: until the screen-position poll
+  // returns (one effect tick), k falls back to fit scale — rendering
+  // that frame reads as a scale snap at boot. Hold invisible instead.
+  const vpBooting = displayMode === "viewport" && vp === null;
 
   // Left mouse selects on click, pans on drag (plan 4.3; Space-pan
   // dropped). A small movement threshold separates the two.
@@ -916,6 +920,7 @@ export function DisplayArea() {
       className={cn(
         "absolute inset-0 overflow-hidden bg-[oklch(0.16_0_0)] touch-none",
         panning && "cursor-grabbing",
+        vpBooting && "invisible",
       )}
       onPointerDown={(e) => {
         if (e.button !== 0 || drawMode || onInteractive(e.target)) return;

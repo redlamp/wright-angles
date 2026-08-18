@@ -47,12 +47,15 @@ export default function CameraRig({
   orbitPose,
   headOnPose,
   exiting,
+  instant,
   onExited,
   onControlsChange,
 }: {
   orbitPose: CameraPose;
   headOnPose: CameraPose;
   exiting: boolean;
+  /** Start AT the orbit pose (initial page load in 3D) — no entry fly. */
+  instant?: boolean;
   onExited?: () => void;
   onControlsChange: (enabled: boolean) => void;
 }) {
@@ -68,9 +71,19 @@ export default function CameraRig({
   const lookTarget = useRef(new Vector3(...headOnPose.target));
   const exited = useRef(false);
 
-  // Mount: snap to head-on, then fly out to the orbit pose.
+  // Mount: snap to head-on, then fly out to the orbit pose — unless
+  // this is the initial page load in 3D, which starts AT the orbit
+  // pose (nothing to hand off from).
   useEffect(() => {
     const { headOnPose: h, orbitPose: o } = poses.current;
+    if (instant) {
+      camera.position.set(...o.position);
+      lookTarget.current.set(...o.target);
+      camera.lookAt(lookTarget.current);
+      applyFov(camera, o.fov);
+      onControlsChange(true);
+      return;
+    }
     camera.position.set(...h.position);
     lookTarget.current.set(...h.target);
     camera.lookAt(lookTarget.current);
@@ -86,7 +99,9 @@ export default function CameraRig({
       start: null,
       duration: ENTER_S,
     };
-  }, [camera]);
+    // `instant` is a mount-time snapshot upstream; effect never re-runs
+    // with a different value during one mount.
+  }, [camera, instant, onControlsChange]);
 
   useEffect(() => {
     if (exiting) {

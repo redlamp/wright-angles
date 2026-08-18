@@ -34,6 +34,8 @@ interface FloatingPanelProps {
    * (children should fill with h-full and scroll internally).
    */
   resizableHeight?: boolean;
+  /** Content height before the user resizes (viewport-clamped). */
+  defaultHeight?: number;
   children: React.ReactNode;
 }
 
@@ -47,6 +49,7 @@ export function FloatingPanel({
   headerActions,
   headerNote,
   resizableHeight,
+  defaultHeight,
   children,
 }: FloatingPanelProps) {
   const open = useUiStore((s) => s.openPanels[id]);
@@ -59,7 +62,12 @@ export function FloatingPanel({
   const togglePanel = useUiStore((s) => s.togglePanel);
 
   const width = storedWidth ?? defaultWidth;
-  const height = resizableHeight ? storedHeight : undefined;
+  const height = resizableHeight
+    ? (storedHeight ??
+      (defaultHeight !== undefined
+        ? Math.min(defaultHeight, window.innerHeight - 120)
+        : undefined))
+    : undefined;
   // Un-dragged panels open top-center, just under the rail (Taylor
   // 2026-08-18). Client-only render, so window is available here.
   const pos = stored ??

@@ -352,11 +352,17 @@ function FpsProbe() {
  */
 export default function SceneView({
   exiting = false,
+  instantEntry = false,
   onExited,
 }: {
   exiting?: boolean;
+  /** Skip the head-on→orbit entry fly (initial page load in 3D). */
+  instantEntry?: boolean;
   onExited?: () => void;
 }) {
+  // Snapshot: the parent may clear its flag after mount; the rig's
+  // mount behavior must not change mid-flight.
+  const [instant] = useState(instantEntry);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const scenario = useViewerStore((s) => s.scenario);
@@ -683,6 +689,7 @@ export default function SceneView({
           orbitPose={orbitPose}
           headOnPose={headOnPose}
           exiting={exiting}
+          instant={instant}
           onExited={onExited}
           onControlsChange={setControlsOn}
         />

@@ -32,9 +32,10 @@ export function WorkbenchPanel() {
       id="workbench"
       title={active.label}
       icon={active.icon}
-      width={640}
+      width={860}
       maxWidth="none"
       resizableHeight
+      defaultHeight={860}
       headerNote={
         tab === "media"
           ? "Media is stored on your computer only — never uploaded."
