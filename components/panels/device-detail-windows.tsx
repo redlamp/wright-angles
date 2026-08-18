@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { PinOffIcon, XIcon } from "lucide-react";
+import { FEATURE_PINNED_DEVICES } from "@/lib/flags";
 import { useDeviceStore } from "@/stores/device-store";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,9 @@ function DetailWindow({ id }: { id: string }) {
 
 export function DeviceDetailWindows() {
   const pinnedDetails = useUiStore((s) => s.pinnedDetails);
+  // Feature parked: previously pinned windows stay hidden (state kept)
+  // until the flag returns.
+  if (!FEATURE_PINNED_DEVICES) return null;
   return (
     <>
       {Object.keys(pinnedDetails).map((id) => (

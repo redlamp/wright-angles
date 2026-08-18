@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FEATURE_COLLAPSE_FIRST_COLUMN } from "@/lib/flags";
 import { useUiStore } from "@/stores/ui-store";
 
 /**
@@ -24,8 +25,11 @@ export function SplitGrid({
 }) {
   const splitPx = useUiStore((s) => s.workbenchSplitPx);
   const setSplitPx = useUiStore((s) => s.setWorkbenchSplitPx);
-  const collapsed = useUiStore((s) => s.workbenchLeftCollapsed);
+  const storedCollapsed = useUiStore((s) => s.workbenchLeftCollapsed);
   const toggleCollapsed = useUiStore((s) => s.toggleWorkbenchLeft);
+  // Flag off: also ignore a persisted collapsed=true so no one is
+  // stuck with a hidden column and no button to bring it back.
+  const collapsed = FEATURE_COLLAPSE_FIRST_COLUMN && storedCollapsed;
   const hostRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -68,20 +72,22 @@ export function SplitGrid({
           setSplitPx(Math.min(e.clientX - r.left, r.width - 200));
         }}
       >
-        <button
-          type="button"
-          aria-label={collapsed ? "Show first column" : "Hide first column"}
-          title={collapsed ? "Show first column" : "Hide first column"}
-          className="panel-frame absolute top-1.5 left-1/2 z-10 flex size-5 -translate-x-1/2 cursor-pointer items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={toggleCollapsed}
-        >
-          {collapsed ? (
-            <PanelLeftOpenIcon className="size-3.5" />
-          ) : (
-            <PanelLeftCloseIcon className="size-3.5" />
-          )}
-        </button>
+        {FEATURE_COLLAPSE_FIRST_COLUMN ? (
+          <button
+            type="button"
+            aria-label={collapsed ? "Show first column" : "Hide first column"}
+            title={collapsed ? "Show first column" : "Hide first column"}
+            className="panel-frame absolute top-1.5 left-1/2 z-10 flex size-5 -translate-x-1/2 cursor-pointer items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={toggleCollapsed}
+          >
+            {collapsed ? (
+              <PanelLeftOpenIcon className="size-3.5" />
+            ) : (
+              <PanelLeftCloseIcon className="size-3.5" />
+            )}
+          </button>
+        ) : null}
       </div>
       {right}
     </div>
