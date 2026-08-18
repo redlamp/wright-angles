@@ -51,14 +51,21 @@ import { SplitGrid } from "./split-grid";
  * the probe.
  */
 
+/** ISO 16′/20′ verdict band color for an arcmin value. */
+const bandColor = (arcmin: number) =>
+  arcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : arcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
+
 function LegibilityDot({ arcmin }: { arcmin: number }) {
-  const color =
-    arcmin >= ACUITY.comfortableTextArcmin
-      ? "bg-[#46a758]"
-      : arcmin >= ACUITY.minCriticalTextArcmin
-        ? "bg-[#f5a524]"
-        : "bg-[#e5484d]";
-  return <span className={cn("inline-block size-2 rounded-full", color)} />;
+  return (
+    <span
+      className="inline-block size-2 rounded-full"
+      style={{ background: bandColor(arcmin) }}
+    />
+  );
 }
 
 function ratioNote(r: number): string {
@@ -458,23 +465,26 @@ export function PerceptionReportContent() {
                       </button>
                     ) : null}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {/* Row 2 (Taylor 2026-08-18): compact dot·arcmin
+                      pairs — the dot is the device's key color, the
+                      arcmin number wears the verdict band, the hover
+                      title names the device with mm/px. */}
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                     {verdictDevices.map((d) => {
                       const m = boxMetricsOnDevice(e.h, activeItem!, d);
                       return (
                         <span
                           key={d.id}
-                          className="flex items-center gap-1 font-mono text-sm text-muted-foreground"
-                          title={`${d.label}: ${m.mm.toFixed(1)}mm tall, ${Math.round(m.devicePx)}px`}
+                          className="flex items-center gap-1.5 font-mono text-sm"
+                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)}mm tall · ${Math.round(m.devicePx)}px`}
                         >
-                          <LegibilityDot arcmin={m.arcmin} />
                           <span
-                            className="max-w-24 truncate"
-                            style={{ color: d.color }}
-                          >
-                            {d.label}
+                            className="inline-block size-2 rounded-full"
+                            style={{ background: d.color }}
+                          />
+                          <span style={{ color: bandColor(m.arcmin) }}>
+                            {m.arcmin.toFixed(0)}′
                           </span>
-                          {m.arcmin.toFixed(0)}′
                           {strokesSubAcuity(m.arcmin) ? (
                             <TriangleAlertIcon
                               className="size-3 text-[#e5484d]"
