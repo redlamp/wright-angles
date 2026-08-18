@@ -21,6 +21,7 @@ import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
+import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
@@ -605,7 +606,7 @@ export default function DeviceRect({
   const nameOffsetRef = useRef<Group>(null);
 
   const body =
-    device.show3dBody !== false && device.deviceName
+    FEATURE_3D_DEVICE_BODY && device.show3dBody !== false && device.deviceName
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
 
@@ -674,35 +675,37 @@ export default function DeviceRect({
       {media && fit ? (
         curved ? (
           <group position={[0, 0, -R]}>
-            {/* Letterbox backing, a hair inside the outline's arc. */}
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device. */}
+            {/* Letterbox backing: double-sided, so from BEHIND the
+                device you see the panel's back — not the content
+                mirrored through it (Taylor 2026-08-19). */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
                   -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
               />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
             </mesh>
+            {/* Content faces the viewer side only (the U-mirrored
+                texture is correct exactly there). */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.25, R - 0.25, fit.h, 48, 1, true,
                   -fit.w / (R - 0.25) / 2, fit.w / (R - 0.25)]}
               />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
             </mesh>
           </group>
         ) : (
           <>
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device. */}
+            {/* Backing double-sided: the rear reads as the back of a
+                display instead of mirrored content. */}
             <mesh position={[0, 0, -0.15]}>
               <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
             </mesh>
             <mesh position={[0, 0, -0.3]}>
               <planeGeometry args={[fit.w, fit.h]} />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
             </mesh>
           </>
         )
