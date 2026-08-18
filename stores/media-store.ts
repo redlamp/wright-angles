@@ -149,6 +149,29 @@ interface MediaState {
 
 export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
 
+/**
+ * First-run seeding flag: a never-seeded browser with an empty library
+ * gets the gradient card so the app demonstrates itself. Deleting the
+ * card is a choice — the flag survives, so it never resurrects on
+ * reload. Wiping local data clears the flag: a wipe means "fresh
+ * visitor", seed and all.
+ */
+const SEED_KEY = "wright-angles:seeded";
+const wasSeeded = () => {
+  try {
+    return localStorage.getItem(SEED_KEY) !== null;
+  } catch {
+    return true; // no localStorage → don't keep re-seeding every load
+  }
+};
+const markSeeded = () => {
+  try {
+    localStorage.setItem(SEED_KEY, "1");
+  } catch {
+    // Session-only environment; seeding once this session is fine.
+  }
+};
+
 export const GENERATED_KINDS: { kind: GeneratedKind; label: string }[] = [
   { kind: "smpte-bars", label: "Color bars" },
   { kind: "grid", label: "Alignment grid" },
@@ -266,6 +289,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
         hydrated: true,
         activeId: s.activeId ?? items[0]?.id ?? null,
       }));
+      // First run: seed the gradient card as the default image.
+      if (items.length === 0 && !wasSeeded()) {
+        markSeeded();
+        await get().addGenerated("gradient");
+      }
     } catch {
       // IndexedDB unavailable (private browsing edge cases) — run
       // session-only with an empty library.
@@ -522,6 +550,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       ...Object.values(get().videoUrls),
     ]) {
       URL.revokeObjectURL(url);
+    }
+    // A wipe means "fresh visitor" — the next load seeds again.
+    try {
+      localStorage.removeItem(SEED_KEY);
+    } catch {
+      // localStorage unavailable; nothing to clear.
     }
     set({ items: [], objectUrls: {}, videoUrls: {}, activeId: null });
   },

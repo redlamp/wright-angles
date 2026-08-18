@@ -126,6 +126,7 @@ export function SettingsPanel() {
   const resetDevices = useDeviceStore((s) => s.resetAll);
   const wipeMedia = useMediaStore((s) => s.wipeAll);
   const [confirmingWipe, setConfirmingWipe] = useState(false);
+  const [resetArmed, setResetArmed] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -229,6 +230,39 @@ export function SettingsPanel() {
             only in this browser — nothing is uploaded or tracked.
           </span>
         </div>
+
+        {/* Preferences only — devices and the media library survive. */}
+        <button
+          type="button"
+          className={cn(
+            "h-8 w-full rounded-md border text-sm transition-colors",
+            resetArmed
+              ? "border-destructive bg-destructive text-white"
+              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+          title="Restore every setting, panel position, and viewer option to defaults. Devices and uploaded images are kept."
+          onBlur={() => setResetArmed(false)}
+          onClick={() => {
+            if (!resetArmed) {
+              setResetArmed(true);
+              return;
+            }
+            try {
+              for (const k of [
+                "wright-angles:settings",
+                "wright-angles:ui",
+                "wright-angles:viewer",
+              ]) {
+                localStorage.removeItem(k);
+              }
+            } catch {
+              // localStorage unavailable — reload still resets session state.
+            }
+            window.location.reload();
+          }}
+        >
+          {resetArmed ? "Really reset all settings" : "Reset all settings…"}
+        </button>
 
         <div className="grid grid-cols-2 gap-1.5">
           <Button
