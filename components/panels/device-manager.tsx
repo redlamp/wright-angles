@@ -749,7 +749,7 @@ function EditorColumn() {
   const panelPos = useUiStore(
     (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
   );
-  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 640);
+  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 860);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
