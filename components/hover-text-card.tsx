@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DraftingCompassIcon, RulerDimensionLineIcon } from "lucide-react";
 import {
   ACUITY,
   boxMetricsOnDevice,
+  formatDistance,
   strokesSubAcuity,
 } from "@/lib/display-math";
 import { groupColor } from "@/lib/text-groups";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 const bandColor = (arcmin: number) =>
   arcmin >= ACUITY.comfortableTextArcmin
@@ -18,22 +21,24 @@ const bandColor = (arcmin: number) =>
       ? "#f5a524"
       : "#e5484d";
 
-const CARD_W = 232;
-
 /**
- * Cursor-following hover card for text boxes (Taylor 2026-08-18):
- * hovering a box in EITHER view shows its details in context near the
- * pointer — label, source px, and what the text measures on the box's
- * own device — detached from the device inspector, which stays purely
- * device-level. Follows the shared deviceHover state, so the 2D and 3D
- * hover plumbing feeds one card.
+ * Cursor-following hover card for text boxes (Taylor 2026-08-18 v2):
+ * the label on its own unwrapped line (the card grows to fit), the
+ * owning device @ its distance, source/display pixel sizes, then the
+ * angular size (drafting-compass icon, verdict-graded color) and the
+ * physical size (dimension-ruler icon, mm or inches per the unit
+ * setting). The card's border wears the same color as the hovered
+ * box's outline. One card rides the shared deviceHover state from
+ * both views; pointer-transparent.
  */
 export function HoverTextCard() {
   const deviceHover = useAnnotationStore((s) => s.deviceHover);
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
+  const unit = useSettingsStore((s) => s.unit);
   const [pt, setPt] = useState<{ x: number; y: number } | null>(null);
 
   const box = deviceHover?.box ?? null;
@@ -58,38 +63,56 @@ export function HoverTextCard() {
   if (!box || !device || !activeItem || !pt) return null;
 
   const m = boxMetricsOnDevice(box.hFull, activeItem, device);
-  const left =
-    pt.x + 16 + CARD_W > window.innerWidth ? pt.x - 16 - CARD_W : pt.x + 16;
-  const top = pt.y + 16 + 96 > window.innerHeight ? pt.y - 16 - 96 : pt.y + 16;
+  const band = bandColor(m.arcmin);
+  // Match the hovered box's outline: group tint in Groups mode, else
+  // the verdict band on this device.
+  const borderColor =
+    colorMode === "group" && box.groupId !== undefined
+      ? groupColor(box.groupId)
+      : band;
+  const phys =
+    unit === "in" ? `${(m.mm / 25.4).toFixed(2)}″` : `${m.mm.toFixed(1)}mm`;
+
+  // The card is content-sized (no wrap), so anchor it to whichever
+  // side of the cursor has the room.
+  const anchorRight = pt.x > window.innerWidth / 2;
+  const top = pt.y + 16 + 104 > window.innerHeight ? pt.y - 16 - 104 : pt.y + 16;
 
   return (
     <div
-      className="panel-frame pointer-events-none fixed z-[260] rounded-md border border-border px-2.5 py-1.5"
-      style={{ left, top, width: CARD_W }}
+      className="panel-frame pointer-events-none fixed z-[260] rounded-md border px-2.5 py-1.5 whitespace-nowrap"
+      style={{
+        borderColor,
+        top,
+        ...(anchorRight
+          ? { right: window.innerWidth - pt.x + 16 }
+          : { left: pt.x + 16 }),
+      }}
     >
-      <div className="flex items-center gap-1.5">
-        {box.groupId !== undefined ? (
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: groupColor(box.groupId) }}
-          />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {box.label?.trim() || "Text box"}
-        </span>
+      <div className="text-sm font-medium">
+        {box.label?.trim() || "Text box"}
       </div>
       <div className="font-mono text-sm leading-5 text-muted-foreground">
-        <div className="truncate" style={{ color: device.color }}>
-          on {device.label}
+        <div>
+          <span style={{ color: device.color }}>{device.label}</span> @{" "}
+          {formatDistance(device.distanceCm, unit)}
         </div>
-        <div>{box.srcPx}px in source</div>
-        {/* Spelled-out unit: the arcminute prime reads as imperial
-            feet at a glance, and this card can't carry tooltips. */}
+        <div>
+          {box.srcPx}px (on source), {Math.round(m.devicePx)}px (on display)
+        </div>
         <div className="flex items-center gap-1.5">
-          <span style={{ color: bandColor(m.arcmin) }}>
-            {m.arcmin.toFixed(1)} arcmin
+          <span
+            className="flex items-center gap-1"
+            style={{ color: band }}
+          >
+            <DraftingCompassIcon className="size-3.5" />
+            {m.arcmin.toFixed(1)}
           </span>
-          · {m.mm.toFixed(1)}mm · {Math.round(m.devicePx)}px here
+          ,
+          <span className="flex items-center gap-1">
+            <RulerDimensionLineIcon className="size-3.5" />
+            {phys}
+          </span>
           {strokesSubAcuity(m.arcmin) ? (
             <span title="Strokes render below 1′ — detail is invisible at this distance">
               ⚠
