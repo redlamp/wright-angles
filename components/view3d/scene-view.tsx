@@ -387,6 +387,12 @@ export default function SceneView({
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const scanColorMode = useAnnotationStore((s) => s.scanColorMode);
   const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  // 3D hover is meaningless once the scene unmounts — a stale value
+  // would pin the inspector open (and at full alpha) back in 2D.
+  useEffect(
+    () => () => useAnnotationStore.getState().setHover3d(null),
+    [],
+  );
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
   const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
   // Plain computation (no manual memo): it's a handful of array ops and
@@ -405,13 +411,18 @@ export default function SceneView({
     for (const l of activeItem.scan?.lines ?? [])
       if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
     const entries = [
-      ...(activeItem.boxes ?? []).map((b) => ({ ...b, hNorm: b.h })),
+      ...(activeItem.boxes ?? []).map((b) => ({
+        ...b,
+        hNorm: b.h,
+        text: b.label,
+      })),
       ...(kf?.lines ?? []).map((l) => {
         if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
         return {
           id: l.id,
           ...l.box,
           hNorm: l.sizePx ? l.sizePx / activeItem.height : l.box.h,
+          text: l.text,
         };
       }),
     ];
@@ -423,6 +434,9 @@ export default function SceneView({
         rect,
         hMeasure: e.hNorm / crop.h,
         groupId: groupById.get(e.id),
+        label: e.text,
+        srcPx: Math.round(e.hNorm * activeItem.height),
+        hFull: e.hNorm,
       });
     }
   }

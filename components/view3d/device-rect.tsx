@@ -18,6 +18,7 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
+import { useAnnotationStore, type Hover3d } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
@@ -25,6 +26,10 @@ import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
 
 const SHOW_LABELS = true;
+
+/** Module-level mutator (react-compiler convention): 3D hover state. */
+const setHover3d = (h: Hover3d | null) =>
+  useAnnotationStore.getState().setHover3d(h);
 
 /**
  * Barlow Medium for the 3D labels, matching the app's primary typeface.
@@ -208,6 +213,12 @@ export interface ContentBox {
   hMeasure: number;
   /** Text block id — used when the global color mode is "group". */
   groupId?: number;
+  /** OCR text / user label, for the 3D hover details. */
+  label?: string;
+  /** Source pixel height (group-corrected where available). */
+  srcPx: number;
+  /** Full-image normalized measure height (pre-crop), for metrics. */
+  hFull: number;
 }
 
 const bandColor = (arcmin: number) =>
@@ -568,6 +579,12 @@ export default function DeviceRect({
       // two devices at the SAME distance never z-fight; far too small
       // to read as a distance change.
       position={[0, centerY, device.distanceCm + (zBias ?? 0)]}
+      // Device hover feeds the inspector (full alpha + live details).
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHover3d({ deviceId: device.id, box: null });
+      }}
+      onPointerOut={() => setHover3d(null)}
       onClick={
         onSelect
           ? (e) => {
@@ -678,15 +695,55 @@ export default function DeviceRect({
               boxColorMode === "group" && cb.groupId !== undefined
                 ? groupColor(cb.groupId)
                 : bandColor(arcmin);
+            // Invisible hover catcher over the box (chord plane — close
+            // enough on curved panels for pointer purposes): hovering
+            // feeds the inspector's live text details (Taylor).
+            const yCenter = fit.h / 2 - (cb.rect.y + cb.rect.h / 2) * fit.h;
+            const uc = 0.5 - (cb.rect.x + cb.rect.w / 2);
+            const r = curved ? R - 0.5 : 0;
+            const theta = curved ? (fit.w / r) * uc : 0;
             return (
-              <Line
-                key={cb.id}
-                points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
-                color={sel ? "#ffffff" : color}
-                lineWidth={sel ? 2.5 : 1.25}
-                transparent
-                opacity={sel ? 1 : 0.9}
-              />
+              <group key={cb.id}>
+                <Line
+                  points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
+                  color={sel ? "#ffffff" : color}
+                  lineWidth={sel ? 2.5 : 1.25}
+                  transparent
+                  opacity={sel ? 1 : 0.9}
+                />
+                <mesh
+                  position={
+                    curved
+                      ? [r * Math.sin(theta), yCenter, -R + r * Math.cos(theta)]
+                      : [uc * fit.w, yCenter, -0.35]
+                  }
+                  rotation={[0, theta, 0]}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                    setHover3d({
+                      deviceId: device.id,
+                      box: {
+                        id: cb.id,
+                        label: cb.label,
+                        srcPx: cb.srcPx,
+                        hFull: cb.hFull,
+                        groupId: cb.groupId,
+                      },
+                    });
+                  }}
+                  // No pointerout handler: the leave bubbles to the
+                  // group (clearing hover), and whatever the pointer
+                  // lands on next re-sets it in the same event batch.
+                >
+                  <planeGeometry args={[cb.rect.w * fit.w, cb.rect.h * fit.h]} />
+                  <meshBasicMaterial
+                    transparent
+                    opacity={0}
+                    depthWrite={false}
+                    side={DoubleSide}
+                  />
+                </mesh>
+              </group>
             );
           })
         : null}

@@ -8,11 +8,28 @@ import {
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { deviceAngles, formatDistance, physicalSizeCm } from "@/lib/display-math";
+import {
+  ACUITY,
+  boxMetricsOnDevice,
+  deviceAngles,
+  formatDistance,
+  physicalSizeCm,
+  strokesSubAcuity,
+} from "@/lib/display-math";
+import { groupColor } from "@/lib/text-groups";
+import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
+import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { nextZ } from "./floating-panel";
+
+const bandColor = (arcmin: number) =>
+  arcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : arcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
 
 /**
  * Click-to-inspect side panel (plan 3.1–3.4): selecting a device in the
@@ -33,6 +50,10 @@ export function DeviceInspector() {
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const unit = useSettingsStore((s) => s.unit);
+  const hover3d = useAnnotationStore((s) => s.hover3d);
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const activeItem = items.find((i) => i.id === activeId);
 
   // Session-only position: right-anchored until the first drag.
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -48,12 +69,19 @@ export function DeviceInspector() {
     if (selectedId) setZ(nextZ());
   }
 
-  const device =
-    selectedId === thisDevice.id
-      ? thisDevice
-      : devices.find((d) => d.id === selectedId);
+  const byId = (id: string | null | undefined) =>
+    id === thisDevice.id ? thisDevice : devices.find((d) => d.id === id);
+  // Hovering a device in 3D shows it live; a selection is the sticky
+  // fallback the card returns to when the hover ends.
+  const hoverDevice = byId(hover3d?.deviceId);
+  const device = hoverDevice ?? byId(selectedId);
   if (!device) return null;
   const isThis = device.id === thisDevice.id;
+  const hoverBox = hoverDevice ? hover3d?.box : null;
+  const boxMetrics =
+    hoverBox && activeItem
+      ? boxMetricsOnDevice(hoverBox.hFull, activeItem, device)
+      : null;
 
   const size = physicalSizeCm(device.diagonalIn, device.aspect);
   const a = deviceAngles(device);
@@ -61,7 +89,13 @@ export function DeviceInspector() {
   return (
     <div
       ref={ref}
-      className="panel-frame fixed w-64 rounded-lg border border-border opacity-40 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100"
+      className={cn(
+        "panel-frame fixed w-64 rounded-lg border border-border transition-opacity duration-150",
+        // Full alpha while hovering the device in 3D or the panel itself.
+        hover3d
+          ? "opacity-100"
+          : "opacity-40 hover:opacity-100 focus-within:opacity-100",
+      )}
       style={{
         zIndex: z,
         ...(pos ? { left: pos.x, top: pos.y } : { right: 16, top: 96 }),
@@ -172,6 +206,39 @@ export function DeviceInspector() {
         </button>
       </div>
 
+      {/* Live details for the text box hovered in 3D (Taylor): what
+          this text measures ON THIS device. */}
+      {hoverBox && boxMetrics ? (
+        <div className="space-y-1 border-t border-border px-2.5 py-2">
+          <div className="flex items-center gap-1.5">
+            {hoverBox.groupId !== undefined ? (
+              <span
+                className="size-2 shrink-0 rounded-full"
+                title="Text group — size shared across the block"
+                style={{ background: groupColor(hoverBox.groupId) }}
+              />
+            ) : null}
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {hoverBox.label?.trim() || "Text box"}
+            </span>
+          </div>
+          <div className="font-mono text-sm leading-5 text-muted-foreground">
+            <div>{hoverBox.srcPx}px in source</div>
+            <div className="flex items-center gap-1.5">
+              <span style={{ color: bandColor(boxMetrics.arcmin) }}>
+                {boxMetrics.arcmin.toFixed(1)}′
+              </span>
+              · {boxMetrics.mm.toFixed(1)}mm ·{" "}
+              {Math.round(boxMetrics.devicePx)}px here
+              {strokesSubAcuity(boxMetrics.arcmin) ? (
+                <span title="Strokes render below 1′ — detail is invisible at this distance">
+                  ⚠
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
