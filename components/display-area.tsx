@@ -442,13 +442,10 @@ function BoxLayer({
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const colorMode = useAnnotationStore((s) => s.scanColorMode);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const crop = cropOf(media);
   const eff = effectiveDims(media);
   const area = containFit(eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
-  const hovered = isHost ? boxes.find((b) => b.id === hoveredId) : undefined;
-  const hoveredCb = hovered ? boxInCrop(hovered, crop) : null;
   return (
     <>
       {boxes.map((b) => {
@@ -487,8 +484,7 @@ function BoxLayer({
                   }
                 : undefined
             }
-            onPointerEnter={() => {
-              if (isHost) setHoveredId(b.id);
+            onPointerEnter={() =>
               setDeviceHover({
                 deviceId,
                 box: {
@@ -498,104 +494,13 @@ function BoxLayer({
                   hFull: b.h,
                   groupId: groupById.get(b.id),
                 },
-              });
-            }}
-            onPointerLeave={() => {
-              if (isHost) setHoveredId(null);
-              setDeviceHover({ deviceId, box: null });
-            }}
+              })
+            }
+            onPointerLeave={() => setDeviceHover({ deviceId, box: null })}
           />
         );
       })}
-      {hovered && hoveredCb ? (
-        <BoxHoverCard
-          box={hovered}
-          cb={hoveredCb}
-          area={area}
-          media={media}
-          worstArcmin={worstByBox.get(hovered.id)}
-          groupId={groupById.get(hovered.id)}
-        />
-      ) : null}
     </>
-  );
-}
-
-/**
- * Hover card for a text box on This Device's rect: what we know about the
- * box — its text, size in source pixels, and the worst angular size it
- * reaches across visible devices. Pointer-transparent so it never traps
- * the hover it depends on.
- */
-function BoxHoverCard({
-  box,
-  cb,
-  area,
-  media,
-  worstArcmin,
-  groupId,
-}: {
-  box: HighlightBox;
-  cb: { x: number; y: number; w: number; h: number };
-  area: { x: number; y: number; w: number; h: number };
-  media: MediaItem;
-  worstArcmin: number | undefined;
-  groupId: number | undefined;
-}) {
-  const CARD_W = 224;
-  const left = Math.max(
-    area.x,
-    Math.min(area.x + cb.x * area.w, area.x + area.w - CARD_W),
-  );
-  // Below the box; flip above when the box hugs the bottom edge.
-  const belowY = area.y + (cb.y + cb.h) * area.h + 6;
-  const flip = belowY > area.y + area.h - 72;
-  const verdict =
-    worstArcmin === undefined
-      ? null
-      : worstArcmin >= ACUITY.comfortableTextArcmin
-        ? "comfortable"
-        : worstArcmin >= ACUITY.minCriticalTextArcmin
-          ? "marginal"
-          : "too small";
-  return (
-    <div
-      className="pointer-events-none absolute z-10 rounded-md border border-border bg-popover px-2.5 py-1.5 text-sm text-popover-foreground shadow-md"
-      style={{
-        left,
-        width: CARD_W,
-        ...(flip
-          ? {
-              top: area.y + cb.y * area.h - 6,
-              transform: "translateY(-100%)",
-            }
-          : { top: belowY }),
-      }}
-    >
-      <div className="flex items-center gap-1.5">
-        {groupId !== undefined ? (
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: groupColor(groupId) }}
-          />
-        ) : null}
-        <span className="truncate font-medium">
-          {box.label?.trim() || "Text box"}
-        </span>
-      </div>
-      <div className="font-mono text-sm text-muted-foreground">
-        {Math.round(box.h * media.height)}px tall in source
-      </div>
-      {verdict ? (
-        <div className="flex items-center gap-1.5 font-mono text-sm text-muted-foreground">
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: boxBandColor(worstArcmin!) }}
-          />
-          worst {worstArcmin!.toFixed(1)}′ · {verdict}
-        </div>
-      ) : null}
-    </div>
   );
 }
 

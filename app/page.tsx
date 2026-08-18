@@ -15,6 +15,7 @@ import { DisplayArea } from "@/components/display-area";
 import { CvdFilters, cvdFilter } from "@/components/cvd-filters";
 import { WorkbenchPanel } from "@/components/panels/workbench";
 import { DeviceInspector } from "@/components/panels/device-inspector";
+import { HoverTextCard } from "@/components/hover-text-card";
 import { MEDIA_DRAG_MIME } from "@/components/panels/media-library";
 import { DeviceDetailWindows } from "@/components/panels/device-detail-windows";
 import { ComparisonTablePanel } from "@/components/panels/comparison-table";
@@ -191,6 +192,7 @@ export default function Home() {
           <Sidebar />
           <WorkbenchPanel />
           <DeviceInspector />
+          <HoverTextCard />
           <DeviceDetailWindows />
           <ComparisonTablePanel />
           <InfoPanel />

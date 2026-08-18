@@ -8,26 +8,12 @@ import {
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  ACUITY,
-  boxMetricsOnDevice,
-  formatDistance,
-  strokesSubAcuity,
-} from "@/lib/display-math";
-import { groupColor } from "@/lib/text-groups";
+import { formatDistance } from "@/lib/display-math";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
-import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { nextZ } from "./floating-panel";
-
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
 
 /**
  * Click-to-inspect side panel (plan 3.1–3.4): selecting a device in the
@@ -49,9 +35,6 @@ export function DeviceInspector() {
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const unit = useSettingsStore((s) => s.unit);
   const deviceHover = useAnnotationStore((s) => s.deviceHover);
-  const items = useMediaStore((s) => s.items);
-  const activeId = useMediaStore((s) => s.activeId);
-  const activeItem = items.find((i) => i.id === activeId);
 
   // Session-only position: right-anchored until the first drag.
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -75,13 +58,6 @@ export function DeviceInspector() {
   const device = byId(selectedId) ?? hoverDevice;
   if (!device) return null;
   const isThis = device.id === thisDevice.id;
-  // Box details always measure on the box's OWN device, even when the
-  // card is pinned to a different one (called out in the section).
-  const hoverBox = hoverDevice ? deviceHover?.box : null;
-  const boxMetrics =
-    hoverBox && hoverDevice && activeItem
-      ? boxMetricsOnDevice(hoverBox.hFull, activeItem, hoverDevice)
-      : null;
 
   return (
     <div
@@ -191,48 +167,6 @@ export function DeviceInspector() {
         </button>
       </div>
 
-      {/* Live details for the text box hovered in a view (Taylor): what
-          this text measures ON THIS device. */}
-      {hoverBox && boxMetrics ? (
-        <div className="space-y-1 border-t border-border px-2.5 py-2">
-          <div className="flex items-center gap-1.5">
-            {hoverBox.groupId !== undefined ? (
-              <span
-                className="size-2 shrink-0 rounded-full"
-                title="Text group — size shared across the block"
-                style={{ background: groupColor(hoverBox.groupId) }}
-              />
-            ) : null}
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
-              {hoverBox.label?.trim() || "Text box"}
-            </span>
-            {hoverDevice && hoverDevice.id !== device.id ? (
-              <span
-                className="shrink-0 text-sm"
-                style={{ color: hoverDevice.color }}
-                title={`Measured on ${hoverDevice.label}, not the pinned device`}
-              >
-                on {hoverDevice.label}
-              </span>
-            ) : null}
-          </div>
-          <div className="font-mono text-sm leading-5 text-muted-foreground">
-            <div>{hoverBox.srcPx}px in source</div>
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: bandColor(boxMetrics.arcmin) }}>
-                {boxMetrics.arcmin.toFixed(1)}′
-              </span>
-              · {boxMetrics.mm.toFixed(1)}mm ·{" "}
-              {Math.round(boxMetrics.devicePx)}px here
-              {strokesSubAcuity(boxMetrics.arcmin) ? (
-                <span title="Strokes render below 1′ — detail is invisible at this distance">
-                  ⚠
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
