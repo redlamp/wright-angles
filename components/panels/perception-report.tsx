@@ -260,9 +260,10 @@ export function PerceptionReportContent() {
   };
 
   /** Selection details pin to the BOTTOM of the column — list items
-   * keep a constant height (Taylor 17:48). */
+   * keep a constant height (Taylor 17:48). All Devices shows the
+   * baseline (This Device) block there too (Taylor 2026-08-18). */
   const detailsDevice =
-    mode === "mine" ? thisDevice : mode === "device" ? pickedDevice : null;
+    mode === "device" ? pickedDevice : thisDevice;
 
   return (
       <SplitGrid

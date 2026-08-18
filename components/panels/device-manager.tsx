@@ -897,14 +897,14 @@ export function DeviceManagerContent() {
           opens from here now, not the rail). */}
       <div className="shrink-0 space-y-1.5 border-t border-border p-2.5">
         <AddDeviceMenu />
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
           onClick={() => openPanel("table")}
         >
-          <CornerDownRightIcon className="size-3.5" />
-          Comparison Table
-        </button>
+          <CornerDownRightIcon className="size-4" /> Comparison Table
+        </Button>
       </div>
       </div>
       }
