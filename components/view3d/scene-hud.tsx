@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2Icon, Unlink2Icon } from "lucide-react";
+import { DownloadIcon, Link2Icon, Unlink2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CvdChip } from "@/components/cvd-filters";
 import { INPUT_TYPES, SCENARIOS, useViewerStore } from "@/stores/viewer-store";
@@ -33,12 +33,14 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
         <CvdChip className="panel-frame rounded-md border border-border font-mono text-sm text-muted-foreground" />
         {onExport ? (
+          // Same treatment and height as the color-vision chip beside it.
           <button
             type="button"
-            className="panel-frame select-none rounded-md border border-border px-2.5 py-1.5 font-mono text-sm uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+            title="Export this view as a PNG reference image"
+            className="panel-frame flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-sm text-muted-foreground transition-colors select-none hover:text-foreground"
             onClick={onExport}
           >
-            Export view
+            <DownloadIcon className="size-3" /> export view
           </button>
         ) : null}
       </div>
