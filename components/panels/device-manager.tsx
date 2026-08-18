@@ -220,14 +220,22 @@ export function DeviceEditor({
   const sizeInches = sizeUnit === "in";
   // Show the conventional name for the ratio (within tolerance — phone
   // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
-  // itself, never raw pixel pairs.
+  // itself, never raw pixel pairs. A 90°-pivoted panel reads as the
+  // reversed convention: 9:16, not 0.56:1 (Taylor 2026-08-19).
   const ratio = device.aspect.w / device.aspect.h;
   const aspectMatch = COMMON_ASPECTS.find(
     (a) => Math.abs(a.w / a.h - ratio) < 0.01,
   );
+  const portraitMatch = aspectMatch
+    ? undefined
+    : COMMON_ASPECTS.find(
+        (a) => ratio > 0 && Math.abs(a.w / a.h - 1 / ratio) < 0.01,
+      );
   const aspectLabel = aspectMatch
     ? aspectMatch.label
-    : `${ratio.toFixed(2)}:1`;
+    : portraitMatch
+      ? portraitMatch.label.split(":").reverse().join(":")
+      : `${ratio.toFixed(2)}:1`;
   const scenarioLabel =
     SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
   const elevation = device.elevation?.[scenario];
