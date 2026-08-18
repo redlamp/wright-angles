@@ -71,7 +71,13 @@ function initScreenTexture(tex: Texture, crop?: MediaCrop) {
 }
 
 function useScreenTexture(tex: Texture, crop?: MediaCrop) {
-  useEffect(() => initScreenTexture(tex, crop), [tex, crop]);
+  // useMemo, NOT useEffect: effects run after paint, so a freshly
+  // loaded/created texture could render a frame (or more, on a busy
+  // main thread) with default repeat/offset — i.e. WITHOUT the
+  // U-mirror, which reads as a flipped image from the front (Taylor's
+  // "sometimes backwards" bug). Applying during render guarantees the
+  // mirror is in place before the first frame samples the texture.
+  useMemo(() => initScreenTexture(tex, crop), [tex, crop]);
 }
 
 function ImageScreens({

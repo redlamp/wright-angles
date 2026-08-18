@@ -675,37 +675,37 @@ export default function DeviceRect({
       {media && fit ? (
         curved ? (
           <group position={[0, 0, -R]}>
-            {/* Letterbox backing: double-sided, so from BEHIND the
-                device you see the panel's back — not the content
-                mirrored through it (Taylor 2026-08-19). */}
+            {/* Letterbox backing, a hair inside the outline's arc. */}
+            {/* Backing renders viewer-side only so the content's mirror
+                image stays visible from behind the device (double-sided
+                screens are intentional — Taylor). */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
                   -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
               />
-              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
             </mesh>
-            {/* Content faces the viewer side only (the U-mirrored
-                texture is correct exactly there). */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.25, R - 0.25, fit.h, 48, 1, true,
                   -fit.w / (R - 0.25) / 2, fit.w / (R - 0.25)]}
               />
-              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
             </mesh>
           </group>
         ) : (
           <>
-            {/* Backing double-sided: the rear reads as the back of a
-                display instead of mirrored content. */}
+            {/* Backing renders viewer-side only so the content's mirror
+                image stays visible from behind the device (double-sided
+                screens are intentional — Taylor). */}
             <mesh position={[0, 0, -0.15]}>
               <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color={backing} side={DoubleSide} toneMapped={false} />
+              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
             </mesh>
             <mesh position={[0, 0, -0.3]}>
               <planeGeometry args={[fit.w, fit.h]} />
-              <meshBasicMaterial map={media.texture} side={BackSide} toneMapped={false} />
+              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
             </mesh>
           </>
         )
