@@ -942,15 +942,25 @@ export function DisplayArea() {
 
   /**
    * Ignore pan/select gestures that start on interactive elements.
-   * Select/menu triggers (base-ui) don't render as <button>, so the
-   * whole toolbar opts out via data-ui-chrome — otherwise the canvas
-   * captures the pointer, eats the popup's release, and a stationary
-   * click "selects a device" instead of the menu item (Taylor bug).
+   * Two traps here (both shipped as "clicking a button selects a
+   * device"): base-ui select/menu triggers don't render as <button>,
+   * so the toolbar opts out wholesale via data-ui-chrome; and clicks
+   * landing on lucide SVG icons have an SVGElement target, which is
+   * NOT an HTMLElement — the guard must accept any Element, or every
+   * icon-only button falls through to the canvas and gets its pointer
+   * captured out from under it.
    */
-  const onInteractive = (t: EventTarget | null) =>
-    t instanceof HTMLElement &&
-    t.closest('button,[role="button"],[role="combobox"],[data-ui-chrome]') !==
-      null;
+  const onInteractive = (t: EventTarget | null) => {
+    if (!(t instanceof Element)) return true;
+    // Portaled popups (base-ui select/menu) bubble through the REACT
+    // tree while their DOM target lives under document.body — anything
+    // whose DOM position is outside this container is popup UI.
+    if (ref.current && !ref.current.contains(t)) return true;
+    return (
+      t.closest('button,[role="button"],[role="combobox"],[data-ui-chrome]') !==
+      null
+    );
+  };
 
   return (
     <div

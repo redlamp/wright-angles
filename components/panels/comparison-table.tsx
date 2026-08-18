@@ -167,7 +167,6 @@ export function ComparisonTablePanel() {
       id="table"
       title="Comparison Table"
       icon={Table2Icon}
-      defaultPosition={{ x: 420, y: 380 }}
       width={620}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-auto p-2.5">

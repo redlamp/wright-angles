@@ -9,7 +9,6 @@ export function InfoPanel() {
       id="info"
       title="About Arc Minutes"
       icon={InfoIcon}
-      defaultPosition={{ x: 420, y: 360 }}
       width={320}
     >
       <div className="space-y-2 p-3 text-base leading-5 text-muted-foreground">

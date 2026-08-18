@@ -851,7 +851,8 @@ export function DeviceManagerContent() {
   return (
     <SplitGrid
       left={
-      <div className="min-h-0 overflow-x-clip overflow-y-scroll">
+      <div className="flex min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-x-clip overflow-y-scroll">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
@@ -890,18 +891,21 @@ export function DeviceManagerContent() {
             />
           ))}
         </div>
-        <div className="space-y-1.5 p-2.5">
-          <AddDeviceMenu />
-          {/* The comparison table opens from here now, not the rail. */}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"
-            onClick={() => openPanel("table")}
-          >
-            <CornerDownRightIcon className="size-3.5" />
-            Comparison Table
-          </button>
-        </div>
+      </div>
+      {/* Pinned to the bottom of the column, like the report's spec
+          strip: add-device plus the comparison-table link (which
+          opens from here now, not the rail). */}
+      <div className="shrink-0 space-y-1.5 border-t border-border p-2.5">
+        <AddDeviceMenu />
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"
+          onClick={() => openPanel("table")}
+        >
+          <CornerDownRightIcon className="size-3.5" />
+          Comparison Table
+        </button>
+      </div>
       </div>
       }
       right={<EditorColumn />}
