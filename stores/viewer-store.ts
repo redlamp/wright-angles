@@ -79,7 +79,8 @@ interface ViewerState {
 export const useViewerStore = create<ViewerState>()(
   persist(
     (set) => ({
-      scenario: "desk",
+      // Defaults per Taylor 2026-08-19: couch, handheld, unlinked.
+      scenario: "couch",
       inputType: "handheld",
       linkInput: false,
       heightCm: 175,

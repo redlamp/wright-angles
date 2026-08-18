@@ -70,11 +70,13 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
+      // Nothing opens by default: a first visit leads with the
+      // calibration prompt, not a panel (Taylor 2026-08-19).
       openPanels: {
         devices: false,
         media: false,
         report: false,
-        workbench: true,
+        workbench: false,
         table: false,
         info: false,
         settings: false,

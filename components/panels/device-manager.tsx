@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  ArrowLeftRightIcon,
   CopyIcon,
   CornerDownRightIcon,
   EllipsisVerticalIcon,
@@ -10,6 +9,7 @@ import {
   EyeOffIcon,
   PinIcon,
   PlusIcon,
+  ProportionsIcon,
   RotateCwSquareIcon,
   RulerDimensionLineIcon,
   Trash2Icon,
@@ -92,11 +92,11 @@ function DeviceRowReadout({ device }: { device: Device }) {
   return (
     <span className="flex items-center justify-end gap-3 font-mono text-sm text-muted-foreground">
       <span className="flex items-center gap-1" title="Viewing distance">
-        <ArrowLeftRightIcon className="size-3.5" />
+        <RulerDimensionLineIcon className="size-3.5" />
         {formatDistance(device.distanceCm, unit)}
       </span>
       <span className="flex items-center gap-1" title="Display size (diagonal)">
-        <RulerDimensionLineIcon className="size-3.5" />
+        <ProportionsIcon className="size-3.5" />
         {size}
       </span>
     </span>
