@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   CornerDownRightIcon,
   EyeIcon,
@@ -41,9 +41,12 @@ export function DeviceInspector() {
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   // A fresh selection opens (or re-targets) the card — surface it.
-  useEffect(() => {
+  // Render-time adjustment; an effect would lint as cascading setState.
+  const [prevSelectedId, setPrevSelectedId] = useState(selectedId);
+  if (selectedId !== prevSelectedId) {
+    setPrevSelectedId(selectedId);
     if (selectedId) setZ(nextZ());
-  }, [selectedId]);
+  }
 
   const device =
     selectedId === thisDevice.id

@@ -140,10 +140,13 @@ export function FloatingPanel({
 
   // Opening a panel raises it above everything else — a panel opened
   // FROM another panel (table from the Device Manager) must land on
-  // top, not under the panel that launched it.
-  useEffect(() => {
+  // top, not under the panel that launched it. Render-time adjustment
+  // (not an effect): the open frame already paints with the new z.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) setZ(nextZ());
-  }, [open]);
+  }
 
   const onHeaderPointerDown = useCallback(
     (e: React.PointerEvent) => {
