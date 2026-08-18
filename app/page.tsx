@@ -55,6 +55,12 @@ export default function Home() {
   // prop at mount, so clearing never affects a live scene).
   const [instantEntry, setInstantEntry] = useState(viewMode === "3d");
   if (!show3d && instantEntry) setInstantEntry(false);
+  // Booting straight into 3D: keep the 2D layer hidden until the first
+  // return to 2D — otherwise it paints beneath before the canvas's
+  // first frame and the scene "snaps" over it. Revealed the moment the
+  // view flips to 2D, which is before the exit crossfade needs it.
+  const [twoDRevealed, setTwoDRevealed] = useState(viewMode !== "3d");
+  if (viewMode === "2d" && !twoDRevealed) setTwoDRevealed(true);
   const [exiting3d, setExiting3d] = useState(false);
   const [prevMode, setPrevMode] = useState(viewMode);
   const handoffTimer = useRef<number | null>(null);
@@ -163,7 +169,12 @@ export default function Home() {
             {/* `isolate` contains the 2D view's internal z-indexes (rect
                 stack, toolbar z-40) in their own stacking context, so the
                 later canvas sibling paints over ALL of it in 3D mode. */}
-            <div className="absolute inset-0 isolate">
+            <div
+              className={cn(
+                "absolute inset-0 isolate",
+                !twoDRevealed && "invisible",
+              )}
+            >
               <DisplayArea />
             </div>
             {show3d ? (
