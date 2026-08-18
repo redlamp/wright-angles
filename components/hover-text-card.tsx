@@ -59,28 +59,39 @@ export function HoverTextCard() {
       ? groupColor(box.groupId)
       : band;
   const phys =
-    unit === "in" ? `${(m.mm / 25.4).toFixed(2)}″` : `${m.mm.toFixed(1)}mm`;
+    unit === "in" ? `${(m.mm / 25.4).toFixed(2)}″` : `${m.mm.toFixed(1)} mm`;
 
-  // Pin the card OUTSIDE the box bounds (below, flipping above when
-  // there's no room) so it never covers the text it describes; stable
-  // per hover instead of chasing the cursor. Content-sized, so anchor
-  // horizontally to whichever box edge has the room.
+  // Placement (Taylor 2026-08-18): beside the DISPLAY when a side of
+  // it has room (the card sits off the screen space, so the pointer
+  // can run up and down the boxes unobstructed), else beside the BOX.
+  // Side = toward the screen edge the box is closest to; vertically the
+  // card tracks the box's top. Content-sized, so left placements
+  // anchor `right:` and grow leftward — no width estimate needed.
   const b = box.bounds;
-  const below = b.bottom + 10 + 120 <= window.innerHeight;
-  const anchorRight = (b.left + b.right) / 2 > window.innerWidth / 2;
+  const s = box.screen;
+  const EST_W = 260;
+  const vw = window.innerWidth;
+  const preferLeft = s
+    ? (b.left + b.right) / 2 < (s.left + s.right) / 2
+    : (b.left + b.right) / 2 > vw / 2;
+  let xStyle: React.CSSProperties;
+  if (s && (s.left - 16 >= EST_W || vw - s.right - 16 >= EST_W)) {
+    const useLeft = preferLeft ? s.left - 16 >= EST_W : vw - s.right - 16 < EST_W;
+    xStyle = useLeft
+      ? { right: vw - s.left + 12 }
+      : { left: s.right + 12 };
+  } else {
+    const useLeft = preferLeft ? b.left - 16 >= EST_W : vw - b.right - 16 < EST_W;
+    xStyle = useLeft
+      ? { right: vw - b.left + 12 }
+      : { left: b.right + 12 };
+  }
+  const top = Math.min(Math.max(8, b.top - 2), window.innerHeight - 130);
 
   return (
     <div
       className="panel-frame pointer-events-none fixed z-[260] rounded-md border px-2.5 py-1.5 whitespace-nowrap"
-      style={{
-        borderColor,
-        ...(below
-          ? { top: b.bottom + 10 }
-          : { top: b.top - 10, transform: "translateY(-100%)" }),
-        ...(anchorRight
-          ? { right: Math.max(8, window.innerWidth - b.right) }
-          : { left: Math.max(8, b.left) }),
-      }}
+      style={{ borderColor, top, ...xStyle }}
     >
       <div className="text-sm font-medium">
         {box.label?.trim() || "Text box"}
@@ -91,7 +102,7 @@ export function HoverTextCard() {
           {formatDistance(device.distanceCm, unit)}
         </div>
         <div>
-          {box.srcPx}px (on source), {Math.round(m.devicePx)}px (on display)
+          {box.srcPx} px (on source), {Math.round(m.devicePx)} px (on display)
         </div>
         <div className="flex items-center gap-1.5">
           <span

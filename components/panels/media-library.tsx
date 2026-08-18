@@ -947,7 +947,7 @@ function ScanResults({
                   : undefined
               }
             >
-              {shownPx}px · {Math.round(line.confidence)}%
+              {shownPx} px · {Math.round(line.confidence)}%
             </span>
             {showContrast ? (
               <ContrastBadge est={contrastMap.get(line.id)} />
@@ -1144,7 +1144,7 @@ function TextDetectionSection({
               ? "No text found."
               : `${scan.lines.length} text line${
                   scan.lines.length === 1 ? "" : "s"
-                } → boxes · median ${Math.round(scan.medianPx)}px tall`}
+                } → boxes · median ${Math.round(scan.medianPx)} px tall`}
           </p>
         ) : (
           <span className="flex-1" />
@@ -1300,7 +1300,7 @@ function DetailCard({ item }: { item: MediaItem }) {
           ? kf.lines
             ? `Keyframe ${fmtKfTime(kf.timeSec)} · ${kf.lines.length} line${
                 kf.lines.length === 1 ? "" : "s"
-              } · median ${Math.round(kf.medianPx ?? 0)}px — shown until the next marker`
+              } · median ${Math.round(kf.medianPx ?? 0)} px — shown until the next marker`
             : `Keyframe ${fmtKfTime(kf.timeSec)} — not scanned yet`
           : "Playhead is before the first keyframe."
       : null);

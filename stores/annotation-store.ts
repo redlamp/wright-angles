@@ -14,8 +14,14 @@ export interface HoverBox {
   /** Full-image normalized measure height, for boxMetricsOnDevice. */
   hFull: number;
   groupId?: number;
-  /** Screen bounds (client px) — the card positions OUTSIDE these. */
+  /** Box bounds (client px) — the card positions OUTSIDE these. */
   bounds: { left: number; top: number; right: number; bottom: number };
+  /**
+   * The owning DISPLAY's bounds (client px). When a side of it has
+   * room, the card sits fully off the screen space so the pointer can
+   * travel the screen unobstructed (Taylor 2026-08-18).
+   */
+  screen?: { left: number; top: number; right: number; bottom: number };
 }
 
 export interface DeviceHover {

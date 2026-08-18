@@ -43,6 +43,7 @@ function projectBounds(
   e: ThreeEvent<PointerEvent>,
   w: number,
   h: number,
+  object: Object3D = e.object,
 ): { left: number; top: number; right: number; bottom: number } {
   const canvas = e.nativeEvent.target as HTMLElement;
   const r = canvas.getBoundingClientRect();
@@ -58,7 +59,7 @@ function projectBounds(
   ]) {
     _projCorner
       .set(cx, cy, 0)
-      .applyMatrix4(e.object.matrixWorld)
+      .applyMatrix4(object.matrixWorld)
       .project(e.camera);
     const x = r.left + ((_projCorner.x + 1) / 2) * r.width;
     const y = r.top + ((1 - _projCorner.y) / 2) * r.height;
@@ -781,6 +782,16 @@ export default function DeviceRect({
                           cb.rect.w * fit.w,
                           cb.rect.h * fit.h,
                         ),
+                        // The panel's own footprint, so the card can
+                        // sit fully off the screen space.
+                        screen: rectRef.current
+                          ? projectBounds(
+                              e,
+                              widthCm,
+                              heightCm,
+                              rectRef.current,
+                            )
+                          : undefined,
                       },
                     });
                   }}

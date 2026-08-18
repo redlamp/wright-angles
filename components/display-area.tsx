@@ -394,7 +394,7 @@ function PixelLoupe({
         className="block"
       />
       <div className="px-1.5 py-0.5 font-mono text-sm leading-4.5 text-white/70">
-        {Math.floor(sx)}, {Math.floor(sy)} px · 1px ≈{" "}
+        {Math.floor(sx)}, {Math.floor(sy)} px · 1 px ≈{" "}
         {arcminPerPx.toFixed(2)}′
       </div>
     </div>
@@ -486,6 +486,7 @@ function BoxLayer({
             }
             onPointerEnter={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
+              const s = e.currentTarget.parentElement?.getBoundingClientRect();
               setDeviceHover({
                 deviceId,
                 box: {
@@ -500,6 +501,14 @@ function BoxLayer({
                     right: r.right,
                     bottom: r.bottom,
                   },
+                  screen: s
+                    ? {
+                        left: s.left,
+                        top: s.top,
+                        right: s.right,
+                        bottom: s.bottom,
+                      }
+                    : undefined,
                 },
               });
             }}

@@ -165,7 +165,7 @@ function AngleReadout({ device }: { device: Device }) {
       </div>
       {showBands ? (
         <div className="border-t border-border pt-1">
-          text: ≥{pxFor(16)}px min (16′) · ≥{pxFor(20)}px comfy (20′)
+          text: ≥{pxFor(16)} px min (16′) · ≥{pxFor(20)} px comfy (20′)
         </div>
       ) : null}
     </div>

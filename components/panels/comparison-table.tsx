@@ -112,9 +112,9 @@ export function ComparisonTablePanel() {
   };
 
   const fmtSize = (v: number) =>
-    sizeUnit === "in" ? `${v.toFixed(1)}″` : `${Math.round(v * CM_PER_IN)}cm`;
+    sizeUnit === "in" ? `${v.toFixed(1)}″` : `${Math.round(v * CM_PER_IN)} cm`;
   const fmtDist = (cm: number) =>
-    unit === "in" ? `${(cm / CM_PER_IN).toFixed(1)}″` : `${Math.round(cm)}cm`;
+    unit === "in" ? `${(cm / CM_PER_IN).toFixed(1)}″` : `${Math.round(cm)} cm`;
 
   const exportCsv = () => {
     const header = [

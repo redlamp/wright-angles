@@ -448,7 +448,7 @@ export function PerceptionReportContent() {
                     </span>
                     <span className="shrink-0 font-mono text-sm text-muted-foreground">
                       {e.kfTime !== null ? `@ ${fmtKfTime(e.kfTime)} · ` : ""}
-                      {e.srcH}px
+                      {e.srcH} px
                     </span>
                     {e.removable && activeItem ? (
                       <button
@@ -476,7 +476,7 @@ export function PerceptionReportContent() {
                         <span
                           key={d.id}
                           className="flex items-center gap-1.5 font-mono text-sm"
-                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)}mm tall · ${Math.round(m.devicePx)}px`}
+                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px`}
                         >
                           <span
                             className="inline-block size-2 rounded-full"
