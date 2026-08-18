@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon, LayersIcon, PencilRulerIcon } from "lucide-react";
+import {
+  AlignCenterVerticalIcon,
+  DownloadIcon,
+  ImageIcon,
+  LayersIcon,
+  PencilRulerIcon,
+  PictureInPicture2Icon,
+  WallpaperIcon,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -932,9 +940,17 @@ export function DisplayArea() {
     return hit;
   };
 
-  /** Ignore pan/select gestures that start on interactive elements. */
+  /**
+   * Ignore pan/select gestures that start on interactive elements.
+   * Select/menu triggers (base-ui) don't render as <button>, so the
+   * whole toolbar opts out via data-ui-chrome — otherwise the canvas
+   * captures the pointer, eats the popup's release, and a stationary
+   * click "selects a device" instead of the menu item (Taylor bug).
+   */
   const onInteractive = (t: EventTarget | null) =>
-    t instanceof HTMLElement && t.closest('button,[role="button"]') !== null;
+    t instanceof HTMLElement &&
+    t.closest('button,[role="button"],[role="combobox"],[data-ui-chrome]') !==
+      null;
 
   return (
     <div
@@ -1190,6 +1206,7 @@ export function DisplayArea() {
       })()}
 
 
+      {/* Readouts stay bottom-right; action buttons live top-right. */}
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
         {zoomPct !== null ? (
           <div
@@ -1210,7 +1227,14 @@ export function DisplayArea() {
                 : `${scalePct}% scale — viewport mode for 1:1`}
           </div>
         ) : null}
-        <div className="flex items-center gap-1.5">
+      </div>
+      {/* data-ui-chrome: pan/select gestures must never start here —
+          select/menu triggers aren't <button>s, so the generic guard
+          can't see them (the click-through device-select bug). */}
+      <div
+        data-ui-chrome
+        className="absolute top-2 right-2 z-40 flex items-center gap-1.5"
+      >
           {activeItem ? (
             <button
               type="button"
@@ -1240,13 +1264,17 @@ export function DisplayArea() {
                 ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
                 : "Centered in this window. Click to lock the content to your monitor's physical center instead."
             }
-            className="h-7 w-36 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
             onClick={() => {
               setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
               setPanOffset({ x: 0, y: 0 });
             }}
           >
-            {displayCenter === "screen" ? "locked · screen" : "centered · window"}
+            {displayCenter === "screen" ? (
+              <PictureInPicture2Icon className="size-3.5" />
+            ) : (
+              <AlignCenterVerticalIcon className="size-3.5" />
+            )}
           </button>
           <button
             type="button"
@@ -1255,10 +1283,14 @@ export function DisplayArea() {
                 ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
                 : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
             }
-            className="h-7 w-24 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
             onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
           >
-            {viewportActive ? "viewport" : "fit"}
+            {viewportActive ? (
+              <ImageIcon className="size-3.5" />
+            ) : (
+              <WallpaperIcon className="size-3.5" />
+            )}
           </button>
           <button
             type="button"
@@ -1268,7 +1300,6 @@ export function DisplayArea() {
           >
             <DownloadIcon className="size-3" /> export view
           </button>
-        </div>
       </div>
     </div>
   );

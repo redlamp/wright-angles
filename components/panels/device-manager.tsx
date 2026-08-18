@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   CopyIcon,
+  CornerDownRightIcon,
   EllipsisVerticalIcon,
   EyeIcon,
   EyeOffIcon,
@@ -819,6 +820,7 @@ function EditorColumn() {
 export function DeviceManagerContent() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
+  const openPanel = useUiStore((s) => s.openPanel);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const moveDevice = useDeviceStore((s) => s.moveDevice);
@@ -888,8 +890,17 @@ export function DeviceManagerContent() {
             />
           ))}
         </div>
-        <div className="p-2.5">
+        <div className="space-y-1.5 p-2.5">
           <AddDeviceMenu />
+          {/* The comparison table opens from here now, not the rail. */}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"
+            onClick={() => openPanel("table")}
+          >
+            <CornerDownRightIcon className="size-3.5" />
+            Comparison Table
+          </button>
         </div>
       </div>
       }
