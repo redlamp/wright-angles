@@ -22,6 +22,17 @@ export type DisplayMode = "viewport" | "fit";
  * ("window"). A manual pan offset applies on top of either.
  */
 export type DisplayCenter = "screen" | "window";
+/**
+ * Color-vision-deficiency simulation applied to the 2D and 3D views
+ * (Machado et al. 2009 matrices at full severity; achromatopsia is the
+ * Rec. 709 luminance). "none" = no filter.
+ */
+export type CvdMode =
+  | "none"
+  | "protanopia"
+  | "deuteranopia"
+  | "tritanopia"
+  | "achromatopsia";
 
 interface SettingsState {
   unit: LengthUnit;
@@ -36,6 +47,9 @@ interface SettingsState {
   showLegibilityBands: boolean;
   /** Onboarding completed (or explicitly skipped). */
   onboarded: boolean;
+  /** Color-vision simulation over the views (debug overlay, plan 10.5). */
+  cvdMode: CvdMode;
+  setCvdMode: (mode: CvdMode) => void;
   setUnit: (unit: LengthUnit) => void;
   setTheme: (theme: ThemeMode) => void;
   setSceneTheme: (theme: SceneTheme) => void;
@@ -55,10 +69,16 @@ export const useSettingsStore = create<SettingsState>()(
       sceneTheme: "follow",
       displayFill: "black",
       displayMode: "viewport",
-      displayCenter: "screen",
+      // Default: content centered in the window; "screen" (locked to the
+      // physical display's center) is the opt-in, remembered choice.
+      displayCenter: "window",
       sizeUnit: "in",
       showLegibilityBands: true,
       onboarded: false,
+      // Simulation is a session tool, but remembering it across reloads
+      // matches every other view setting here.
+      cvdMode: "none",
+      setCvdMode: (cvdMode) => set({ cvdMode }),
       setUnit: (unit) => set({ unit }),
       setTheme: (theme) => set({ theme }),
       setSceneTheme: (sceneTheme) => set({ sceneTheme }),

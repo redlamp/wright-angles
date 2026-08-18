@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   aspectFromResolution,
   deviceAngles,
+  distToSlider,
+  formatDistance,
   imageScaleOnHost,
   physicalSizeCm,
   pixelsToArcmin,
@@ -9,6 +11,8 @@ import {
   ppi,
   simulatedSizeOnHostPx,
   sizeForArcmin,
+  sliderToDist,
+  strokesSubAcuity,
   subtenseArcmin,
 } from "./display-math";
 import type { Device } from "./types";
@@ -188,5 +192,66 @@ describe("simulation on host (the core overlay math)", () => {
       sim.heightPx / 1080,
       6,
     );
+  });
+});
+
+describe("formatDistance", () => {
+  test("cm rounds whole", () => {
+    expect(formatDistance(74.4, "cm")).toBe("74 cm");
+  });
+  test("under a foot: plain inches in half-inch steps", () => {
+    expect(formatDistance(25, "in")).toBe("10″"); // 9.84 → 10
+    expect(formatDistance(24, "in")).toBe("9.5″"); // 9.45 → 9.5
+  });
+  test("a foot and beyond read feet-and-inches", () => {
+    expect(formatDistance(36, "in")).toBe("1′ 2″");
+    expect(formatDistance(70, "in")).toBe("2′ 4″");
+    expect(formatDistance(200, "in")).toBe("6′ 7″");
+    expect(formatDistance(91.44, "in")).toBe("3′ 0″");
+  });
+  test("inch remainder carries into the foot count, never 12″", () => {
+    // 121.8cm = 47.95in → rounds to 48 → 4′ 0″, not 3′ 12″.
+    expect(formatDistance(121.8, "in")).toBe("4′ 0″");
+  });
+});
+
+describe("perceptual distance slider (log mapping)", () => {
+  test("endpoints map to the track ends", () => {
+    expect(distToSlider(10, 10, 400)).toBe(0);
+    expect(distToSlider(400, 10, 400)).toBe(1);
+    expect(sliderToDist(0, 10, 400)).toBeCloseTo(10, 9);
+    expect(sliderToDist(1, 10, 400)).toBeCloseTo(400, 9);
+  });
+
+  test("round-trips across the range", () => {
+    for (const cm of [10, 36, 70, 63.2, 150, 400]) {
+      expect(sliderToDist(distToSlider(cm, 10, 400), 10, 400)).toBeCloseTo(
+        cm,
+        6,
+      );
+    }
+  });
+
+  test("track midpoint of 10..400 is the geometric mean ≈ 63.2cm", () => {
+    // sqrt(10 · 400) = 63.246 — desk distance sits mid-track instead of
+    // being crushed into the first sixth of a linear slider.
+    expect(sliderToDist(0.5, 10, 400)).toBeCloseTo(63.246, 2);
+  });
+
+  test("out-of-range distances clamp (stepper allows up to 9999cm)", () => {
+    expect(distToSlider(5, 10, 400)).toBe(0);
+    expect(distToSlider(9999, 10, 400)).toBe(1);
+  });
+});
+
+
+describe("strokesSubAcuity", () => {
+  test("boundary sits at 7 arcmin cap height", () => {
+    expect(strokesSubAcuity(6.9)).toBe(true);
+    expect(strokesSubAcuity(7.1)).toBe(false);
+  });
+
+  test("comfortable text is safely above the limit", () => {
+    expect(strokesSubAcuity(20)).toBe(false);
   });
 });

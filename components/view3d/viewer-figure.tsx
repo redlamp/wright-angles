@@ -17,19 +17,44 @@ export const SEAT_Y: Record<Exclude<Scenario, "standing">, number> = {
 
 /**
  * Standing-desk work surface (world cm). Fixed like the seat heights —
- * near elbow height for the authored 175cm frame.
+ * just below elbow height for the authored 175cm frame: standing elbow
+ * sits at rootY 95 + SHOULDER_Y 47 − UPPER 26 = 116, minus ~4cm
+ * clearance so the top lands below the elbow (1.7).
  */
-export const STAND_DESK_TOP = 108;
+export const STAND_DESK_TOP = 112;
 
 // Lit (unlike everything else in the scene) so the capsules and boxes
 // shade and their forms read; the figure lights in scene-view exist
 // solely for this material. Smooth shading on purpose — Taylor rejected
 // the faceted look (2026-08-15): "more accurate and generic".
+// Transparent so the whole figure can fade during the 2D↔3D camera
+// flight, which passes straight through the head.
 const FIGURE_MAT = new MeshStandardMaterial({
   color: "#b6b6b6",
   roughness: 0.9,
   metalness: 0,
+  transparent: true,
 });
+
+/** Seconds for the transition fade (quicker than the camera flight). */
+const FADE_S = 0.25;
+
+/**
+ * Camera-to-head distance under which the figure hides. The 2D↔3D
+ * flight starts/ends at the eye point INSIDE the head; fading on
+ * proximity (rather than flight state) lets the figure appear the
+ * moment the camera clears the head in either direction — and also
+ * hides it if the user orbits into it.
+ */
+const HEAD_CLEAR_CM = 45;
+
+/** Module-level so the react-compiler lint permits the mutation. */
+function applyFigureOpacity(root: Group | null, opacity: number) {
+  FIGURE_MAT.opacity = opacity;
+  if (root) root.visible = opacity > 0.01;
+}
+
+const _headCenter = new Vector3();
 
 // Rig constants, authored cm relative to the pelvis center (rig root).
 // Root-local eyes sit at +69, so rootY = eyeHeight − 69·s for any pose.
@@ -125,12 +150,14 @@ function makePose(
     };
   }
   if (input === "gamepad") {
-    // Relaxed controller hold: elbows at the sides, hands together
-    // just below the sternum — the couch-gamer default.
+    // Relaxed controller hold: upper arms hanging near-vertical, so the
+    // elbow lands near root-local y≈22 (shoulder 47 − upper 26, plus a
+    // little forward drift), forearms raked ~10° above horizontal —
+    // wrist y ≈ 22 + 22·sin10° ≈ 26, reach z ≈ 22·cos10° ≈ 21 (1.6).
     return {
       ...body,
-      wrist: { x: 6, y: 42, z: 2 + 26 / s },
-      pole: { x: 0.4, y: -1, z: -0.4 },
+      wrist: { x: 7, y: 26, z: 2 + 21 / s },
+      pole: { x: 0.4, y: -1, z: -0.35 },
     };
   }
   // Mouse & keyboard: hands on the work surface for this scenario —
@@ -309,7 +336,11 @@ export default function ViewerFigure({
     prevPoseKey.current = poseKey;
   }, [target, poseKey]);
 
-  useFrame((state) => {
+  // Proximity fade; starts hidden — 3D always mounts at the head-on
+  // pose, i.e. inside the head.
+  const opacity = useRef(0);
+
+  useFrame((state, delta) => {
     const a = anim.current;
     if (a) {
       if (a.start === null) a.start = state.clock.elapsedTime;
@@ -319,6 +350,20 @@ export default function ViewerFigure({
       // Keep frames coming while tweening (demand frameloop).
       state.invalidate();
     }
+    // Head center sits at the eye contract (root-local +69, scaled).
+    const pose = cur.current;
+    _headCenter.set(0, pose.rootY + 69 * pose.scale, 0);
+    const fadeTarget =
+      state.camera.position.distanceTo(_headCenter) < HEAD_CLEAR_CM ? 0 : 1;
+    if (opacity.current !== fadeTarget) {
+      const step = Math.min(delta, 1 / 30) / FADE_S;
+      opacity.current =
+        fadeTarget > opacity.current
+          ? Math.min(fadeTarget, opacity.current + step)
+          : Math.max(fadeTarget, opacity.current - step);
+      state.invalidate();
+    }
+    applyFigureOpacity(rootRef.current, opacity.current);
     if (rootRef.current && torsoRef.current && headRef.current) {
       applyPose(cur.current, rootRef.current, torsoRef.current, headRef.current, sides.current);
     }

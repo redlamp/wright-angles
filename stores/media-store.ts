@@ -1,13 +1,20 @@
 "use client";
 
 import { create } from "zustand";
-import type { HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
+import type {
+  HighlightBox,
+  KeyframeLine,
+  MediaCrop,
+  MediaItem,
+  ScanKeyframe,
+} from "@/lib/types";
 import {
   idbClearMedia,
   idbDeleteMedia,
   idbGetAllMedia,
   idbPutMedia,
 } from "@/lib/idb";
+import { stripImageMetadata } from "@/lib/strip-metadata";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -119,10 +126,51 @@ interface MediaState {
   setReferenceHeight: (id: string, referenceHeight: number) => void;
   /** Set or clear (undefined) the item's crop window. */
   setCrop: (id: string, crop: MediaCrop | undefined) => void;
+  /**
+   * Nuke every detection artifact on the item: ALL measure boxes
+   * (including hand-drawn — stale unlabeled scan boxes are
+   * indistinguishable) and every scan keyframe.
+   */
+  /** Move an item to a library position; persists the manual order. */
+  reorderItem: (id: string, toIndex: number) => void;
+  clearDetection: (id: string) => void;
+  /** Persist (or clear) an image's one-shot scan on the item. */
+  setScan: (
+    id: string,
+    scan: { lines: KeyframeLine[]; medianPx: number } | undefined,
+  ) => void;
+  /** Replace the item's OCR keyframe list (empty/undefined clears it). */
+  setScanKeyframes: (
+    id: string,
+    scanKeyframes: ScanKeyframe[] | undefined,
+  ) => void;
   wipeAll: () => Promise<void>;
 }
 
 export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
+
+/**
+ * First-run seeding flag: a never-seeded browser with an empty library
+ * gets the gradient card so the app demonstrates itself. Deleting the
+ * card is a choice — the flag survives, so it never resurrects on
+ * reload. Wiping local data clears the flag: a wipe means "fresh
+ * visitor", seed and all.
+ */
+const SEED_KEY = "wright-angles:seeded";
+const wasSeeded = () => {
+  try {
+    return localStorage.getItem(SEED_KEY) !== null;
+  } catch {
+    return true; // no localStorage → don't keep re-seeding every load
+  }
+};
+const markSeeded = () => {
+  try {
+    localStorage.setItem(SEED_KEY, "1");
+  } catch {
+    // Session-only environment; seeding once this session is fine.
+  }
+};
 
 export const GENERATED_KINDS: { kind: GeneratedKind; label: string }[] = [
   { kind: "smpte-bars", label: "Color bars" },
@@ -227,7 +275,13 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           }
           return meta;
         })
-        .sort((a, b) => a.addedAt - b.addedAt);
+        // Manual order wins; items never reordered keep insertion order
+        // (sortIndex is a small int, addedAt an epoch — unordered items
+        // sort after every manually placed one, i.e. append).
+        .sort(
+          (a, b) =>
+            (a.sortIndex ?? a.addedAt) - (b.sortIndex ?? b.addedAt),
+        );
       set((s) => ({
         items,
         objectUrls: urls,
@@ -235,6 +289,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
         hydrated: true,
         activeId: s.activeId ?? items[0]?.id ?? null,
       }));
+      // First run: seed the gradient card as the default image.
+      if (items.length === 0 && !wasSeeded()) {
+        markSeeded();
+        await get().addGenerated("gradient");
+      }
     } catch {
       // IndexedDB unavailable (private browsing edge cases) — run
       // session-only with an empty library.
@@ -280,7 +339,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             activeId: s.activeId ?? meta.id,
           }));
         } else {
-          const { width, height } = await probeImage(file);
+          // Static images (JPEG/PNG/WebP) are re-encoded to shed
+          // EXIF/GPS metadata before they touch IndexedDB; GIFs and
+          // anything else pass through untouched. Falls back to the
+          // original bytes on any failure.
+          const blob = await stripImageMetadata(file);
+          const { width, height } = await probeImage(blob);
           const meta: MediaItem = {
             id: newId(),
             name: file.name,
@@ -291,8 +355,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             referenceHeight: height,
             addedAt: Date.now(),
           };
-          await idbPutMedia(meta.id, { meta, blob: file });
-          const url = URL.createObjectURL(file);
+          await idbPutMedia(meta.id, { meta, blob });
+          const url = URL.createObjectURL(blob);
           set((s) => ({
             items: [...s.items, meta],
             objectUrls: { ...s.objectUrls, [meta.id]: url },
@@ -422,6 +486,63 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     persistMeta(get, id);
   },
 
+  reorderItem: (id, toIndex) => {
+    set((s) => {
+      const from = s.items.findIndex((i) => i.id === id);
+      if (from < 0) return s;
+      const items = [...s.items];
+      const [moved] = items.splice(from, 1);
+      items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
+      // The array order becomes the persisted manual order.
+      return { items: items.map((i, idx) => ({ ...i, sortIndex: idx })) };
+    });
+    for (const i of get().items) persistMeta(get, i.id);
+  },
+
+  clearDetection: (id) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        const rest = { ...i };
+        delete rest.boxes;
+        delete rest.scanKeyframes;
+        delete rest.scan;
+        return rest;
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
+  setScan: (id, scan) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        if (!scan) {
+          const rest = { ...i };
+          delete rest.scan;
+          return rest;
+        }
+        return { ...i, scan };
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
+  setScanKeyframes: (id, scanKeyframes) => {
+    set((s) => ({
+      items: s.items.map((i) => {
+        if (i.id !== id) return i;
+        if (!scanKeyframes || scanKeyframes.length === 0) {
+          const rest = { ...i };
+          delete rest.scanKeyframes;
+          return rest;
+        }
+        return { ...i, scanKeyframes };
+      }),
+    }));
+    persistMeta(get, id);
+  },
+
   wipeAll: async () => {
     await idbClearMedia();
     for (const url of [
@@ -429,6 +550,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       ...Object.values(get().videoUrls),
     ]) {
       URL.revokeObjectURL(url);
+    }
+    // A wipe means "fresh visitor" — the next load seeds again.
+    try {
+      localStorage.removeItem(SEED_KEY);
+    } catch {
+      // localStorage unavailable; nothing to clear.
     }
     set({ items: [], objectUrls: {}, videoUrls: {}, activeId: null });
   },

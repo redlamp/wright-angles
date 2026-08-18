@@ -1,11 +1,27 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { PauseIcon, PlayIcon, RepeatIcon } from "lucide-react";
+import {
+  BookmarkMinusIcon,
+  BookmarkPlusIcon,
+  PauseIcon,
+  PlayIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getEngine } from "@/lib/playback-engine";
 import { cropOf } from "@/lib/media-crop";
+import {
+  addKeyframe,
+  keyframeAt,
+  nextKeyframeTime,
+  prevKeyframeTime,
+  removeKeyframe,
+} from "@/lib/scan-keyframes";
 import type { MediaItem } from "@/lib/types";
+import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { Slider } from "@/components/ui/slider";
 
@@ -168,7 +184,12 @@ const fmtTime = (t: number) => {
   return `${m}:${String(s).padStart(2, "0")}`;
 };
 
-/** Play/pause · playhead · loop, for the active video or animated GIF. */
+/**
+ * Play/pause · playhead (with OCR keyframe markers) · loop, for the
+ * active video or animated GIF. Markers are user-placed scan points
+ * (plan topic 9): amber = scanned, hollow = placed but unscanned;
+ * clicking one seeks there and pauses.
+ */
 export function TransportControls() {
   const animated = usePlaybackStore((s) => s.animated);
   const playing = usePlaybackStore((s) => s.playing);
@@ -179,10 +200,17 @@ export function TransportControls() {
   const setLoop = usePlaybackStore((s) => s.setLoop);
   const seek = usePlaybackStore((s) => s.seek);
 
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const setScanKeyframes = useMediaStore((s) => s.setScanKeyframes);
+  const item = items.find((i) => i.id === activeId) ?? null;
+  const keyframes = item?.scanKeyframes ?? [];
+  const atMarker = item ? keyframeAt(keyframes, timeSec) : null;
+
   if (!animated) return null;
 
   return (
-    <div className="panel-inset flex items-center gap-2 rounded-md px-2 py-1.5">
+    <div className="panel-inset flex items-center gap-2 rounded-md px-2 pt-1.5 pb-3">
       <button
         type="button"
         aria-label={playing ? "Pause" : "Play"}
@@ -195,17 +223,69 @@ export function TransportControls() {
           <PlayIcon className="size-4" />
         )}
       </button>
-      <Slider
-        min={0}
-        max={Math.max(0.1, durationSec ?? 0.1)}
-        step={0.05}
-        value={Math.min(timeSec, durationSec ?? timeSec)}
-        onValueChange={(v) => seek(Array.isArray(v) ? v[0] : v)}
-      />
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+      <div className="relative min-w-0 flex-1">
+        <Slider
+          min={0}
+          max={Math.max(0.1, durationSec ?? 0.1)}
+          step={0.05}
+          value={Math.min(timeSec, durationSec ?? timeSec)}
+          onValueChange={(v) => seek(Array.isArray(v) ? v[0] : v)}
+        />
+        {durationSec
+          ? keyframes.map((k) => (
+              <button
+                key={k.timeSec}
+                type="button"
+                aria-label={`OCR keyframe at ${fmtTime(k.timeSec)}`}
+                title={`OCR keyframe · ${fmtTime(k.timeSec)}${k.lines ? ` · ${k.lines.length} lines` : " · not scanned"}`}
+                className={cn(
+                  "absolute top-full size-2 -translate-x-1/2 rotate-45 cursor-pointer border border-[#f5a524] transition-transform hover:scale-150",
+                  k.lines ? "bg-[#f5a524]" : "bg-transparent",
+                )}
+                style={{ left: `${(k.timeSec / durationSec) * 100}%` }}
+                onClick={() => {
+                  setPlaying(false);
+                  seek(k.timeSec);
+                }}
+              />
+            ))
+          : null}
+      </div>
+      <span className="shrink-0 font-mono text-sm text-muted-foreground">
         {fmtTime(timeSec)}
         {durationSec ? ` / ${fmtTime(durationSec)}` : ""}
       </span>
+      {/* Prev/next OCR keyframe — button versions of the ,/. hotkeys. */}
+      {[
+        {
+          label: "Previous keyframe",
+          Icon: SkipBackIcon,
+          target: prevKeyframeTime(keyframes, timeSec),
+        },
+        {
+          label: "Next keyframe",
+          Icon: SkipForwardIcon,
+          target: nextKeyframeTime(keyframes, timeSec),
+        },
+      ].map(({ label, Icon, target }) => (
+        <button
+          key={label}
+          type="button"
+          aria-label={label}
+          title={
+            target !== null ? `${label} · ${fmtTime(target)}` : label
+          }
+          disabled={target === null}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          onClick={() => {
+            if (target === null) return;
+            setPlaying(false);
+            seek(target);
+          }}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
       <button
         type="button"
         aria-label="Loop"
@@ -220,6 +300,37 @@ export function TransportControls() {
       >
         <RepeatIcon className="size-4" />
       </button>
+      {item ? (
+        <button
+          type="button"
+          aria-label={
+            atMarker
+              ? "Remove the OCR keyframe at the playhead"
+              : "Add an OCR keyframe at the playhead"
+          }
+          title={
+            atMarker
+              ? "Remove the OCR keyframe at the playhead"
+              : "Mark this frame for text detection"
+          }
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={() => {
+            setPlaying(false);
+            setScanKeyframes(
+              item.id,
+              atMarker
+                ? removeKeyframe(keyframes, timeSec)
+                : addKeyframe(keyframes, timeSec),
+            );
+          }}
+        >
+          {atMarker ? (
+            <BookmarkMinusIcon className="size-4" />
+          ) : (
+            <BookmarkPlusIcon className="size-4" />
+          )}
+        </button>
+      ) : null}
     </div>
   );
 }

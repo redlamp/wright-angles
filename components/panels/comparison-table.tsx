@@ -11,6 +11,7 @@ import {
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
 import { Button } from "@/components/ui/button";
 
@@ -70,6 +71,8 @@ export function ComparisonTablePanel() {
   const devices = useDeviceStore((s) => s.devices);
   const unit = useSettingsStore((s) => s.unit);
   const sizeUnit = useSettingsStore((s) => s.sizeUnit);
+  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const [sortKey, setSortKey] = useState<SortKey>("distCm");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
 
@@ -109,9 +112,9 @@ export function ComparisonTablePanel() {
   };
 
   const fmtSize = (v: number) =>
-    sizeUnit === "in" ? `${v.toFixed(1)}″` : `${Math.round(v * CM_PER_IN)}cm`;
+    sizeUnit === "in" ? `${v.toFixed(1)}″` : `${Math.round(v * CM_PER_IN)} cm`;
   const fmtDist = (cm: number) =>
-    unit === "in" ? `${(cm / CM_PER_IN).toFixed(1)}″` : `${Math.round(cm)}cm`;
+    unit === "in" ? `${(cm / CM_PER_IN).toFixed(1)}″` : `${Math.round(cm)} cm`;
 
   const exportCsv = () => {
     const header = [
@@ -164,11 +167,10 @@ export function ComparisonTablePanel() {
       id="table"
       title="Comparison Table"
       icon={Table2Icon}
-      defaultPosition={{ x: 420, y: 380 }}
       width={620}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-auto p-2.5">
-        <table className="w-full border-collapse font-mono text-xs">
+        <table className="w-full border-collapse font-mono text-base">
           <thead>
             <tr className="text-left text-muted-foreground">
               {COLUMNS.map((c) => (
@@ -179,7 +181,15 @@ export function ComparisonTablePanel() {
                   onClick={() => onSort(c.key)}
                 >
                   {c.label}
-                  {sortKey === c.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
+                  {/* Constant-width slot for the sort arrow: every sortable
+                      header reserves it whether sorted or not, so column
+                      widths never shift when the arrow appears or moves. */}
+                  <span
+                    aria-hidden
+                    className="inline-block w-3.5 text-center"
+                  >
+                    {sortKey === c.key ? (sortDir === 1 ? "↑" : "↓") : ""}
+                  </span>
                 </th>
               ))}
             </tr>
@@ -189,9 +199,15 @@ export function ComparisonTablePanel() {
               <tr
                 key={r.device.id}
                 className={cn(
-                  "border-b border-border/50",
+                  "cursor-pointer border-b border-border/50 hover:bg-accent/40",
                   !r.device.visible && !r.isThis && "opacity-45",
+                  r.device.id === selectedDeviceId && "bg-accent",
                 )}
+                onClick={() =>
+                  selectDevice(
+                    r.device.id === selectedDeviceId ? null : r.device.id,
+                  )
+                }
               >
                 <td className="max-w-36 px-1.5 py-1.5">
                   <span className="flex items-center gap-1.5">
@@ -237,7 +253,7 @@ export function ComparisonTablePanel() {
           </tbody>
         </table>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             * sub-retina: under 60 PPD, individual pixels are visible.
           </span>
           <Button variant="secondary" size="sm" onClick={exportCsv}>

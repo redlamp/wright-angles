@@ -1,7 +1,8 @@
 "use client";
 
-import { Link2Icon, Unlink2Icon } from "lucide-react";
+import { DownloadIcon, Link2Icon, Unlink2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CvdChip } from "@/components/cvd-filters";
 import { INPUT_TYPES, SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { Slider } from "@/components/ui/slider";
 
@@ -26,19 +27,24 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
 
   return (
     <>
-      <div className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-[10px] tabular-nums text-muted-foreground">
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-sm tabular-nums text-muted-foreground">
         <span id={FPS_NODE_ID} /> fps
       </div>
-      {onExport ? (
-        <button
-          type="button"
-          className="panel-frame absolute right-3 top-3 z-10 select-none rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
-          onClick={onExport}
-        >
-          Export view
-        </button>
-      ) : null}
-      <div className="panel-frame absolute bottom-3 left-1/2 z-10 w-72 -translate-x-1/2 rounded-lg border border-border p-2 text-xs">
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+        <CvdChip className="panel-frame rounded-md border border-border font-mono text-sm text-muted-foreground" />
+        {onExport ? (
+          // Same treatment and height as the color-vision chip beside it.
+          <button
+            type="button"
+            title="Export this view as a PNG reference image"
+            className="panel-frame flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 font-mono text-sm text-muted-foreground transition-colors select-none hover:text-foreground"
+            onClick={onExport}
+          >
+            <DownloadIcon className="size-3" /> export view
+          </button>
+        ) : null}
+      </div>
+      <div className="panel-frame absolute bottom-3 left-1/2 z-10 w-80 -translate-x-1/2 rounded-lg border border-border p-2 text-sm">
         {/* The two option rows align by column (standing-handheld,
             couch-gamepad, desk-keyboard); the chain toggle on the right
             locks them through that pairing, Figma ratio-lock style. */}
@@ -50,7 +56,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                   key={o.id}
                   type="button"
                   className={cn(
-                    "h-full flex-1 rounded-[5px] text-[11px] transition-colors",
+                    "h-full flex-1 rounded-[5px] text-sm transition-colors",
                     o.id === scenario
                       ? "bg-foreground text-background"
                       : "text-muted-foreground hover:text-foreground",
@@ -67,7 +73,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                   key={o.id}
                   type="button"
                   className={cn(
-                    "h-full flex-1 rounded-[5px] text-[11px] transition-colors",
+                    "h-full flex-1 rounded-[5px] text-sm transition-colors",
                     o.id === inputType
                       ? "bg-foreground text-background"
                       : "text-muted-foreground hover:text-foreground",
@@ -103,7 +109,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
           </button>
         </div>
         <div className="mt-2 flex items-center gap-2 px-1 pb-0.5">
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">
             Height
           </span>
           <Slider
@@ -113,7 +119,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
             step={1}
             onValueChange={(v) => setHeightCm(Array.isArray(v) ? v[0] : v)}
           />
-          <span className="w-11 shrink-0 text-right font-mono text-[11px]">
+          <span className="w-14 shrink-0 text-right font-mono text-sm">
             {Math.round(heightCm)} cm
           </span>
         </div>

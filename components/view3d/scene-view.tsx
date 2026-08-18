@@ -19,20 +19,27 @@ import {
 } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
-import { getEngine, type GifEngine } from "@/lib/playback-engine";
+import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
-import { physicalSizeCm } from "@/lib/display-math";
-import { effectiveDims } from "@/lib/media-crop";
+import { formatDistance, physicalSizeCm } from "@/lib/display-math";
+import { boxInCrop, cropOf, effectiveDims } from "@/lib/media-crop";
+import { activeKeyframe } from "@/lib/scan-keyframes";
+import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
+import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
-import DeviceRect, { type LabelPlacement } from "./device-rect";
+import DeviceRect, {
+  type ContentBox,
+  type LabelPlacement,
+} from "./device-rect";
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
+import { useScreenViewport } from "@/components/display-area";
 import SceneHud, { FPS_NODE_ID } from "./scene-hud";
 import { SCENE_PALETTES } from "./scene-palette";
 
@@ -374,11 +381,72 @@ export default function SceneView({
   const mediaCrop = activeItem?.crop;
   const mediaDims = activeItem ? effectiveDims(activeItem) : null;
 
+  // Measure boxes + the active keyframe's detected lines, mapped into
+  // crop space once and drawn on every screen (per-device colors happen
+  // in the rect). Selection highlights follow the annotation store.
+  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
+  const scanColorMode = useAnnotationStore((s) => s.scanColorMode);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  // 3D hover is meaningless once the scene unmounts — a stale value
+  // would pin the inspector open (and at full alpha) back in 2D.
+  useEffect(
+    () => () => useAnnotationStore.getState().setDeviceHover(null),
+    [],
+  );
+  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
+  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
+  // Plain computation (no manual memo): it's a handful of array ops and
+  // the demand frameloop only renders on real changes anyway — and the
+  // react-compiler can memoize it itself where profitable.
+  const contentBoxes: ContentBox[] = [];
+  if (activeItem && showTextBoxes) {
+    const crop = cropOf(activeItem);
+    const kf =
+      animatedActive && activeItem.scanKeyframes
+        ? activeKeyframe(activeItem.scanKeyframes, timeSec)
+        : null;
+    // Group ids come from the persisted scan / keyframe lines so the
+    // global Groups color mode carries into the 3D outlines.
+    const groupById = new Map<string, number>();
+    for (const l of activeItem.scan?.lines ?? [])
+      if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
+    const entries = [
+      ...(activeItem.boxes ?? []).map((b) => ({
+        ...b,
+        hNorm: b.h,
+        text: b.label,
+      })),
+      ...(kf?.lines ?? []).map((l) => {
+        if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
+        return {
+          id: l.id,
+          ...l.box,
+          hNorm: l.sizePx ? l.sizePx / activeItem.height : l.box.h,
+          text: l.text,
+        };
+      }),
+    ];
+    for (const e of entries) {
+      const rect = boxInCrop(e, crop);
+      if (!rect) continue;
+      contentBoxes.push({
+        id: e.id,
+        rect,
+        hMeasure: e.hNorm / crop.h,
+        groupId: groupById.get(e.id),
+        label: e.text,
+        srcPx: Math.round(e.hNorm * activeItem.height),
+        hFull: e.hNorm,
+      });
+    }
+  }
+
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
   const displayMode = useSettingsStore((s) => s.displayMode);
   const displayFill = useSettingsStore((s) => s.displayFill);
+  const unit = useSettingsStore((s) => s.unit);
 
   const labelPlacements = useMemo(
     () => computeLabelPlacements(visible, scenario, eyeH),
@@ -400,13 +468,48 @@ export default function SceneView({
     () => headOnFovDeg(thisDevice, displayMode),
     [thisDevice, displayMode],
   );
+  // The flight lands on WHATEVER 2D's framing is (Taylor 2026-08-17):
+  // replicate the 2D content-center offset from the window center —
+  // pan plus, in screen-locked viewport mode, the monitor-center
+  // anchor — and shift the head-on camera laterally by it, converted
+  // to cm at This Device's plane. (Camera +x shows content further
+  // right, +y further down, matching client-px axes.)
+  const panOffset = useUiStore((s) => s.panOffset);
+  const displayCenter = useSettingsStore((s) => s.displayCenter);
+  const vp = useScreenViewport();
+  let headOnX = 0;
+  let headOnY = 0;
+  if (typeof window !== "undefined") {
+    const res = thisDevice.resolution;
+    const viewportActive = displayMode === "viewport" && vp !== null;
+    let dxPx = panOffset.x;
+    let dyPx = panOffset.y;
+    if (viewportActive && vp && displayCenter === "screen") {
+      dxPx += vp.screenW / 2 - vp.clientX - window.innerWidth / 2;
+      dyPx += vp.screenH / 2 - vp.clientY - window.innerHeight / 2;
+    }
+    const k =
+      viewportActive && vp
+        ? vp.screenW / res.w
+        : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+    if (k > 0) {
+      const cmPerCss =
+        physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect).heightCm /
+        res.h /
+        k;
+      headOnX = dxPx * cmPerCss;
+      headOnY = dyPx * cmPerCss;
+    }
+  }
   const headOnPose: CameraPose = {
-    position: [0, eyeH, 0],
-    target: [0, eyeH, farZ],
+    position: [headOnX, eyeH + headOnY, 0],
+    target: [headOnX, eyeH + headOnY, farZ],
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // App-wide selection (shared with the comparison table and 2D view).
+  const selectedId = useUiStore((s) => s.selectedDeviceId);
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const [nodeDragging, setNodeDragging] = useState(false);
   // Live (tweened) eye height shared by the sight line and every rect's
   // projection origin, so they glide with the figure on stance changes.
@@ -418,6 +521,8 @@ export default function SceneView({
 
   // The GL canvas element, captured in onCreated for the export action.
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
+  /** Press point of the current gesture — click-vs-camera-drag test. */
+  const pointerDownAt = useRef<{ x: number; y: number } | null>(null);
   const exportPng = () => {
     const canvas = canvasElRef.current;
     if (!canvas) return;
@@ -436,12 +541,14 @@ export default function SceneView({
 
   // The media texture is loaded ONCE here and shared by every rect.
   const rects = (tex: Texture | null) =>
-    visible.map((d) => (
+    visible.map((d, i) => (
       <DeviceRect
         key={d.id}
         device={d}
+        zBias={i * 0.04}
         centerY={d.elevation?.[scenario] ?? eyeH}
         poseKey={scenario}
+        distLabel={formatDistance(d.distanceCm, unit)}
         palette={palette}
         displayFill={displayFill}
         labels={labelPlacements.get(d.id)}
@@ -449,15 +556,16 @@ export default function SceneView({
         projectTo={farZ + 5}
         showProjection={showProjection}
         selected={selectedId === d.id}
-        onSelect={() =>
-          setSelectedId((cur) => (cur === d.id ? null : d.id))
-        }
+        onSelect={() => selectDevice(selectedId === d.id ? null : d.id)}
         onDistanceDrag={(distanceCm) =>
           d.id === thisDevice.id
             ? updateThisDevice({ distanceCm })
             : updateDevice(d.id, { distanceCm })
         }
         onDragState={setNodeDragging}
+        contentBoxes={contentBoxes}
+        selectedBoxId={selectedBoxId}
+        boxColorMode={scanColorMode}
         media={
           tex && mediaDims
             ? { texture: tex, width: mediaDims.width, height: mediaDims.height }
@@ -467,7 +575,15 @@ export default function SceneView({
     ));
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      // Track the press point so empty-space "clicks" that were really
+      // camera drags don't clear the selection (same 4px rule as the
+      // on-device select in DeviceRect).
+      onPointerDownCapture={(e) => {
+        pointerDownAt.current = { x: e.clientX, y: e.clientY };
+      }}
+    >
       <Canvas
         // Render only when something changed: tweens/camera/video/GIF all
         // self-invalidate, and R3F invalidates on React scene commits.
@@ -475,7 +591,11 @@ export default function SceneView({
         // continuously — the single biggest GPU cost in the app.
         frameloop="demand"
         dpr={[1, 1.5]}
-        onPointerMissed={() => setSelectedId(null)}
+        onPointerMissed={(e) => {
+          const d = pointerDownAt.current;
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+          selectDevice(null);
+        }}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.
         gl={{ preserveDrawingBuffer: true }}
@@ -504,6 +624,8 @@ export default function SceneView({
             lights exist purely to shade the figure's forms. */}
         <hemisphereLight args={["#ffffff", "#3a3a44", 1.15]} />
         <directionalLight position={[-140, 220, -90]} intensity={1.3} />
+        {/* The figure fades itself on camera proximity to the head, so
+            it appears the moment the flight clears the headspace. */}
         <ViewerFigure
           scenario={scenario}
           inputType={inputType}

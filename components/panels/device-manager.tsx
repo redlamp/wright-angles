@@ -3,14 +3,14 @@
 import { useMemo, useRef, useState } from "react";
 import {
   CopyIcon,
+  CornerDownRightIcon,
   EllipsisVerticalIcon,
   EyeIcon,
   EyeOffIcon,
-  MonitorIcon,
   PinIcon,
   PlusIcon,
+  RotateCwSquareIcon,
   Trash2Icon,
-  XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
@@ -24,12 +24,13 @@ import {
   CM_PER_IN,
   aspectFromResolution,
   deviceAngles,
+  distToSlider,
+  sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
-import { FloatingPanel } from "./floating-panel";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SplitGrid } from "./split-grid";
 
 const DIST_MIN_CM = 10;
 const DIST_MAX_CM = 9999;
@@ -65,7 +67,7 @@ const ROW_GRID =
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
     </span>
   );
@@ -122,7 +124,7 @@ function UnitFlip({
           key={u}
           type="button"
           className={cn(
-            "rounded px-1.5 py-0.5 text-xs transition-colors",
+            "rounded px-1.5 py-0.5 text-sm transition-colors",
             u === value
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:text-foreground",
@@ -143,7 +145,7 @@ function AngleReadout({ device }: { device: Device }) {
   const pxFor = (arcmin: number) =>
     a.arcminPerPx > 0 ? Math.ceil(arcmin / a.arcminPerPx) : 0;
   return (
-    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-xs leading-5 text-muted-foreground">
+    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-sm leading-5 text-muted-foreground">
       <div>
         {a.horizontalArcmin.toFixed(0)}′ × {a.verticalArcmin.toFixed(0)}′ (
         {a.horizontalDeg.toFixed(1)}° × {a.verticalDeg.toFixed(1)}°)
@@ -163,7 +165,7 @@ function AngleReadout({ device }: { device: Device }) {
       </div>
       {showBands ? (
         <div className="border-t border-border pt-1">
-          text: ≥{pxFor(16)}px min (16′) · ≥{pxFor(20)}px comfy (20′)
+          text: ≥{pxFor(16)} px min (16′) · ≥{pxFor(20)} px comfy (20′)
         </div>
       ) : null}
     </div>
@@ -186,7 +188,16 @@ export function DeviceEditor({
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
   const sizeInches = sizeUnit === "in";
-  const aspectLabel = `${device.aspect.w}:${device.aspect.h}`;
+  // Show the conventional name for the ratio (within tolerance — phone
+  // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
+  // itself, never raw pixel pairs.
+  const ratio = device.aspect.w / device.aspect.h;
+  const aspectMatch = COMMON_ASPECTS.find(
+    (a) => Math.abs(a.w / a.h - ratio) < 0.01,
+  );
+  const aspectLabel = aspectMatch
+    ? aspectMatch.label
+    : `${ratio.toFixed(2)}:1`;
   const scenarioLabel =
     SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
   const elevation = device.elevation?.[scenario];
@@ -198,7 +209,8 @@ export function DeviceEditor({
 
   return (
     <div className="space-y-3 px-2.5 pt-2 pb-3">
-      <div className="grid grid-cols-2 gap-2">
+      {/* Name and Label stack on their own lines (Taylor 2026-08-17). */}
+      <div className="grid grid-cols-1 gap-2">
         <label className="min-w-0 space-y-1">
           <Microlabel>Device name</Microlabel>
           <Input
@@ -264,13 +276,28 @@ export function DeviceEditor({
           <DistanceUnitFlip />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
+          {/* Log-spaced track: handheld/desk distances get as much
+              travel as TV/projector ones. Distances past the slider
+              max (stepper goes to 9999) pin the thumb at 1. */}
           <Slider
-            min={DIST_MIN_CM}
-            max={DIST_SLIDER_MAX_CM}
-            step={1}
-            value={Math.min(device.distanceCm, DIST_SLIDER_MAX_CM)}
+            min={0}
+            max={1}
+            step={0.001}
+            value={distToSlider(
+              device.distanceCm,
+              DIST_MIN_CM,
+              DIST_SLIDER_MAX_CM,
+            )}
             onValueChange={(v) =>
-              onPatch({ distanceCm: Array.isArray(v) ? v[0] : v })
+              onPatch({
+                distanceCm: Math.round(
+                  sliderToDist(
+                    Array.isArray(v) ? v[0] : v,
+                    DIST_MIN_CM,
+                    DIST_SLIDER_MAX_CM,
+                  ),
+                ),
+              })
             }
           />
           <DistanceStepper
@@ -312,7 +339,7 @@ export function DeviceEditor({
               onPatch({ resolution: { ...device.resolution, w } });
             }}
           />
-          <span className="text-sm text-muted-foreground">×</span>
+          <span className="text-base text-muted-foreground">×</span>
           <Input
             className="min-w-0 flex-1 text-right font-mono"
             type="number"
@@ -324,6 +351,24 @@ export function DeviceEditor({
               onPatch({ resolution: { ...device.resolution, h } });
             }}
           />
+          <Button
+            variant="ghost"
+            size="xs"
+            className="shrink-0"
+            title="Rotate 90° — swap the panel orientation"
+            aria-label="Rotate the display 90 degrees"
+            onClick={() =>
+              onPatch({
+                resolution: {
+                  w: device.resolution.h,
+                  h: device.resolution.w,
+                },
+                aspect: { w: device.aspect.h, h: device.aspect.w },
+              })
+            }
+          >
+            <RotateCwSquareIcon className="size-4" />
+          </Button>
         </div>
         {COMMON_RESOLUTIONS[aspectLabel] ? (
           <div className="flex flex-wrap gap-1 pt-0.5">
@@ -332,7 +377,7 @@ export function DeviceEditor({
                 key={`${r.w}x${r.h}`}
                 type="button"
                 className={cn(
-                  "rounded-md px-2 py-1 font-mono text-xs transition-colors",
+                  "rounded-md px-2 py-1 font-mono text-sm transition-colors",
                   r.w === device.resolution.w && r.h === device.resolution.h
                     ? "bg-foreground text-background"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -376,7 +421,7 @@ export function DeviceEditor({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Microlabel>Screen height · {scenarioLabel.toLowerCase()}</Microlabel>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
             Eye level
             <Switch
               checked={elevation === undefined}
@@ -435,7 +480,7 @@ export function DeviceEditor({
       </div>
 
       {device.deviceName && HANDHELD_BODIES[device.deviceName] ? (
-        <label className="flex h-8 items-center justify-between text-sm">
+        <label className="flex h-8 items-center justify-between text-base">
           <span className="text-muted-foreground">3D device body</span>
           <Switch
             checked={device.show3dBody !== false}
@@ -588,7 +633,7 @@ function DeviceRow({
               : undefined
           }
           className={cn(
-            "min-w-0 truncate text-left text-sm",
+            "min-w-0 truncate text-left text-base",
             !device.visible && "text-muted-foreground",
             reorder && "cursor-grab active:cursor-grabbing",
           )}
@@ -661,7 +706,7 @@ function AddDeviceMenu() {
         {groups.map((g, i) => (
           <DropdownMenuGroup key={g.cat}>
             {i > 0 ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuLabel className="text-xs tracking-wide text-muted-foreground uppercase">
+            <DropdownMenuLabel className="text-sm tracking-wide text-muted-foreground uppercase">
               {CATEGORY_LABELS[g.cat]}
             </DropdownMenuLabel>
             {g.presets.map((p) => (
@@ -670,7 +715,7 @@ function AddDeviceMenu() {
                 onClick={() => addFromPreset(p)}
               >
                 <span className="flex-1">{p.label}</span>
-                <span className="font-mono text-xs text-muted-foreground">
+                <span className="font-mono text-sm text-muted-foreground">
                   {p.resolution.w}×{p.resolution.h}
                 </span>
               </DropdownMenuItem>
@@ -692,38 +737,47 @@ function AddDeviceMenu() {
  */
 const DEFAULT_DEVICES_PANEL_POS = { x: 64, y: 16 };
 
-/** Detail flyout beside the Device Manager, pinnable into its own window. */
-function DetailFlyout() {
+/**
+ * Column 2 of the Device Manager tab: the editor for the selected row
+ * (This Device by default), pinnable into its own window — the old
+ * floating flyout, embedded (Taylor 2026-08-17: two columns like the
+ * Media Library and Perception Report).
+ */
+function EditorColumn() {
   const openDetailId = useUiStore((s) => s.openDetailId);
-  const openDetail = useUiStore((s) => s.openDetail);
   const pinDetail = useUiStore((s) => s.pinDetail);
   const panelPos = useUiStore(
-    (s) => s.panelPositions.devices ?? DEFAULT_DEVICES_PANEL_POS,
+    (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
   );
-  const panelWidth = useUiStore((s) => s.panelWidths.devices ?? 380);
+  const panelWidth = useUiStore((s) => s.panelWidths.workbench ?? 640);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const removeDevice = useDeviceStore((s) => s.removeDevice);
   const duplicateDevice = useDeviceStore((s) => s.duplicateDevice);
+  const openDetail = useUiStore((s) => s.openDetail);
 
-  if (!openDetailId) return null;
-  const isThis = thisDevice.id === openDetailId;
-  const device = isThis
-    ? thisDevice
-    : devices.find((d) => d.id === openDetailId);
-  if (!device) return null;
+  const device =
+    (openDetailId && thisDevice.id !== openDetailId
+      ? devices.find((d) => d.id === openDetailId)
+      : thisDevice) ?? thisDevice;
+  const isThis = device.id === thisDevice.id;
 
   return (
-    <div className="panel-frame absolute top-0 left-full ml-2 w-80 rounded-lg border border-border">
-      <div className="flex h-9 items-center gap-2 border-b border-border px-2.5">
+    <div className="flex min-h-0 flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
         <span
           className="size-2.5 shrink-0 rounded-full"
           style={{ background: device.color }}
         />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        <span className="min-w-0 flex-1 truncate text-base font-medium">
           {device.label}
+          {isThis ? (
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              This Device
+            </span>
+          ) : null}
         </span>
         <Button
           variant="ghost"
@@ -740,17 +794,8 @@ function DetailFlyout() {
         >
           <PinIcon className="size-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close details"
-          className="size-7 text-muted-foreground hover:text-foreground"
-          onClick={() => openDetail(null)}
-        >
-          <XIcon className="size-4" />
-        </Button>
       </div>
-      <div className="max-h-[calc(100vh-10rem)] overflow-x-clip overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-x-clip overflow-y-scroll">
         <DeviceEditor
           device={device}
           onPatch={(patch) =>
@@ -771,9 +816,11 @@ function DetailFlyout() {
   );
 }
 
-export function DeviceManagerPanel() {
+/** Device Manager tab content (hosted by the workbench panel). */
+export function DeviceManagerContent() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
+  const openPanel = useUiStore((s) => s.openPanel);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const moveDevice = useDeviceStore((s) => s.moveDevice);
@@ -802,14 +849,10 @@ export function DeviceManagerPanel() {
   const clearMarker = () => setInsertIdx(null);
 
   return (
-    <FloatingPanel
-      id="devices"
-      title="Device Manager"
-      icon={MonitorIcon}
-      defaultPosition={{ x: 64, y: 16 }}
-      width={380}
-    >
-      <div className="max-h-[calc(100vh-8rem)] overflow-x-clip overflow-y-auto">
+    <SplitGrid
+      left={
+      <div className="flex min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-x-clip overflow-y-scroll">
         <div className="px-2.5 pt-2 pb-1">
           <Microlabel>This device</Microlabel>
         </div>
@@ -848,11 +891,24 @@ export function DeviceManagerPanel() {
             />
           ))}
         </div>
-        <div className="p-2.5">
-          <AddDeviceMenu />
-        </div>
       </div>
-      <DetailFlyout />
-    </FloatingPanel>
+      {/* Pinned to the bottom of the column, like the report's spec
+          strip: add-device plus the comparison-table link (which
+          opens from here now, not the rail). */}
+      <div className="shrink-0 space-y-1.5 border-t border-border p-2.5">
+        <AddDeviceMenu />
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
+          onClick={() => openPanel("table")}
+        >
+          <CornerDownRightIcon className="size-4" /> Comparison Table
+        </Button>
+      </div>
+      </div>
+      }
+      right={<EditorColumn />}
+    />
   );
 }

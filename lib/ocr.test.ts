@@ -5,7 +5,10 @@ import {
   isMeasurableLine,
   largestByArea,
   medianHeightPx,
+  splitWordsAtGaps,
+  wordsBbox,
   type DetectedLine,
+  type OcrWord,
 } from "./ocr";
 
 const intrinsic = { width: 1920, height: 1080 };
@@ -119,5 +122,60 @@ describe("medianHeightPx", () => {
   test("even count → mean of the middle two", () => {
     const lines = [line(0, 0.1, 10 / 1080), line(0, 0.1, 20 / 1080)];
     expect(medianHeightPx(lines, intrinsic)).toBeCloseTo(15, 6);
+  });
+});
+
+const word = (x0: number, x1: number, text = "w"): OcrWord => ({
+  text,
+  bbox: { x0, y0: 100, x1, y1: 120 },
+});
+
+describe("splitWordsAtGaps", () => {
+  test("normal word spacing stays one run", () => {
+    // 20px-tall line; gaps of 8px are well under 2× line height.
+    const words = [word(0, 30), word(38, 70), word(78, 110)];
+    expect(splitWordsAtGaps(words, 20)).toEqual([words]);
+  });
+
+  test("a cross-column gap splits the line", () => {
+    // Two UI columns read as one Tesseract line: 500px of dead space
+    // between x=110 and x=610 with a 20px line height.
+    const left = [word(0, 50, "Save"), word(58, 110, "changes")];
+    const right = [word(610, 680, "Cancel")];
+    expect(splitWordsAtGaps([...left, ...right], 20)).toEqual([left, right]);
+  });
+
+  test("splits at every qualifying gap", () => {
+    const runs = splitWordsAtGaps(
+      [word(0, 30), word(200, 230), word(400, 430)],
+      20,
+    );
+    expect(runs.length).toBe(3);
+  });
+
+  test("sorts by x before splitting", () => {
+    const a = word(0, 50);
+    const b = word(600, 660);
+    expect(splitWordsAtGaps([b, a], 20)).toEqual([[a], [b]]);
+  });
+
+  test("a gap of exactly the threshold does not split", () => {
+    // Gap = 40 = 2 × 20; the split requires strictly greater.
+    const words = [word(0, 30), word(70, 100)];
+    expect(splitWordsAtGaps(words, 20)).toEqual([words]);
+  });
+
+  test("empty input → no runs", () => {
+    expect(splitWordsAtGaps([], 20)).toEqual([]);
+  });
+});
+
+describe("wordsBbox", () => {
+  test("tight bbox around a run", () => {
+    const words: OcrWord[] = [
+      { text: "a", bbox: { x0: 10, y0: 105, x1: 40, y1: 118 } },
+      { text: "b", bbox: { x0: 48, y0: 100, x1: 90, y1: 122 } },
+    ];
+    expect(wordsBbox(words)).toEqual({ x0: 10, y0: 100, x1: 90, y1: 122 });
   });
 });

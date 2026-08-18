@@ -1,20 +1,43 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DownloadIcon, PencilRulerIcon } from "lucide-react";
+import {
+  AlignCenterVerticalIcon,
+  DownloadIcon,
+  ImageIcon,
+  LayersIcon,
+  PencilRulerIcon,
+  PictureInPicture2Icon,
+  WallpaperIcon,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
+import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useAnnotationStore } from "@/stores/annotation-store";
+import {
+  useAnnotationStore,
+  type DeviceHover,
+} from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import {
   ACUITY,
   boxMetricsOnDevice,
+  formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
+import { isAnimatedItem } from "@/lib/playback-engine";
+import { activeKeyframe } from "@/lib/scan-keyframes";
+import { groupColor } from "@/lib/text-groups";
 import {
   boxInCrop,
   cropOf,
@@ -31,7 +54,7 @@ import type { Device, HighlightBox, MediaItem } from "@/lib/types";
  * estimated from the outer/inner delta (borders split left/right, the
  * rest is the title/tab bar). Polled — there is no window-move event.
  */
-function useScreenViewport() {
+export function useScreenViewport() {
   const [vp, setVp] = useState<{
     clientX: number;
     clientY: number;
@@ -131,6 +154,257 @@ function CropFrame({
   );
 }
 
+/**
+ * Debug-overlays menu chip (plan topic 10): safe areas, contrast
+ * badges, pixel loupe. Session-only toggles with app-wide parity.
+ */
+function OverlaysChip() {
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const setShowSafeAreas = useAnnotationStore((s) => s.setShowSafeAreas);
+  const showContrast = useAnnotationStore((s) => s.showContrast);
+  const setShowContrast = useAnnotationStore((s) => s.setShowContrast);
+  const loupeOn = useAnnotationStore((s) => s.loupeOn);
+  const setLoupeOn = useAnnotationStore((s) => s.setLoupeOn);
+  const anyOn = showSafeAreas || showContrast || loupeOn;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "flex h-7 items-center gap-1 rounded-md px-2.5 font-mono text-sm transition-colors",
+          anyOn
+            ? "bg-white/25 text-white"
+            : "bg-black/50 text-white/60 hover:text-white",
+        )}
+        title="Debug overlays: safe areas, contrast badges, pixel loupe"
+      >
+        <LayersIcon className="size-3" />
+        overlays
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuCheckboxItem
+          checked={showSafeAreas}
+          onCheckedChange={setShowSafeAreas}
+        >
+          TV safe areas (93% / 90%)
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={showContrast}
+          onCheckedChange={setShowContrast}
+        >
+          Contrast badges on scanned text
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={loupeOn}
+          onCheckedChange={setLoupeOn}
+        >
+          Pixel loupe
+        </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * SMPTE ST 2046-1 safe-area frames, relative to the DISPLAY (not the
+ * media): action-safe 93%, title-safe 90%. Overlaid per device rect so
+ * TV-bound UI can be judged against every screen at once.
+ */
+function SafeAreas({ large }: { large: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      <div
+        className="absolute border border-dashed border-white/50"
+        style={{ inset: "3.5%" }}
+      >
+        {large ? (
+          <span className="absolute top-0 left-1 font-mono text-sm text-white/50">
+            action 93%
+          </span>
+        ) : null}
+      </div>
+      <div
+        className="absolute border border-dashed border-[#f5a524]/60"
+        style={{ inset: "5%" }}
+      >
+        {large ? (
+          <span className="absolute bottom-0 left-1 font-mono text-sm text-[#f5a524]/70">
+            title 90%
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const LOUPE_SIZE = 176;
+const LOUPE_ZOOM = 8;
+
+/**
+ * Pixel loupe (plan 10.2): follows the cursor over This Device's rect
+ * and magnifies the source image 8×, pixel grid on top, with a readout
+ * of the source coordinate and what one source pixel subtends on This
+ * Device. Static images only — video would need per-frame capture.
+ */
+function PixelLoupe({
+  containerRef,
+  center,
+  hostW,
+  hostH,
+  item,
+  url,
+  thisDevice,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  center: { x: number; y: number };
+  hostW: number;
+  hostH: number;
+  item: MediaItem;
+  url: string;
+  thisDevice: Device;
+}) {
+  const [pt, setPt] = useState<{
+    x: number;
+    y: number;
+    cw: number;
+    ch: number;
+  } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const img = new Image();
+    img.src = url;
+    img
+      .decode()
+      .then(() => {
+        if (alive) imgRef.current = img;
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      imgRef.current = null;
+    };
+  }, [url]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const move = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      setPt({
+        x: e.clientX - r.left,
+        y: e.clientY - r.top,
+        cw: r.width,
+        ch: r.height,
+      });
+    };
+    const leave = () => setPt(null);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerleave", leave);
+    return () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerleave", leave);
+    };
+  }, [containerRef]);
+
+  const crop = cropOf(item);
+  const eff = effectiveDims(item);
+  const area = containFit(eff.width, eff.height, hostW, hostH);
+  let sx = -1;
+  let sy = -1;
+  if (pt && area.w) {
+    const u = (pt.x - (center.x - hostW / 2) - area.x) / area.w;
+    const v = (pt.y - (center.y - hostH / 2) - area.y) / area.h;
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      sx = (crop.x + u * crop.w) * item.width;
+      sy = (crop.y + v * crop.h) * item.height;
+    }
+  }
+  const active = sx >= 0;
+
+  useEffect(() => {
+    if (!active) return;
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    const win = LOUPE_SIZE / LOUPE_ZOOM;
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = "#111";
+    g.fillRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
+    g.drawImage(
+      img,
+      sx - win / 2,
+      sy - win / 2,
+      win,
+      win,
+      0,
+      0,
+      LOUPE_SIZE,
+      LOUPE_SIZE,
+    );
+    // Grid aligned to whole source pixels.
+    g.strokeStyle = "rgba(255,255,255,0.18)";
+    g.lineWidth = 1;
+    const xOff = (Math.ceil(sx - win / 2) - (sx - win / 2)) * LOUPE_ZOOM;
+    const yOff = (Math.ceil(sy - win / 2) - (sy - win / 2)) * LOUPE_ZOOM;
+    g.beginPath();
+    for (let x = xOff; x <= LOUPE_SIZE; x += LOUPE_ZOOM) {
+      g.moveTo(x + 0.5, 0);
+      g.lineTo(x + 0.5, LOUPE_SIZE);
+    }
+    for (let y = yOff; y <= LOUPE_SIZE; y += LOUPE_ZOOM) {
+      g.moveTo(0, y + 0.5);
+      g.lineTo(LOUPE_SIZE, y + 0.5);
+    }
+    g.stroke();
+    // Crosshair on the sampled pixel.
+    g.strokeStyle = "#f5a524";
+    g.strokeRect(
+      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
+      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
+      LOUPE_ZOOM - 1,
+      LOUPE_ZOOM - 1,
+    );
+  }, [active, sx, sy]);
+
+  if (!pt || !active) return null;
+  const left =
+    pt.x + 18 + LOUPE_SIZE > pt.cw ? pt.x - 18 - LOUPE_SIZE : pt.x + 18;
+  const top =
+    pt.y + 18 + LOUPE_SIZE + 24 > pt.ch
+      ? pt.y - 18 - LOUPE_SIZE - 24
+      : pt.y + 18;
+  const arcminPerPx = boxMetricsOnDevice(
+    1 / item.height / crop.h,
+    eff,
+    thisDevice,
+  ).arcmin;
+  return (
+    <div
+      className="pointer-events-none absolute z-40 overflow-hidden rounded-md border border-white/30 bg-black/80 shadow-lg"
+      style={{ left, top, width: LOUPE_SIZE }}
+    >
+      <canvas
+        ref={canvasRef}
+        width={LOUPE_SIZE}
+        height={LOUPE_SIZE}
+        className="block"
+      />
+      <div className="px-1.5 py-0.5 font-mono text-sm leading-4.5 text-white/70">
+        {Math.floor(sx)}, {Math.floor(sy)} px · 1 px ≈{" "}
+        {arcminPerPx.toFixed(2)}′
+      </div>
+    </div>
+  );
+}
+
+/** Module-level mutator (react-compiler convention): view hover state. */
+const setDeviceHover = (h: DeviceHover | null) =>
+  useAnnotationStore.getState().setDeviceHover(h);
+
 const boxBandColor = (worstArcmin: number) =>
   worstArcmin >= ACUITY.comfortableTextArcmin
     ? "#46a758"
@@ -147,29 +421,43 @@ function BoxLayer({
   rectW,
   rectH,
   media,
+  boxes,
   worstByBox,
+  groupById,
   isHost,
+  deviceId,
 }: {
   rectW: number;
   rectH: number;
   media: MediaItem;
+  /** Measure boxes + active-keyframe lines, full-image normalized. */
+  boxes: HighlightBox[];
   worstByBox: Map<string, number>;
+  /** Text-block ids for the global Groups color mode. */
+  groupById: Map<string, number>;
   isHost: boolean;
+  /** Owning rect's device — box hovers feed the inspector with it. */
+  deviceId: string;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
+  const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const crop = cropOf(media);
   const eff = effectiveDims(media);
   const area = containFit(eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
   return (
     <>
-      {(media.boxes ?? []).map((b) => {
+      {boxes.map((b) => {
         // Boxes stay normalized to the full image; render them through
         // the crop window (clipped; hidden when fully outside).
         const cb = boxInCrop(b, crop);
         if (!cb) return null;
-        const color = boxBandColor(worstByBox.get(b.id) ?? 99);
+        const gid = groupById.get(b.id);
+        const color =
+          colorMode === "group" && gid !== undefined
+            ? groupColor(gid)
+            : boxBandColor(worstByBox.get(b.id) ?? 99);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -184,7 +472,9 @@ function BoxLayer({
               border: `${selected && isHost ? 2 : 1}px solid ${color}`,
               boxShadow: selected && isHost ? `0 0 0 1px ${color}55` : undefined,
               cursor: isHost ? "pointer" : undefined,
-              pointerEvents: isHost ? "auto" : "none",
+              // All rects' boxes are hoverable (inspector details);
+              // only the host's are clickable.
+              pointerEvents: "auto",
             }}
             onClick={
               isHost
@@ -194,6 +484,35 @@ function BoxLayer({
                   }
                 : undefined
             }
+            onPointerEnter={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const s = e.currentTarget.parentElement?.getBoundingClientRect();
+              setDeviceHover({
+                deviceId,
+                box: {
+                  id: b.id,
+                  label: b.label,
+                  srcPx: Math.round(b.h * media.height),
+                  hFull: b.h,
+                  groupId: groupById.get(b.id),
+                  bounds: {
+                    left: r.left,
+                    top: r.top,
+                    right: r.right,
+                    bottom: r.bottom,
+                  },
+                  screen: s
+                    ? {
+                        left: s.left,
+                        top: s.top,
+                        right: s.right,
+                        bottom: s.bottom,
+                      }
+                    : undefined,
+                },
+              });
+            }}
+            onPointerLeave={() => setDeviceHover({ deviceId, box: null })}
           />
         );
       })}
@@ -218,6 +537,7 @@ export function DisplayArea() {
   const videoUrls = useMediaStore((s) => s.videoUrls);
   const activeId = useMediaStore((s) => s.activeId);
   const displayFill = useSettingsStore((s) => s.displayFill);
+  const unit = useSettingsStore((s) => s.unit);
 
   const ref = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ w: 0, h: 0 });
@@ -263,6 +583,9 @@ export function DisplayArea() {
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
+  const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
+  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const loupeOn = useAnnotationStore((s) => s.loupeOn);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
@@ -270,8 +593,40 @@ export function DisplayArea() {
   const [draft, setDraft] = useState<HighlightBox | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
+  // Timeline media contributes its ACTIVE keyframe's detected lines to
+  // the world overlays (they behave like read-only measure boxes and
+  // follow the playhead until the next marker).
+  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
+  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
+  const overlayBoxes = useMemo<HighlightBox[]>(() => {
+    if (!activeItem) return [];
+    const base = activeItem.boxes ?? [];
+    if (!animatedActive || !activeItem.scanKeyframes) return base;
+    const kf = activeKeyframe(activeItem.scanKeyframes, timeSec);
+    if (!kf?.lines) return base;
+    return [
+      ...base,
+      ...kf.lines.map((l) => ({ id: l.id, label: l.text, ...l.box })),
+    ];
+  }, [activeItem, animatedActive, timeSec]);
+
+  // Text-block ids from the persisted scan + keyframes, for the global
+  // Groups color mode in the world views.
+  const groupById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!activeItem) return map;
+    for (const l of activeItem.scan?.lines ?? [])
+      if (l.groupId !== undefined) map.set(l.id, l.groupId);
+    for (const k of activeItem.scanKeyframes ?? [])
+      for (const l of k.lines ?? [])
+        if (l.groupId !== undefined) map.set(l.id, l.groupId);
+    return map;
+  }, [activeItem]);
+
   // Worst-case legibility per box across every visible device — the
   // "will this text survive everywhere" verdict that colors the box.
+  // Keyframe lines measure with their group-corrected size when it
+  // exists (descender-aware).
   const worstByBox = useMemo(() => {
     const map = new Map<string, number>();
     if (!activeItem) return map;
@@ -281,21 +636,26 @@ export function DisplayArea() {
       ...(thisDevice.visible ? [thisDevice] : []),
       ...devices.filter((d) => d.visible),
     ];
-    for (const b of activeItem.boxes ?? []) {
+    const kfSize = new Map<string, number>();
+    for (const k of activeItem.scanKeyframes ?? [])
+      for (const l of k.lines ?? [])
+        if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
+    for (const b of overlayBoxes) {
+      const hNorm = kfSize.get(b.id) ?? b.h;
       let worst = Infinity;
       for (const d of devs) {
         // The cropped region is what contain-fits onto each device, so
-        // the box height re-normalizes against the crop (b.h/c.h of
+        // the box height re-normalizes against the crop (h/c.h of
         // dims.height = the box's unchanged source-pixel height).
         worst = Math.min(
           worst,
-          boxMetricsOnDevice(b.h / c.h, dims, d).arcmin,
+          boxMetricsOnDevice(hNorm / c.h, dims, d).arcmin,
         );
       }
       map.set(b.id, worst);
     }
     return map;
-  }, [activeItem, thisDevice, devices]);
+  }, [activeItem, overlayBoxes, thisDevice, devices]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -323,42 +683,21 @@ export function DisplayArea() {
   const setDisplayCenter = useSettingsStore((s) => s.setDisplayCenter);
   const panOffset = useUiStore((s) => s.panOffset);
   const setPanOffset = useUiStore((s) => s.setPanOffset);
+  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
   const vp = useScreenViewport();
   const viewportActive = displayMode === "viewport" && vp !== null;
 
-  // Hold Space to pan the composition; double-click while held recenters.
-  const [spaceHeld, setSpaceHeld] = useState(false);
+  // Left mouse selects on click, pans on drag (plan 4.3; Space-pan
+  // dropped). A small movement threshold separates the two.
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const panDrag = useRef<{
     startX: number;
     startY: number;
     baseX: number;
     baseY: number;
+    panning: boolean;
   } | null>(null);
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (
-        e.code === "Space" &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement) &&
-        !(e.target instanceof HTMLButtonElement)
-      ) {
-        e.preventDefault();
-        setSpaceHeld(true);
-      }
-    };
-    const up = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        setSpaceHeld(false);
-        panDrag.current = null;
-      }
-    };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-    };
-  }, []);
+  const [panning, setPanning] = useState(false);
 
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
@@ -419,6 +758,21 @@ export function DisplayArea() {
     () => (k ? Math.round(k * dpr * 100) : null),
     [k, dpr],
   );
+
+  /**
+   * Browser-zoom estimate (plan 11.1). screen.width is in CSS px and
+   * ignores page zoom while devicePixelRatio scales with it, so with
+   * This Device set to this screen's real panel their product over the
+   * native width reads the zoom factor. >±2% off earns a warning —
+   * zoomed rendering breaks every physical-scale promise.
+   */
+  const zoomPct = useMemo(() => {
+    if (!vp) return null;
+    const pct = Math.round(
+      ((vp.screenW * dpr) / thisDevice.resolution.w) * 100,
+    );
+    return Math.abs(pct - 100) > 2 ? pct : null;
+  }, [vp, dpr, thisDevice.resolution.w]);
 
   // Snapshot the composition at This Device's native resolution — a
   // shareable reference PNG of the comparison (poster frame for videos).
@@ -491,14 +845,14 @@ export function DisplayArea() {
       g.strokeRect(x, y, w, h);
       g.fillStyle = d.color;
       g.font = `${Math.max(16, Math.round(W / 90))}px monospace`;
-      const label = `${d.label} · ${Math.round(d.distanceCm)} cm`;
+      const label = `${d.label} · ${formatDistance(d.distanceCm, unit)}`;
       g.fillText(label, x + 8, y > 30 ? y - 8 : y + 26);
     }
 
     g.fillStyle = "rgba(255,255,255,0.55)";
     g.font = `${Math.max(13, Math.round(W / 110))}px monospace`;
     g.fillText(
-      `Wright Angles — host: ${host.label} ${W}×${H} @ ${Math.round(host.distanceCm)} cm`,
+      `Wright Angles — host: ${host.label} ${W}×${H} @ ${formatDistance(host.distanceCm, unit)}`,
       16,
       H - 16,
     );
@@ -513,12 +867,94 @@ export function DisplayArea() {
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [thisDevice, devices, activeUrl, crop, displayFill]);
+  }, [thisDevice, devices, activeUrl, crop, displayFill, unit]);
+
+  /** Topmost device rect (highest z = last in draw order) under a point. */
+  const deviceAt = (clientX: number, clientY: number) => {
+    const el = ref.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const px = clientX - r.left;
+    const py = clientY - r.top;
+    let hit: string | null = null;
+    for (const { device, w, h } of rects) {
+      if (
+        Math.abs(px - center.x) <= w / 2 &&
+        Math.abs(py - center.y) <= h / 2
+      ) {
+        hit = device.id; // later entries draw on top; keep the last hit
+      }
+    }
+    return hit;
+  };
+
+  /**
+   * Ignore pan/select gestures that start on interactive elements.
+   * Two traps here (both shipped as "clicking a button selects a
+   * device"): base-ui select/menu triggers don't render as <button>,
+   * so the toolbar opts out wholesale via data-ui-chrome; and clicks
+   * landing on lucide SVG icons have an SVGElement target, which is
+   * NOT an HTMLElement — the guard must accept any Element, or every
+   * icon-only button falls through to the canvas and gets its pointer
+   * captured out from under it.
+   */
+  const onInteractive = (t: EventTarget | null) => {
+    if (!(t instanceof Element)) return true;
+    // Portaled popups (base-ui select/menu) bubble through the REACT
+    // tree while their DOM target lives under document.body — anything
+    // whose DOM position is outside this container is popup UI.
+    if (ref.current && !ref.current.contains(t)) return true;
+    return (
+      t.closest('button,[role="button"],[role="combobox"],[data-ui-chrome]') !==
+      null
+    );
+  };
 
   return (
     <div
       ref={ref}
-      className="absolute inset-0 overflow-hidden bg-[oklch(0.16_0_0)]"
+      className={cn(
+        "absolute inset-0 overflow-hidden bg-[oklch(0.16_0_0)] touch-none",
+        panning && "cursor-grabbing",
+      )}
+      onPointerDown={(e) => {
+        if (e.button !== 0 || drawMode || onInteractive(e.target)) return;
+        panDrag.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          baseX: panOffset.x,
+          baseY: panOffset.y,
+          panning: false,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const p = panDrag.current;
+        if (!p) return;
+        const dx = e.clientX - p.startX;
+        const dy = e.clientY - p.startY;
+        if (!p.panning && Math.hypot(dx, dy) > 4) {
+          p.panning = true;
+          setPanning(true);
+        }
+        if (p.panning) setPanOffset({ x: p.baseX + dx, y: p.baseY + dy });
+      }}
+      onPointerUp={(e) => {
+        const p = panDrag.current;
+        panDrag.current = null;
+        setPanning(false);
+        if (!p) return;
+        if (!p.panning) {
+          // A stationary click: select the device under the cursor
+          // (toggles off when it's already the selection).
+          const hit = deviceAt(e.clientX, e.clientY);
+          selectDevice(hit === selectedDeviceId ? null : hit);
+        }
+      }}
+      onDoubleClick={(e) => {
+        if (drawMode || onInteractive(e.target)) return;
+        setPanOffset({ x: 0, y: 0 });
+      }}
     >
       {rects.map(({ device, w, h }, i) => (
         <div
@@ -531,12 +967,24 @@ export function DisplayArea() {
             height: h,
             zIndex: i + 1,
           }}
+          // Same inspector-feeding hover as the 3D rects. enter/leave
+          // (not over/out): descendants — boxes — must not re-fire it.
+          onPointerEnter={() =>
+            setDeviceHover({ deviceId: device.id, box: null })
+          }
+          onPointerLeave={() => setDeviceHover(null)}
         >
           <div
             className="absolute inset-0 bg-black"
             style={{
               outline: `2px solid ${device.color}`,
               outlineOffset: -1,
+              // Selection affordance: a soft ring just outside the rect's
+              // own outline (shared selection with the table and 3D view).
+              boxShadow:
+                device.id === selectedDeviceId
+                  ? `0 0 0 4px ${device.color}59`
+                  : undefined,
               // Fill also backs the letterbox bars when content doesn't
               // cover the panel (16:9 image on a 32:9 display).
               background:
@@ -575,20 +1023,27 @@ export function DisplayArea() {
                 className="size-full object-contain select-none"
               />
             ) : null}
-            {activeItem && !device.isThis ? (
+            {/* Boxes live INSIDE each rect so a nested device naturally
+                covers the ones beneath it — tied to the device they're
+                on (Taylor 2026-08-17). Only the host's are clickable. */}
+            {activeItem && overlayBoxes.length > 0 && showTextBoxes ? (
               <BoxLayer
                 rectW={w}
                 rectH={h}
                 media={activeItem}
+                boxes={overlayBoxes}
                 worstByBox={worstByBox}
-                isHost={false}
+                groupById={groupById}
+                isHost={!!device.isThis && !drawMode}
+                deviceId={device.id}
               />
             ) : null}
+            {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
           </div>
           {/* Cycle label corners so tightly nested rects stay readable. */}
           <span
             className={
-              "absolute px-1 font-mono text-[10px] leading-4 whitespace-nowrap " +
+              "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap " +
               [
                 "top-0 left-0 -translate-y-full pb-0.5",
                 "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
@@ -598,7 +1053,7 @@ export function DisplayArea() {
             }
             style={{ color: device.color }}
           >
-            {device.label} · {Math.round(device.distanceCm)} cm
+            {device.label} · {formatDistance(device.distanceCm, unit)}
           </span>
         </div>
       ))}
@@ -625,15 +1080,6 @@ export function DisplayArea() {
               height: hostRect.h,
             }}
           >
-            <div className="[&>div]:pointer-events-auto">
-              <BoxLayer
-                rectW={hostRect.w}
-                rectH={hostRect.h}
-                media={activeItem}
-                worstByBox={worstByBox}
-                isHost={!drawMode}
-              />
-            </div>
             {draftCb ? (
               <div
                 className="pointer-events-none absolute border border-dashed border-white/80"
@@ -699,55 +1145,61 @@ export function DisplayArea() {
       })()}
 
       {rects.length === 0 ? (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40">
+        <div className="absolute inset-0 flex items-center justify-center text-base text-white/40">
           No visible devices — toggle one on in the Device Manager.
         </div>
       ) : null}
 
-      {/* Space-held pan surface: above content and annotations, below
-          the toolbar. Double-click recenters. */}
-      {spaceHeld ? (
-        <div
-          className={cn(
-            "absolute inset-0 z-25 cursor-grab touch-none active:cursor-grabbing",
-          )}
-          onPointerDown={(e) => {
-            panDrag.current = {
-              startX: e.clientX,
-              startY: e.clientY,
-              baseX: panOffset.x,
-              baseY: panOffset.y,
-            };
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => {
-            const p = panDrag.current;
-            if (!p) return;
-            setPanOffset({
-              x: p.baseX + (e.clientX - p.startX),
-              y: p.baseY + (e.clientY - p.startY),
-            });
-          }}
-          onPointerUp={() => {
-            panDrag.current = null;
-          }}
-          onDoubleClick={() => setPanOffset({ x: 0, y: 0 })}
-        />
-      ) : null}
+      {(() => {
+        const host = rects.find((r) => r.device.isThis);
+        return loupeOn &&
+          host &&
+          activeItem &&
+          activeItem.kind === "image" &&
+          activeItem.type !== "image/gif" &&
+          activeUrl ? (
+          <PixelLoupe
+            containerRef={ref}
+            center={center}
+            hostW={host.w}
+            hostH={host.h}
+            item={activeItem}
+            url={activeUrl}
+            thisDevice={thisDevice}
+          />
+        ) : null;
+      })()}
 
+
+      {/* Readouts stay bottom-right; action buttons live top-right. */}
       <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
+        {zoomPct !== null ? (
+          <div
+            className="rounded-md bg-[#f5a524]/90 px-2 py-1 font-mono text-sm text-black"
+            title="Browser zoom (or a This Device resolution that doesn't match this screen) breaks the 1:1 physical-scale promise. Set zoom to 100% — or fix This Device — for true sizes."
+          >
+            ⚠ browser zoom ≈ {zoomPct}% — sizes are not true
+          </div>
+        ) : null}
         {scalePct !== null ? (
-          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-[10px] text-white/60">
+          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-sm text-white/60">
             {viewportActive
               ? scalePct >= 99 && scalePct <= 101
-                ? "1:1 physical scale · hold Space to pan"
+                ? "1:1 physical scale · drag to pan"
                 : `${scalePct}% — This Device res ≠ this screen's native res`
               : scalePct === 100
                 ? "1:1 physical scale"
                 : `${scalePct}% scale — viewport mode for 1:1`}
           </div>
         ) : null}
-        <div className="flex items-center gap-1.5">
+      </div>
+      {/* data-ui-chrome: pan/select gestures must never start here —
+          select/menu triggers aren't <button>s, so the generic guard
+          can't see them (the click-through device-select bug). */}
+      <div
+        data-ui-chrome
+        className="absolute top-2 right-2 z-40 flex items-center gap-1.5"
+      >
           {activeItem ? (
             <button
               type="button"
@@ -757,7 +1209,7 @@ export function DisplayArea() {
                   : "Draw measurement boxes on the image"
               }
               className={cn(
-                "flex h-6 w-24 items-center justify-center gap-1 rounded-md font-mono text-[10px] transition-colors",
+                "flex h-7 w-28 items-center justify-center gap-1 rounded-md font-mono text-sm transition-colors",
                 drawMode
                   ? "bg-white/25 text-white"
                   : "bg-black/50 text-white/60 hover:text-white",
@@ -768,16 +1220,26 @@ export function DisplayArea() {
               {drawMode ? "done" : "measure"}
             </button>
           ) : null}
+          <OverlaysChip />
+          <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
           <button
             type="button"
-            title="Center the composition on the physical screen or in this window"
-            className="h-6 w-28 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            title={
+              displayCenter === "screen"
+                ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
+                : "Centered in this window. Click to lock the content to your monitor's physical center instead."
+            }
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
             onClick={() => {
               setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
               setPanOffset({ x: 0, y: 0 });
             }}
           >
-            {displayCenter === "screen" ? "center · screen" : "center · window"}
+            {displayCenter === "screen" ? (
+              <PictureInPicture2Icon className="size-3.5" />
+            ) : (
+              <AlignCenterVerticalIcon className="size-3.5" />
+            )}
           </button>
           <button
             type="button"
@@ -786,20 +1248,23 @@ export function DisplayArea() {
                 ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
                 : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
             }
-            className="h-6 w-20 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
             onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
           >
-            {viewportActive ? "viewport" : "fit"}
+            {viewportActive ? (
+              <ImageIcon className="size-3.5" />
+            ) : (
+              <WallpaperIcon className="size-3.5" />
+            )}
           </button>
           <button
             type="button"
             title="Export this view as a PNG reference image"
-            className="flex h-6 w-28 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-[10px] text-white/60 transition-colors hover:text-white"
+            className="flex h-7 w-32 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
             onClick={() => void exportView()}
           >
             <DownloadIcon className="size-3" /> export view
           </button>
-        </div>
       </div>
     </div>
   );

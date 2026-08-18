@@ -18,12 +18,65 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
-import { physicalSizeCm } from "@/lib/display-math";
+import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
+import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
+import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
 
 const SHOW_LABELS = true;
+
+/** Module-level mutator (react-compiler convention): 3D hover state. */
+const setDeviceHover = (h: DeviceHover | null) =>
+  useAnnotationStore.getState().setDeviceHover(h);
+
+const _projCorner = new Vector3();
+
+/**
+ * Screen bounds (client px) of a hovered box's catcher plane: its four
+ * local corners through the mesh's world matrix and the camera, mapped
+ * into the canvas's client rect — so the hover card can position
+ * itself OUTSIDE the box in either view.
+ */
+function projectBounds(
+  e: ThreeEvent<PointerEvent>,
+  w: number,
+  h: number,
+  object: Object3D = e.object,
+): { left: number; top: number; right: number; bottom: number } {
+  const canvas = e.nativeEvent.target as HTMLElement;
+  const r = canvas.getBoundingClientRect();
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const [cx, cy] of [
+    [-w / 2, -h / 2],
+    [w / 2, -h / 2],
+    [-w / 2, h / 2],
+    [w / 2, h / 2],
+  ]) {
+    _projCorner
+      .set(cx, cy, 0)
+      .applyMatrix4(object.matrixWorld)
+      .project(e.camera);
+    const x = r.left + ((_projCorner.x + 1) / 2) * r.width;
+    const y = r.top + ((1 - _projCorner.y) / 2) * r.height;
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+  }
+  return { left, top, right, bottom };
+}
+
+/**
+ * Barlow Medium for the 3D labels, matching the app's primary typeface.
+ * troika-three-text can't read the CSS-registered @fontsource faces (or
+ * .woff2), so a static .woff copy ships in public/fonts (see its README).
+ */
+const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/fonts/barlow-latin-500-normal.woff`;
 
 /** Matches the viewer figure's pose tween so stance changes move in sync. */
 const TWEEN_S = 0.5;
@@ -127,13 +180,35 @@ function setBodyCursor(cursor: string) {
  * settings), which rebuild materials AFTER a mount effect would have
  * run; the traverse also catches the outline sub-mesh.
  */
-function raiseDistLabel(text: Object3D) {
+function raiseLabel(text: Object3D, order: number) {
   text.traverse((o) => {
-    o.renderOrder = 20;
+    o.renderOrder = order;
     const m = (o as { material?: Material | Material[] }).material;
     if (!m) return;
     for (const mat of Array.isArray(m) ? m : [m]) mat.depthTest = false;
   });
+}
+const raiseDistLabel = (text: Object3D) => raiseLabel(text, 20);
+/** Name labels ride just under the distance readouts. */
+const raiseNameLabel = (text: Object3D) => raiseLabel(text, 15);
+
+/**
+ * Same camera-side modulation as the distance labels, applied to the
+ * NAME label's horizontal de-collision offset: nested rects park their
+ * names on alternating rect edges, and flipping the side with the
+ * viewing direction keeps "nearer name outward" true from both sides
+ * of the scene instead of crossing over.
+ */
+function applyNameOffset(
+  group: Group | null,
+  baseX: number,
+  camera: Camera,
+  deviceZ: number,
+) {
+  if (!group) return;
+  _projA.set(0, 1.2, deviceZ).project(camera);
+  _projB.set(0, 1.2, deviceZ + 40).project(camera);
+  group.position.x = baseX * Math.tanh((_projB.x - _projA.x) * 40);
 }
 
 function applyCenterY(
@@ -167,6 +242,76 @@ export interface ScreenMedia {
  * component only knows itself). All values are cm; zeros = the default
  * centered placement.
  */
+/**
+ * A measure box / detected line shown ON the 3D screens, in crop-space
+ * coordinates (already passed through boxInCrop by scene-view).
+ */
+export interface ContentBox {
+  id: string;
+  rect: { x: number; y: number; w: number; h: number };
+  /** Crop-relative height used for the per-device legibility color. */
+  hMeasure: number;
+  /** Text block id — used when the global color mode is "group". */
+  groupId?: number;
+  /** OCR text / user label, for the 3D hover details. */
+  label?: string;
+  /** Source pixel height (group-corrected where available). */
+  srcPx: number;
+  /** Full-image normalized measure height (pre-crop), for metrics. */
+  hFull: number;
+}
+
+const bandColor = (arcmin: number) =>
+  arcmin >= ACUITY.comfortableTextArcmin
+    ? "#46a758"
+    : arcmin >= ACUITY.minCriticalTextArcmin
+      ? "#f5a524"
+      : "#e5484d";
+
+/**
+ * Outline loop for a content-space rect on the screen surface. The
+ * shared texture is U-mirrored (the viewer at -Z sees back faces), so
+ * content-left lands at local +x; curved panels bend the horizontal
+ * edges along the same chord math as the screen itself, on a slightly
+ * viewer-side radius so the lines never z-fight the content.
+ */
+function boxLoopPoints(
+  rect: { x: number; y: number; w: number; h: number },
+  fitW: number,
+  fitH: number,
+  R: number,
+): [number, number, number][] {
+  const yTop = fitH / 2 - rect.y * fitH;
+  const yBot = yTop - rect.h * fitH;
+  const xAt = (fImg: number) => fitW / 2 - fImg * fitW;
+  if (!R) {
+    const x0 = xAt(rect.x + rect.w);
+    const x1 = xAt(rect.x);
+    const z = -0.3;
+    return [
+      [x0, yTop, z],
+      [x1, yTop, z],
+      [x1, yBot, z],
+      [x0, yBot, z],
+      [x0, yTop, z],
+    ];
+  }
+  const r = R - 0.5;
+  const arc = fitW / r;
+  const at = (fImg: number, y: number): [number, number, number] => {
+    const u = xAt(fImg) / fitW; // -0.5..0.5 across the arc
+    return [r * Math.sin(arc * u), y, -R + r * Math.cos(arc * u)];
+  };
+  const N = 8;
+  const pts: [number, number, number][] = [];
+  for (let i = 0; i <= N; i++)
+    pts.push(at(rect.x + (rect.w * i) / N, yTop));
+  for (let i = 0; i <= N; i++)
+    pts.push(at(rect.x + rect.w - (rect.w * i) / N, yBot));
+  pts.push(at(rect.x, yTop));
+  return pts;
+}
+
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
   nameX: number;
@@ -200,6 +345,7 @@ export default function DeviceRect({
   device,
   centerY,
   poseKey,
+  distLabel,
   palette,
   media,
   displayFill,
@@ -211,6 +357,10 @@ export default function DeviceRect({
   onSelect,
   onDistanceDrag,
   onDragState,
+  contentBoxes,
+  selectedBoxId,
+  boxColorMode = "rating",
+  zBias,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
@@ -220,6 +370,11 @@ export default function DeviceRect({
    * tweens, one without (the height slider) snaps.
    */
   poseKey?: string;
+  /**
+   * Pre-formatted distance readout in the user's unit (this component
+   * stays store-free); falls back to whole centimeters.
+   */
+  distLabel?: string;
   palette: ScenePalette;
   media?: ScreenMedia | null;
   /**
@@ -247,6 +402,14 @@ export default function DeviceRect({
   onDistanceDrag?: (distanceCm: number) => void;
   /** Reports node-drag start/end so the parent can pause OrbitControls. */
   onDragState?: (dragging: boolean) => void;
+  /** Measure boxes + active-keyframe lines drawn on the screen. */
+  contentBoxes?: ContentBox[];
+  /** App-wide selected box for the white highlight. */
+  selectedBoxId?: string | null;
+  /** Global scan color mode: block tints vs per-device verdict bands. */
+  boxColorMode?: "group" | "rating";
+  /** Sub-millimeter z stagger against same-distance devices. */
+  zBias?: number;
 }) {
   const { widthCm, heightCm } = physicalSizeCm(device.diagonalIn, device.aspect);
   const lp = labels ?? ZERO_LABELS;
@@ -336,6 +499,12 @@ export default function DeviceRect({
     applyLabelLift(
       distLiftRef.current,
       lp.distLift,
+      state.camera,
+      device.distanceCm,
+    );
+    applyNameOffset(
+      nameOffsetRef.current,
+      lp.nameX,
       state.camera,
       device.distanceCm,
     );
@@ -431,8 +600,9 @@ export default function DeviceRect({
   // Letterbox backing behind media content, matching the 2D view's fill.
   const backing = displayFill === "device-color" ? device.color : "#000000";
 
-  const distLabel = `${Math.round(device.distanceCm)} cm`;
+  const shownDistLabel = distLabel ?? `${Math.round(device.distanceCm)} cm`;
   const distLiftRef = useRef<Group>(null);
+  const nameOffsetRef = useRef<Group>(null);
 
   const body =
     device.show3dBody !== false && device.deviceName
@@ -445,11 +615,25 @@ export default function DeviceRect({
   return (
     <group
       ref={rectRef}
-      position={[0, centerY, device.distanceCm]}
+      // zBias staggers co-planar screens by well under a millimeter so
+      // two devices at the SAME distance never z-fight; far too small
+      // to read as a distance change.
+      position={[0, centerY, device.distanceCm + (zBias ?? 0)]}
+      // Device hover feeds the inspector (full alpha + live details).
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setDeviceHover({ deviceId: device.id, box: null });
+      }}
+      onPointerOut={() => setDeviceHover(null)}
       onClick={
         onSelect
           ? (e) => {
               e.stopPropagation();
+              // Select on RELEASE of a stationary click only — past a
+              // 4px drag it was a camera move, not a selection (same
+              // threshold as the 2D view). R3F's delta is the pixel
+              // distance between pointerdown and pointerup.
+              if (e.delta > 4) return;
               onSelect();
             }
           : undefined
@@ -461,13 +645,17 @@ export default function DeviceRect({
         lineWidth={selected ? 3 : 2}
       />
       {showProjection || selected ? (
-        <lineSegments>
+        // Overlay treatment like the distance markers/labels: no depth
+        // test plus a late renderOrder, so scene props (the desk) never
+        // occlude the rays — but still below the labels at 15/20.
+        <lineSegments renderOrder={10}>
           <bufferGeometry ref={projRef} />
           <lineBasicMaterial
             color={device.color}
             transparent
             opacity={selected ? 0.85 : 0.22}
             depthWrite={false}
+            depthTest={false}
           />
         </lineSegments>
       ) : null}
@@ -541,20 +729,119 @@ export default function DeviceRect({
         </mesh>
       )}
 
+      {/* Measure boxes / detected lines ON this screen, colored by THIS
+          device's legibility verdict — the same text can be green on
+          the TV and red on the handheld. */}
+      {media && fit && contentBoxes && contentBoxes.length > 0
+        ? contentBoxes.map((cb) => {
+            const arcmin = boxMetricsOnDevice(
+              cb.hMeasure,
+              { width: media.width, height: media.height },
+              device,
+            ).arcmin;
+            const sel = cb.id === selectedBoxId;
+            const color =
+              boxColorMode === "group" && cb.groupId !== undefined
+                ? groupColor(cb.groupId)
+                : bandColor(arcmin);
+            // Invisible hover catcher over the box (chord plane — close
+            // enough on curved panels for pointer purposes): hovering
+            // feeds the inspector's live text details (Taylor).
+            const yCenter = fit.h / 2 - (cb.rect.y + cb.rect.h / 2) * fit.h;
+            const uc = 0.5 - (cb.rect.x + cb.rect.w / 2);
+            const r = curved ? R - 0.5 : 0;
+            const theta = curved ? (fit.w / r) * uc : 0;
+            // Fatter hot zone than the visible outline: half a line of
+            // padding, floored at ~1.2% of the screen height, so small
+            // text is hoverable from across the room. Neighbors may
+            // overlap slightly; whichever catcher wins is fine.
+            const pad = Math.max(cb.rect.h * fit.h * 0.5, fit.h * 0.012);
+            const hitW = cb.rect.w * fit.w + pad * 2;
+            const hitH = cb.rect.h * fit.h + pad * 2;
+            return (
+              <group key={cb.id}>
+                <Line
+                  points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
+                  color={sel ? "#ffffff" : color}
+                  lineWidth={sel ? 2.5 : 1.25}
+                  transparent
+                  opacity={sel ? 1 : 0.9}
+                />
+                <mesh
+                  position={
+                    curved
+                      ? [r * Math.sin(theta), yCenter, -R + r * Math.cos(theta)]
+                      : [uc * fit.w, yCenter, -0.35]
+                  }
+                  rotation={[0, theta, 0]}
+                  onPointerOver={(e) => {
+                    e.stopPropagation();
+                    setDeviceHover({
+                      deviceId: device.id,
+                      box: {
+                        id: cb.id,
+                        label: cb.label,
+                        srcPx: cb.srcPx,
+                        hFull: cb.hFull,
+                        groupId: cb.groupId,
+                        bounds: projectBounds(
+                          e,
+                          cb.rect.w * fit.w,
+                          cb.rect.h * fit.h,
+                        ),
+                        // The panel's own footprint, so the card can
+                        // sit fully off the screen space.
+                        screen: rectRef.current
+                          ? projectBounds(
+                              e,
+                              widthCm,
+                              heightCm,
+                              rectRef.current,
+                            )
+                          : undefined,
+                      },
+                    });
+                  }}
+                  // No pointerout handler: the leave bubbles to the
+                  // group (clearing hover), and whatever the pointer
+                  // lands on next re-sets it in the same event batch.
+                >
+                  <planeGeometry args={[hitW, hitH]} />
+                  <meshBasicMaterial
+                    transparent
+                    opacity={0}
+                    depthWrite={false}
+                    side={DoubleSide}
+                  />
+                </mesh>
+              </group>
+            );
+          })
+        : null}
+
       {SHOW_LABELS ? (
-        <Billboard position={[lp.nameX, heightCm / 2 + 3 + lp.nameLift, 0]}>
-          <Text
-            fontSize={nameSize}
-            color={device.color}
-            anchorX="center"
-            anchorY="bottom"
-            outlineColor="#000000"
-            outlineOpacity={0.5}
-            outlineOffsetX="3%"
-            outlineOffsetY="3%"
-          >
-            {device.label}
-          </Text>
+        <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>
+          {/* Registration-point clip (same model as the distance
+              labels): the horizontal de-collision offset lives on this
+              inner group and flips with the camera side per frame, so
+              nested rects' names keep a stable side relative to the
+              viewer instead of crossing over. */}
+          <group ref={nameOffsetRef} position={[lp.nameX, 0, 0]}>
+            <Text
+              font={FONT_URL}
+              fontSize={nameSize}
+              color={device.color}
+              anchorX="center"
+              anchorY="bottom"
+              outlineColor="#000000"
+              outlineOpacity={0.5}
+              outlineOffsetX="3%"
+              outlineOffsetY="3%"
+              onSync={raiseNameLabel}
+            >
+              {device.label}
+            </Text>
+          </group>
         </Billboard>
       ) : null}
 
@@ -609,6 +896,7 @@ export default function DeviceRect({
               {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
               <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
                 <Text
+                  font={FONT_URL}
                   fontSize={5}
                   color={device.color}
                   anchorX="left"
@@ -621,7 +909,7 @@ export default function DeviceRect({
                   onSync={raiseDistLabel}
                   {...(dragHandlers ?? {})}
                 >
-                  {distLabel}
+                  {shownDistLabel}
                 </Text>
               </group>
             </group>

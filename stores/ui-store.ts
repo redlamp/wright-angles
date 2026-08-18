@@ -7,10 +7,14 @@ export type PanelId =
   | "devices"
   | "media"
   | "report"
+  | "workbench"
   | "table"
   | "info"
   | "settings";
 export type ViewMode = "2d" | "3d";
+
+/** Tabs of the unified workbench panel (Taylor 2026-08-17). */
+export type WorkbenchTab = "devices" | "media" | "report";
 
 interface UiState {
   openPanels: Record<PanelId, boolean>;
@@ -23,18 +27,30 @@ interface UiState {
   setPanelHeight: (id: PanelId, height: number) => void;
   viewMode: ViewMode;
   togglePanel: (id: PanelId) => void;
+  /** Open (never close) a panel — deep links from other panels. */
+  openPanel: (id: PanelId) => void;
+  /** Active workbench tab (Device Manager / Media Library / Report). */
+  workbenchTab: WorkbenchTab;
+  /** Deep link: open the workbench on a tab (never closes). */
+  openWorkbenchTab: (tab: WorkbenchTab) => void;
+  /** Hotkey/sidebar semantics: same tab toggles the panel, another
+   * tab switches to it (opening if needed). */
+  toggleWorkbenchTab: (tab: WorkbenchTab) => void;
   setPanelPosition: (id: PanelId, pos: { x: number; y: number }) => void;
   setPanelWidth: (id: PanelId, width: number) => void;
   setViewMode: (mode: ViewMode) => void;
   /** Manual 2D pan (CSS px), applied on top of the center mode. */
   panOffset: { x: number; y: number };
   setPanOffset: (offset: { x: number; y: number }) => void;
-  /** Media Library two-column split, left column percent (25–75). */
-  mediaSplitPct: number;
-  setMediaSplitPct: (pct: number) => void;
-  /** Media Library layout: single column or library+detail columns. */
-  mediaColumns: 1 | 2;
-  setMediaColumns: (cols: 1 | 2) => void;
+  /**
+   * Workbench first-column width in px, shared by all three tabs so the
+   * split stays put when flipping between them (Taylor 2026-08-17).
+   */
+  workbenchSplitPx: number;
+  setWorkbenchSplitPx: (px: number) => void;
+  /** First column collapsed to give the second the full panel width. */
+  workbenchLeftCollapsed: boolean;
+  toggleWorkbenchLeft: () => void;
   /** Device whose detail flyout is open beside the Device Manager. */
   openDetailId: string | null;
   /** Pinned device-detail windows and their positions. */
@@ -43,25 +59,53 @@ interface UiState {
   pinDetail: (id: string, pos: { x: number; y: number }) => void;
   unpinDetail: (id: string) => void;
   moveDetail: (id: string, pos: { x: number; y: number }) => void;
+  /**
+   * Device selected app-wide (table row, 2D rect, 3D rect). Session-only:
+   * excluded from persistence via `partialize` below.
+   */
+  selectedDeviceId: string | null;
+  selectDevice: (id: string | null) => void;
 }
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       openPanels: {
-        devices: true,
+        devices: false,
         media: false,
         report: false,
+        workbench: true,
         table: false,
         info: false,
         settings: false,
       },
+      // Default to the leftmost tab (media, report, devices order).
+      workbenchTab: "media",
+      openWorkbenchTab: (tab) =>
+        set((s) => ({
+          workbenchTab: tab,
+          openPanels: { ...s.openPanels, workbench: true },
+        })),
+      toggleWorkbenchTab: (tab) =>
+        set((s) => {
+          if (s.openPanels.workbench && s.workbenchTab === tab) {
+            return { openPanels: { ...s.openPanels, workbench: false } };
+          }
+          return {
+            workbenchTab: tab,
+            openPanels: { ...s.openPanels, workbench: true },
+          };
+        }),
       panelPositions: {},
       panelWidths: {},
       viewMode: "2d",
       togglePanel: (id) =>
         set((s) => ({
           openPanels: { ...s.openPanels, [id]: !s.openPanels[id] },
+        })),
+      openPanel: (id) =>
+        set((s) => ({
+          openPanels: { ...s.openPanels, [id]: true },
         })),
       setPanelPosition: (id, pos) =>
         set((s) => ({
@@ -79,11 +123,12 @@ export const useUiStore = create<UiState>()(
       setViewMode: (viewMode) => set({ viewMode }),
       panOffset: { x: 0, y: 0 },
       setPanOffset: (panOffset) => set({ panOffset }),
-      mediaSplitPct: 50,
-      setMediaSplitPct: (pct) =>
-        set({ mediaSplitPct: Math.min(75, Math.max(25, pct)) }),
-      mediaColumns: 2,
-      setMediaColumns: (mediaColumns) => set({ mediaColumns }),
+      workbenchSplitPx: 280,
+      setWorkbenchSplitPx: (px) =>
+        set({ workbenchSplitPx: Math.min(520, Math.max(200, Math.round(px))) }),
+      workbenchLeftCollapsed: false,
+      toggleWorkbenchLeft: () =>
+        set((s) => ({ workbenchLeftCollapsed: !s.workbenchLeftCollapsed })),
       openDetailId: null,
       pinnedDetails: {},
       openDetail: (openDetailId) => set({ openDetailId }),
@@ -102,7 +147,37 @@ export const useUiStore = create<UiState>()(
         set((s) => ({
           pinnedDetails: { ...s.pinnedDetails, [id]: pos },
         })),
+      selectedDeviceId: null,
+      selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
     }),
-    { name: "wright-angles:ui" },
+    {
+      name: "wright-angles:ui",
+      version: 2,
+      // v2: the three content panels merged into the workbench — carry
+      // legacy state over so an open panel becomes the open workbench.
+      migrate: (persisted) => {
+        const s = persisted as {
+          openPanels?: Record<string, boolean>;
+          workbenchTab?: WorkbenchTab;
+        };
+        if (s?.openPanels && s.openPanels.workbench === undefined) {
+          s.openPanels.workbench =
+            !!s.openPanels.devices ||
+            !!s.openPanels.media ||
+            !!s.openPanels.report;
+          s.workbenchTab = s.openPanels.media
+            ? "media"
+            : s.openPanels.report
+              ? "report"
+              : "devices";
+        }
+        return s;
+      },
+      // Selection is per-session; everything else persists as before.
+      partialize: (s) =>
+        Object.fromEntries(
+          Object.entries(s).filter(([key]) => key !== "selectedDeviceId"),
+        ),
+    },
   ),
 );

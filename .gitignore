@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Local test images (copyrighted press material, never committed)
 /public/reference/
+
+# Agent worktrees (live checkouts, never repo content)
+/.claude/worktrees/

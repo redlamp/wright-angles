@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ASPECT_PRESETS,
+  aspectCrop,
   boxInCrop,
   cropOf,
+  cropsEqual,
   dragCrop,
   effectiveDims,
   isFullFrame,
-  presetCrop,
   viewBoxStyle,
 } from "./media-crop";
 import type { MediaCrop } from "./types";
@@ -18,11 +20,8 @@ describe("effectiveDims", () => {
     });
   });
 
-  test("chrome-trim case: 1920×1112 bottom 16:9 → 1920×1080", () => {
-    const crop = presetCrop("bottom-16-9", 1920, 1112)!;
-    expect(crop.x).toBe(0);
-    expect(crop.w).toBe(1);
-    expect(crop.y + crop.h).toBeCloseTo(1, 10);
+  test("chrome-trim case: 1920×1112 to 16:9 → 1920×1080", () => {
+    const crop = aspectCrop(16 / 9, 1920, 1112);
     expect(effectiveDims({ width: 1920, height: 1112, crop })).toEqual({
       width: 1920,
       height: 1080,
@@ -30,27 +29,45 @@ describe("effectiveDims", () => {
   });
 });
 
-describe("presetCrop", () => {
-  test("skips presets matching the image's own shape", () => {
-    expect(presetCrop("bottom-16-9", 1920, 1080)).toBeNull();
-    expect(presetCrop("center-16-9", 1920, 1080)).toBeNull();
-    expect(presetCrop("square", 1000, 1000)).toBeNull();
-    // Wider than 16:9: no full-width 16:9 area exists.
-    expect(presetCrop("bottom-16-9", 3440, 1440)).toBeNull();
-  });
-
-  test("center 16:9 on an ultrawide keeps full height, centers x", () => {
-    const c = presetCrop("center-16-9", 3440, 1440)!;
+describe("aspectCrop", () => {
+  test("wider image than target: full height, centered horizontally", () => {
+    const c = aspectCrop(16 / 9, 3440, 1440);
     expect(c.h).toBe(1);
     expect(c.y).toBe(0);
     expect(c.w * 3440).toBeCloseTo(2560, 6);
     expect(c.x).toBeCloseTo((1 - c.w) / 2, 10);
   });
 
-  test("square center on a landscape image", () => {
-    const c = presetCrop("square", 1920, 1080)!;
-    expect(c.h).toBe(1);
-    expect(c.w * 1920).toBeCloseTo(1080, 6);
+  test("taller image than target: full width, centered vertically", () => {
+    const c = aspectCrop(16 / 9, 1920, 1112);
+    expect(c.w).toBe(1);
+    expect(c.x).toBe(0);
+    expect(c.h * 1112).toBeCloseTo(1080, 6);
+    expect(c.y).toBeCloseTo((1 - c.h) / 2, 10);
+  });
+
+  test("exact-aspect image yields the full frame → treated as None", () => {
+    const c = aspectCrop(16 / 9, 1920, 1080);
+    expect(isFullFrame(c)).toBe(true);
+    expect(cropsEqual(c, { x: 0, y: 0, w: 1, h: 1 })).toBe(true);
+  });
+
+  test("every preset window matches its target aspect in pixels", () => {
+    for (const { ratio } of ASPECT_PRESETS) {
+      const c = aspectCrop(ratio, 2560, 1440);
+      expect(((c.w * 2560) / (c.h * 1440)) - ratio).toBeCloseTo(0, 6);
+      expect(c.x).toBeGreaterThanOrEqual(0);
+      expect(c.y).toBeGreaterThanOrEqual(0);
+      expect(c.x + c.w).toBeLessThanOrEqual(1 + 1e-10);
+      expect(c.y + c.h).toBeLessThanOrEqual(1 + 1e-10);
+    }
+  });
+
+  test("32:9 on a 16:9 image keeps full width, half height", () => {
+    const c = aspectCrop(32 / 9, 1920, 1080);
+    expect(c.w).toBe(1);
+    expect(c.h).toBeCloseTo(0.5, 10);
+    expect(c.y).toBeCloseTo(0.25, 10);
   });
 });
 

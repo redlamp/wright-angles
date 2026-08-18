@@ -92,6 +92,51 @@ export function isMeasurableLine(line: {
   );
 }
 
+export interface OcrWord {
+  text: string;
+  bbox: PixelBbox;
+}
+
+/**
+ * One Tesseract "line" can span two layout columns (side-by-side UI
+ * panels read as a single line of text — Taylor's two-columns bug).
+ * Split a line's words wherever the horizontal gap between consecutive
+ * words exceeds this × the line height.
+ */
+export const COLUMN_GAP_FACTOR = 2;
+
+export function splitWordsAtGaps(
+  words: OcrWord[],
+  lineHeightPx: number,
+): OcrWord[][] {
+  const runs: OcrWord[][] = [];
+  let cur: OcrWord[] = [];
+  let prevEnd = -Infinity;
+  for (const w of [...words].sort((a, b) => a.bbox.x0 - b.bbox.x0)) {
+    if (
+      cur.length > 0 &&
+      w.bbox.x0 - prevEnd > COLUMN_GAP_FACTOR * lineHeightPx
+    ) {
+      runs.push(cur);
+      cur = [];
+    }
+    cur.push(w);
+    prevEnd = Math.max(prevEnd, w.bbox.x1);
+  }
+  if (cur.length > 0) runs.push(cur);
+  return runs;
+}
+
+/** Tight bbox around a word run. */
+export function wordsBbox(words: OcrWord[]): PixelBbox {
+  return {
+    x0: Math.min(...words.map((w) => w.bbox.x0)),
+    y0: Math.min(...words.map((w) => w.bbox.y0)),
+    x1: Math.max(...words.map((w) => w.bbox.x1)),
+    y1: Math.max(...words.map((w) => w.bbox.y1)),
+  };
+}
+
 /** The `n` largest lines by box area, in reading order among the kept. */
 export function largestByArea(
   lines: DetectedLine[],
@@ -181,11 +226,31 @@ async function runDetection(
       .flatMap((block) => block.paragraphs)
       .flatMap((para) => para.lines)
       .filter(isMeasurableLine)
-      .map((line) => ({
-        text: line.text.trim(),
-        confidence: line.confidence,
-        box: bboxToFullImage(line.bbox, rect, intrinsic),
-      }));
+      .flatMap((line) => {
+        const lineH = line.bbox.y1 - line.bbox.y0;
+        const words = (line.words ?? []).map((w) => ({
+          text: w.text,
+          bbox: w.bbox,
+        }));
+        // Split cross-column "lines" at big horizontal word gaps; a
+        // line with no word data passes through untouched.
+        const runs =
+          words.length > 1 ? splitWordsAtGaps(words, lineH) : [words];
+        if (runs.length <= 1) {
+          return [
+            {
+              text: line.text.trim(),
+              confidence: line.confidence,
+              box: bboxToFullImage(line.bbox, rect, intrinsic),
+            },
+          ];
+        }
+        return runs.map((run) => ({
+          text: run.map((w) => w.text).join(" ").trim(),
+          confidence: line.confidence,
+          box: bboxToFullImage(wordsBbox(run), rect, intrinsic),
+        }));
+      });
   } finally {
     await worker.terminate();
   }

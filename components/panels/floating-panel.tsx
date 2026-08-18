@@ -20,12 +20,15 @@ interface FloatingPanelProps {
   id: PanelId;
   title: string;
   icon: LucideIcon;
-  defaultPosition: { x: number; y: number };
+  /** Override for the shared default (top center, under the rail). */
+  defaultPosition?: { x: number; y: number };
   width?: number;
   /** Resize cap; "none" allows growing to the viewport edge. */
   maxWidth?: number | "none";
   /** Extra controls rendered in the header, before the close button. */
   headerActions?: React.ReactNode;
+  /** Small centered note in the title bar (e.g. the local-only promise). */
+  headerNote?: string;
   /**
    * Allow dragging the bottom edge / corner to fix the content height
    * (children should fill with h-full and scroll internally).
@@ -42,6 +45,7 @@ export function FloatingPanel({
   width: defaultWidth = 320,
   maxWidth,
   headerActions,
+  headerNote,
   resizableHeight,
   children,
 }: FloatingPanelProps) {
@@ -56,7 +60,13 @@ export function FloatingPanel({
 
   const width = storedWidth ?? defaultWidth;
   const height = resizableHeight ? storedHeight : undefined;
-  const pos = stored ?? defaultPosition;
+  // Un-dragged panels open top-center, just under the rail (Taylor
+  // 2026-08-18). Client-only render, so window is available here.
+  const pos = stored ??
+    defaultPosition ?? {
+      x: Math.max(8, Math.round((window.innerWidth - width) / 2)),
+      y: 56,
+    };
   const resize = useRef<{
     edge: "left" | "right" | "bottom" | "corner";
     startX: number;
@@ -128,6 +138,16 @@ export function FloatingPanel({
 
   const bringToFront = useCallback(() => setZ(nextZ()), []);
 
+  // Opening a panel raises it above everything else — a panel opened
+  // FROM another panel (table from the Device Manager) must land on
+  // top, not under the panel that launched it. Render-time adjustment
+  // (not an effect): the open frame already paints with the new z.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setZ(nextZ());
+  }
+
   const onHeaderPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Buttons inside the header (close) handle their own clicks.
@@ -160,17 +180,28 @@ export function FloatingPanel({
     drag.current = null;
   }, []);
 
-  // Keep panels reachable if the window shrinks below a stored position.
+  // Keep panels reachable: at least min(240, width) of the panel must
+  // stay horizontally inside the viewport — checked at mount (a stored
+  // position can come from a much wider monitor) and on window resize.
+  // NOT on every position change: a deliberate drag past the edge is
+  // allowed its looser drag clamp and must not snap back.
   useEffect(() => {
-    if (!stored) return;
-    const onResize = () => {
-      const x = Math.min(stored.x, window.innerWidth - 48);
-      const y = Math.min(stored.y, window.innerHeight - 40);
-      if (x !== stored.x || y !== stored.y) setPanelPosition(id, { x, y });
+    const clamp = () => {
+      const cur = useUiStore.getState().panelPositions[id];
+      if (!cur) return;
+      const w = ref.current?.offsetWidth ?? width;
+      const visible = Math.min(240, w);
+      const x = Math.min(
+        Math.max(cur.x, visible - w),
+        window.innerWidth - visible,
+      );
+      const y = Math.min(Math.max(cur.y, 8), window.innerHeight - 40);
+      if (x !== cur.x || y !== cur.y) setPanelPosition(id, { x, y });
     };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [id, setPanelPosition, stored]);
+    clamp();
+    window.addEventListener("resize", clamp);
+    return () => window.removeEventListener("resize", clamp);
+  }, [id, setPanelPosition, width]);
 
   if (!open) return null;
 
@@ -188,7 +219,14 @@ export function FloatingPanel({
         onPointerUp={onHeaderPointerUp}
       >
         <Icon className="size-3.5 text-muted-foreground" />
-        <span className="flex-1 text-sm font-medium">{title}</span>
+        <span className="text-base font-medium">{title}</span>
+        {headerNote ? (
+          <span className="min-w-0 flex-1 truncate px-2 text-center text-sm text-muted-foreground/70">
+            {headerNote}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
         {headerActions}
         <button
           type="button"

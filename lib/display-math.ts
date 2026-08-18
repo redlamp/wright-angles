@@ -12,12 +12,52 @@
  * pinned to it.
  */
 
-import type { Aspect, Device, Resolution } from "./types";
+import type { Aspect, Device, LengthUnit, Resolution } from "./types";
 
 export const CM_PER_IN = 2.54;
 
 export const inToCm = (v: number) => v * CM_PER_IN;
 export const cmToIn = (v: number) => v / CM_PER_IN;
+
+/**
+ * Human-readable viewing distance in the chosen unit (Taylor
+ * 2026-08-17): whole centimeters, or imperial as feet-and-inches from
+ * one foot up (6′ 7″) and plain inches in half-inch steps below a foot
+ * (9.5″). Inch remainders round whole and carry into the foot count at
+ * 12, so 35.8 in reads 3′ 0″, never 2′ 12″.
+ */
+export function formatDistance(distanceCm: number, unit: LengthUnit): string {
+  if (unit === "cm") return `${Math.round(distanceCm)} cm`;
+  const totalIn = cmToIn(distanceCm);
+  if (totalIn < 12) {
+    const half = Math.round(totalIn * 2) / 2;
+    return `${half % 1 === 0 ? half.toFixed(0) : half.toFixed(1)}″`;
+  }
+  let ft = Math.floor(totalIn / 12);
+  let rem = Math.round(totalIn - ft * 12);
+  if (rem === 12) {
+    ft += 1;
+    rem = 0;
+  }
+  return `${ft}′ ${rem}″`;
+}
+
+/**
+ * Perceptual (log) mapping between a viewing distance and a 0..1
+ * slider position. A linear 10..400cm track spends most of its length
+ * on far distances where a centimeter barely matters; log spacing
+ * gives handheld/desk distances the same room as TV/projector ones.
+ * Distances outside [min, max] clamp to the track ends.
+ */
+export function distToSlider(cm: number, min: number, max: number): number {
+  const t = Math.log(cm / min) / Math.log(max / min);
+  return Math.min(1, Math.max(0, t));
+}
+
+/** Inverse of {@link distToSlider}: slider position t∈[0,1] → cm. */
+export function sliderToDist(t: number, min: number, max: number): number {
+  return min * Math.pow(max / min, t);
+}
 
 const DEG_PER_RAD = 180 / Math.PI;
 
@@ -260,3 +300,16 @@ export const ACUITY = {
   /** ISO 9241-303 required capability band (20–22′). */
   comfortableTextArcmin: 20,
 } as const;
+
+/**
+ * Typical text stroke width ≈ cap height / 7 (regular-weight faces run
+ * roughly 1/6–1/8). Strokes rendered below the 1′ acuity limit vanish
+ * even when the letterforms technically fit — the sub-acuity warning
+ * (plan 10.4).
+ */
+export const STROKE_PER_CAP = 1 / 7;
+
+/** True when text of this cap-height angular size has sub-1′ strokes. */
+export function strokesSubAcuity(capArcmin: number): boolean {
+  return capArcmin * STROKE_PER_CAP < ACUITY.detailLimitArcmin;
+}

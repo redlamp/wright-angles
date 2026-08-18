@@ -28,6 +28,16 @@ export function effectiveDims(item: Cropped): {
 
 const EPS = 1e-4;
 
+/** Field-wise equality within EPS — how the UI matches a crop to a preset. */
+export function cropsEqual(a: MediaCrop, b: MediaCrop): boolean {
+  return (
+    Math.abs(a.x - b.x) < EPS &&
+    Math.abs(a.y - b.y) < EPS &&
+    Math.abs(a.w - b.w) < EPS &&
+    Math.abs(a.h - b.h) < EPS
+  );
+}
+
 /** True when the crop covers (essentially) the whole frame. */
 export function isFullFrame(crop: MediaCrop): boolean {
   return (
@@ -97,44 +107,34 @@ export function boxInCrop(
   };
 }
 
-export type CropPreset = "bottom-16-9" | "center-16-9" | "square";
+/** The standard aspect-ratio presets the crop UI offers, in UI order. */
+export const ASPECT_PRESETS: { label: string; ratio: number }[] = [
+  { label: "4:3", ratio: 4 / 3 },
+  { label: "5:4", ratio: 5 / 4 },
+  { label: "16:9", ratio: 16 / 9 },
+  { label: "16:10", ratio: 16 / 10 },
+  { label: "21:9", ratio: 21 / 9 },
+  { label: "32:9", ratio: 32 / 9 },
+];
 
 /**
- * Preset crops from the intrinsic dims. Null = not applicable: the image
- * is already that shape, or (bottom-16-9) is wider than 16:9 so no
- * full-width 16:9 area exists. "bottom-16-9" is the chrome-trim case —
- * e.g. a 1920×1112 capture cropped to its bottom 1920×1080.
+ * The largest centered window of the given aspect ratio (w/h) inside an
+ * intrinsic width×height frame. Wider images keep full height and center
+ * horizontally; taller ones keep full width and center vertically. An
+ * image already at the target aspect yields the full frame — callers
+ * treat that as "no crop" via isFullFrame.
  */
-export function presetCrop(
-  preset: CropPreset,
-  width: number,
-  height: number,
-): MediaCrop | null {
-  if (width <= 0 || height <= 0) return null;
-  const a = width / height;
-  const near = (r: number) => Math.abs(a - r) / r < 1e-3;
-  if (preset === "square") {
-    if (near(1)) return null;
-    const side = Math.min(width, height);
-    return {
-      x: (1 - side / width) / 2,
-      y: (1 - side / height) / 2,
-      w: side / width,
-      h: side / height,
-    };
-  }
-  const R = 16 / 9;
-  if (near(R)) return null;
-  if (preset === "bottom-16-9") {
-    if (a > R) return null;
-    const h = width / R / height;
-    return { x: 0, y: 1 - h, w: 1, h };
-  }
-  if (a > R) {
-    const w = (height * R) / width;
+export function aspectCrop(
+  ratio: number,
+  imgW: number,
+  imgH: number,
+): MediaCrop {
+  if (ratio <= 0 || imgW <= 0 || imgH <= 0) return { ...FULL_CROP };
+  if (imgW / imgH > ratio) {
+    const w = (imgH * ratio) / imgW;
     return { x: (1 - w) / 2, y: 0, w, h: 1 };
   }
-  const h = width / R / height;
+  const h = imgW / ratio / imgH;
   return { x: 0, y: (1 - h) / 2, w: 1, h };
 }
 
