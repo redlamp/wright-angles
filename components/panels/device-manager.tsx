@@ -66,39 +66,12 @@ const DIST_SLIDER_MAX_CM = 400;
  * long the device name is: eye | color | name | distance | chevron.
  */
 const ROW_GRID =
-  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_10rem_1.75rem] items-center gap-1.5";
+  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_1.75rem] items-center gap-1.5";
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
-    </span>
-  );
-}
-
-/**
- * Read-only distance + size for a device LIST row, icon-labeled like
- * the text hover card's metric pairs (Taylor 2026-08-18) — editing
- * moved to the editor column, so rows just report. Viewing distance
- * leads, display size follows.
- */
-function DeviceRowReadout({ device }: { device: Device }) {
-  const unit = useSettingsStore((s) => s.unit);
-  const sizeUnit = useSettingsStore((s) => s.sizeUnit);
-  const size =
-    sizeUnit === "in"
-      ? `${device.diagonalIn.toFixed(device.diagonalIn >= 100 ? 0 : 1)}″`
-      : `${Math.round(device.diagonalIn * CM_PER_IN)} cm`;
-  return (
-    <span className="flex items-center justify-end gap-3 font-mono text-sm text-muted-foreground">
-      <span className="flex items-center gap-1" title="Viewing distance">
-        <RulerDimensionLineIcon className="size-3.5" />
-        {formatDistance(device.distanceCm, unit)}
-      </span>
-      <span className="flex items-center gap-1" title="Display size (diagonal)">
-        <ProportionsIcon className="size-3.5" />
-        {size}
-      </span>
     </span>
   );
 }
@@ -687,7 +660,6 @@ function DeviceRow({
         >
           {device.label}
         </button>
-        <DeviceRowReadout device={device} />
         <Button
           variant="ghost"
           size="icon"
