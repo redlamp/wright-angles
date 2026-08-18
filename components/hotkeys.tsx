@@ -46,6 +46,7 @@ const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "Drag", does: "Pan the 2D composition (click selects)" },
   { keys: "Double-click", does: "Recenter the 2D composition" },
   { keys: "Esc", does: "Deselect / close this sheet" },
+  { keys: "← / →", does: "Previous / next media in the library" },
   { keys: "Space", does: "Play / pause timeline media" },
   { keys: "< / >", does: "Previous / next OCR keyframe (and pause)" },
   { keys: "X", does: "Crop the active media (again clears the crop)" },
@@ -93,6 +94,19 @@ export function Hotkeys() {
         ui.togglePanel(panel);
         return;
       }
+      // Arrow keys walk the media library (looping), 2D and 3D alike.
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const media = useMediaStore.getState();
+        const n = media.items.length;
+        if (n === 0) return;
+        e.preventDefault();
+        const at = media.items.findIndex((i) => i.id === media.activeId);
+        const step = e.key === "ArrowRight" ? 1 : -1;
+        const next = media.items[(Math.max(0, at) + step + n) % n];
+        media.setActive(next.id);
+        return;
+      }
+
       // Transport keys act only when timeline media is active.
       const pb = usePlaybackStore.getState();
       if (e.key === " " && pb.animated) {
