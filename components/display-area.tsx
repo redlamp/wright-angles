@@ -23,7 +23,10 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useAnnotationStore } from "@/stores/annotation-store";
+import {
+  useAnnotationStore,
+  type DeviceHover,
+} from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import {
   ACUITY,
@@ -398,6 +401,10 @@ function PixelLoupe({
   );
 }
 
+/** Module-level mutator (react-compiler convention): view hover state. */
+const setDeviceHover = (h: DeviceHover | null) =>
+  useAnnotationStore.getState().setDeviceHover(h);
+
 const boxBandColor = (worstArcmin: number) =>
   worstArcmin >= ACUITY.comfortableTextArcmin
     ? "#46a758"
@@ -418,6 +425,7 @@ function BoxLayer({
   worstByBox,
   groupById,
   isHost,
+  deviceId,
 }: {
   rectW: number;
   rectH: number;
@@ -428,6 +436,8 @@ function BoxLayer({
   /** Text-block ids for the global Groups color mode. */
   groupById: Map<string, number>;
   isHost: boolean;
+  /** Owning rect's device — box hovers feed the inspector with it. */
+  deviceId: string;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
@@ -465,7 +475,9 @@ function BoxLayer({
               border: `${selected && isHost ? 2 : 1}px solid ${color}`,
               boxShadow: selected && isHost ? `0 0 0 1px ${color}55` : undefined,
               cursor: isHost ? "pointer" : undefined,
-              pointerEvents: isHost ? "auto" : "none",
+              // All rects' boxes are hoverable (inspector details);
+              // only the host's are clickable.
+              pointerEvents: "auto",
             }}
             onClick={
               isHost
@@ -475,8 +487,23 @@ function BoxLayer({
                   }
                 : undefined
             }
-            onPointerEnter={isHost ? () => setHoveredId(b.id) : undefined}
-            onPointerLeave={isHost ? () => setHoveredId(null) : undefined}
+            onPointerEnter={() => {
+              if (isHost) setHoveredId(b.id);
+              setDeviceHover({
+                deviceId,
+                box: {
+                  id: b.id,
+                  label: b.label,
+                  srcPx: Math.round(b.h * media.height),
+                  hFull: b.h,
+                  groupId: groupById.get(b.id),
+                },
+              });
+            }}
+            onPointerLeave={() => {
+              if (isHost) setHoveredId(null);
+              setDeviceHover({ deviceId, box: null });
+            }}
           />
         );
       })}
@@ -1019,6 +1046,12 @@ export function DisplayArea() {
             height: h,
             zIndex: i + 1,
           }}
+          // Same inspector-feeding hover as the 3D rects. enter/leave
+          // (not over/out): descendants — boxes — must not re-fire it.
+          onPointerEnter={() =>
+            setDeviceHover({ deviceId: device.id, box: null })
+          }
+          onPointerLeave={() => setDeviceHover(null)}
         >
           <div
             className="absolute inset-0 bg-black"
@@ -1081,6 +1114,7 @@ export function DisplayArea() {
                 worstByBox={worstByBox}
                 groupById={groupById}
                 isHost={!!device.isThis && !drawMode}
+                deviceId={device.id}
               />
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}

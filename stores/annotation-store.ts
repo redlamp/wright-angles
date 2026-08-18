@@ -6,7 +6,7 @@ import { create } from "zustand";
 export type ScanColorMode = "group" | "rating";
 
 /** Text box hovered in the 3D view, with everything the inspector shows. */
-export interface Hover3dBox {
+export interface HoverBox {
   id: string;
   label?: string;
   /** Source pixel height (group-corrected where available). */
@@ -16,10 +16,10 @@ export interface Hover3dBox {
   groupId?: number;
 }
 
-export interface Hover3d {
+export interface DeviceHover {
   deviceId: string;
   /** null = the device itself is hovered, no specific box. */
-  box: Hover3dBox | null;
+  box: HoverBox | null;
 }
 
 /** Session-only annotation UI state (deliberately not persisted). */
@@ -39,8 +39,8 @@ interface AnnotationState {
   loupeOn: boolean;
   /** 3D hover: which device (and optionally which text box) is under
    * the cursor — feeds the inspector's live details + full alpha. */
-  hover3d: Hover3d | null;
-  setHover3d: (h: Hover3d | null) => void;
+  deviceHover: DeviceHover | null;
+  setDeviceHover: (h: DeviceHover | null) => void;
   setDrawMode: (v: boolean) => void;
   selectBox: (id: string | null) => void;
   setScanColorMode: (m: ScanColorMode) => void;
@@ -58,8 +58,8 @@ export const useAnnotationStore = create<AnnotationState>()((set) => ({
   showSafeAreas: false,
   showContrast: false,
   loupeOn: false,
-  hover3d: null,
-  setHover3d: (hover3d) => set({ hover3d }),
+  deviceHover: null,
+  setDeviceHover: (deviceHover) => set({ deviceHover }),
   setDrawMode: (drawMode) =>
     set((s) => ({ drawMode, selectedBoxId: drawMode ? s.selectedBoxId : null })),
   selectBox: (selectedBoxId) => set({ selectedBoxId }),

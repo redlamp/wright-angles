@@ -48,7 +48,7 @@ export function DeviceInspector() {
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const unit = useSettingsStore((s) => s.unit);
-  const hover3d = useAnnotationStore((s) => s.hover3d);
+  const deviceHover = useAnnotationStore((s) => s.deviceHover);
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const activeItem = items.find((i) => i.id === activeId);
@@ -70,14 +70,14 @@ export function DeviceInspector() {
   const byId = (id: string | null | undefined) =>
     id === thisDevice.id ? thisDevice : devices.find((d) => d.id === id);
   // A selection PINS the card to that device (Taylor 2026-08-18);
-  // without one, a 3D hover shows its device transiently.
-  const hoverDevice = byId(hover3d?.deviceId);
+  // without one, hovering a device in either view shows it transiently.
+  const hoverDevice = byId(deviceHover?.deviceId);
   const device = byId(selectedId) ?? hoverDevice;
   if (!device) return null;
   const isThis = device.id === thisDevice.id;
   // Box details always measure on the box's OWN device, even when the
   // card is pinned to a different one (called out in the section).
-  const hoverBox = hoverDevice ? hover3d?.box : null;
+  const hoverBox = hoverDevice ? deviceHover?.box : null;
   const boxMetrics =
     hoverBox && hoverDevice && activeItem
       ? boxMetricsOnDevice(hoverBox.hFull, activeItem, hoverDevice)
@@ -89,8 +89,8 @@ export function DeviceInspector() {
       className={cn(
         "panel-frame fixed w-64 rounded-lg border border-border transition-opacity duration-150",
         // Full alpha while pinned to a selection, hovering a device in
-        // 3D, or hovering the panel itself.
-        selectedId || hover3d
+        // either view, or hovering the panel itself.
+        selectedId || deviceHover
           ? "opacity-100"
           : "opacity-40 hover:opacity-100 focus-within:opacity-100",
       )}
@@ -191,7 +191,7 @@ export function DeviceInspector() {
         </button>
       </div>
 
-      {/* Live details for the text box hovered in 3D (Taylor): what
+      {/* Live details for the text box hovered in a view (Taylor): what
           this text measures ON THIS device. */}
       {hoverBox && boxMetrics ? (
         <div className="space-y-1 border-t border-border px-2.5 py-2">

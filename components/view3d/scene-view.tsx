@@ -390,7 +390,7 @@ export default function SceneView({
   // 3D hover is meaningless once the scene unmounts — a stale value
   // would pin the inspector open (and at full alpha) back in 2D.
   useEffect(
-    () => () => useAnnotationStore.getState().setHover3d(null),
+    () => () => useAnnotationStore.getState().setDeviceHover(null),
     [],
   );
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;

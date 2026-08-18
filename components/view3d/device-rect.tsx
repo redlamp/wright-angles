@@ -18,7 +18,7 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
-import { useAnnotationStore, type Hover3d } from "@/stores/annotation-store";
+import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
 import { HANDHELD_BODIES } from "@/lib/presets";
@@ -28,8 +28,8 @@ import type { ScenePalette } from "./scene-palette";
 const SHOW_LABELS = true;
 
 /** Module-level mutator (react-compiler convention): 3D hover state. */
-const setHover3d = (h: Hover3d | null) =>
-  useAnnotationStore.getState().setHover3d(h);
+const setDeviceHover = (h: DeviceHover | null) =>
+  useAnnotationStore.getState().setDeviceHover(h);
 
 /**
  * Barlow Medium for the 3D labels, matching the app's primary typeface.
@@ -582,9 +582,9 @@ export default function DeviceRect({
       // Device hover feeds the inspector (full alpha + live details).
       onPointerOver={(e) => {
         e.stopPropagation();
-        setHover3d({ deviceId: device.id, box: null });
+        setDeviceHover({ deviceId: device.id, box: null });
       }}
-      onPointerOut={() => setHover3d(null)}
+      onPointerOut={() => setDeviceHover(null)}
       onClick={
         onSelect
           ? (e) => {
@@ -724,7 +724,7 @@ export default function DeviceRect({
                   rotation={[0, theta, 0]}
                   onPointerOver={(e) => {
                     e.stopPropagation();
-                    setHover3d({
+                    setDeviceHover({
                       deviceId: device.id,
                       box: {
                         id: cb.id,
