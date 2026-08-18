@@ -83,9 +83,11 @@ export function HoverTextCard() {
           on {device.label}
         </div>
         <div>{box.srcPx}px in source</div>
+        {/* Spelled-out unit: the arcminute prime reads as imperial
+            feet at a glance, and this card can't carry tooltips. */}
         <div className="flex items-center gap-1.5">
           <span style={{ color: bandColor(m.arcmin) }}>
-            {m.arcmin.toFixed(1)}′
+            {m.arcmin.toFixed(1)} arcmin
           </span>
           · {m.mm.toFixed(1)}mm · {Math.round(m.devicePx)}px here
           {strokesSubAcuity(m.arcmin) ? (
