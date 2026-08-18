@@ -55,28 +55,34 @@ const toValues = (m: number[]) =>
 
 export const CVD_CHOICES: {
   mode: CvdMode;
-  label: string;
+  name: string;
+  /** Muted second half of the menu row; absent for Off. */
+  desc?: string;
   short: string;
 }[] = [
-  { mode: "none", label: "Off", short: "color vision" },
+  { mode: "none", name: "Off", short: "color vision" },
   {
     mode: "protanopia",
-    label: "Protanopia (no red cones)",
+    name: "Protanopia",
+    desc: "no red cones",
     short: "protanopia",
   },
   {
     mode: "deuteranopia",
-    label: "Deuteranopia (no green cones)",
+    name: "Deuteranopia",
+    desc: "no green cones",
     short: "deuteranopia",
   },
   {
     mode: "tritanopia",
-    label: "Tritanopia (no blue cones)",
+    name: "Tritanopia",
+    desc: "no blue cones",
     short: "tritanopia",
   },
   {
     mode: "achromatopsia",
-    label: "Achromatopsia (no color)",
+    name: "Achromatopsia",
+    desc: "no color",
     short: "achromatopsia",
   },
 ];
@@ -110,7 +116,12 @@ export function CvdChip({ className }: { className?: string }) {
       <SelectContent>
         {CVD_CHOICES.map((c) => (
           <SelectItem key={c.mode} value={c.mode}>
-            {c.label}
+            <span>
+              {c.name}
+              {c.desc ? (
+                <span className="ml-3 text-muted-foreground">{c.desc}</span>
+              ) : null}
+            </span>
           </SelectItem>
         ))}
       </SelectContent>
