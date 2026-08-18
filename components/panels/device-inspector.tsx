@@ -28,7 +28,6 @@ export function DeviceInspector() {
   const selectedId = useUiStore((s) => s.selectedDeviceId);
   const selectDevice = useUiStore((s) => s.selectDevice);
   const openWorkbenchTab = useUiStore((s) => s.openWorkbenchTab);
-  const openDetail = useUiStore((s) => s.openDetail);
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
@@ -158,7 +157,8 @@ export function DeviceInspector() {
           type="button"
           className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"
           onClick={() => {
-            openDetail(isThis ? null : device.id);
+            // Selection is shared app-wide; the editor follows it.
+            selectDevice(device.id);
             openWorkbenchTab("devices");
           }}
         >

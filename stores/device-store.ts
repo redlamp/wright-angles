@@ -61,14 +61,17 @@ export const useDeviceStore = create<DeviceState>()(
   persist(
     (set) => ({
       thisDevice: defaultThisDevice,
-      // A small starter set so the first launch already demonstrates the
-      // idea; freely deletable.
+      // Starter set (Taylor 2026-08-19): a spread from handheld to
+      // projector so the first launch demonstrates the range; freely
+      // deletable. Green is skipped — it's This Device's key color.
       devices: [
-        seedDevice("switch-oled", DEVICE_COLORS[1]),
         seedDevice("switch-2", DEVICE_COLORS[0]),
-        seedDevice("tv-49-4k", DEVICE_COLORS[3]),
+        { ...seedDevice("steam-deck", DEVICE_COLORS[1]), distanceCm: 36 },
+        seedDevice("monitor-27-1440", DEVICE_COLORS[3]),
+        seedDevice("tv-49-4k", DEVICE_COLORS[4]),
+        seedDevice("projector-120", DEVICE_COLORS[5]),
       ],
-      colorCursor: 4,
+      colorCursor: 6,
       updateThisDevice: (patch) =>
         set((s) => ({ thisDevice: { ...s.thisDevice, ...patch } })),
       addFromPreset: (preset) =>

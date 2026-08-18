@@ -2,19 +2,22 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  ArrowLeftRightIcon,
   CopyIcon,
   CornerDownRightIcon,
-  EllipsisVerticalIcon,
   EyeIcon,
   EyeOffIcon,
   PinIcon,
   PlusIcon,
+  ProportionsIcon,
   RotateCwSquareIcon,
   RulerDimensionLineIcon,
   Trash2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  FEATURE_3D_DEVICE_BODY,
+  FEATURE_PINNED_DEVICES,
+} from "@/lib/flags";
 import type { Device } from "@/lib/types";
 import {
   COMMON_ASPECTS,
@@ -27,7 +30,6 @@ import {
   aspectFromResolution,
   deviceAngles,
   distToSlider,
-  formatDistance,
   sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
@@ -61,44 +63,14 @@ const DIST_MIN_CM = 10;
 const DIST_MAX_CM = 9999;
 const DIST_SLIDER_MAX_CM = 400;
 
-/**
- * Shared collapsed-row grid so every stepper is aligned no matter how
- * long the device name is: eye | color | name | distance | chevron.
- */
+/** Shared collapsed-row grid: eye | name (in the device's key color). */
 const ROW_GRID =
-  "grid grid-cols-[1.75rem_1.5rem_minmax(0,1fr)_10rem_1.75rem] items-center gap-1.5";
+  "grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-1.5";
 
 function Microlabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
       {children}
-    </span>
-  );
-}
-
-/**
- * Read-only distance + size for a device LIST row, icon-labeled like
- * the text hover card's metric pairs (Taylor 2026-08-18) — editing
- * moved to the editor column, so rows just report. Viewing distance
- * leads, display size follows.
- */
-function DeviceRowReadout({ device }: { device: Device }) {
-  const unit = useSettingsStore((s) => s.unit);
-  const sizeUnit = useSettingsStore((s) => s.sizeUnit);
-  const size =
-    sizeUnit === "in"
-      ? `${device.diagonalIn.toFixed(device.diagonalIn >= 100 ? 0 : 1)}″`
-      : `${Math.round(device.diagonalIn * CM_PER_IN)} cm`;
-  return (
-    <span className="flex items-center justify-end gap-3 font-mono text-sm text-muted-foreground">
-      <span className="flex items-center gap-1" title="Viewing distance">
-        <ArrowLeftRightIcon className="size-3.5" />
-        {formatDistance(device.distanceCm, unit)}
-      </span>
-      <span className="flex items-center gap-1" title="Display size (diagonal)">
-        <RulerDimensionLineIcon className="size-3.5" />
-        {size}
-      </span>
     </span>
   );
 }
@@ -220,14 +192,22 @@ export function DeviceEditor({
   const sizeInches = sizeUnit === "in";
   // Show the conventional name for the ratio (within tolerance — phone
   // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
-  // itself, never raw pixel pairs.
+  // itself, never raw pixel pairs. A 90°-pivoted panel reads as the
+  // reversed convention: 9:16, not 0.56:1 (Taylor 2026-08-19).
   const ratio = device.aspect.w / device.aspect.h;
   const aspectMatch = COMMON_ASPECTS.find(
     (a) => Math.abs(a.w / a.h - ratio) < 0.01,
   );
+  const portraitMatch = aspectMatch
+    ? undefined
+    : COMMON_ASPECTS.find(
+        (a) => ratio > 0 && Math.abs(a.w / a.h - 1 / ratio) < 0.01,
+      );
   const aspectLabel = aspectMatch
     ? aspectMatch.label
-    : `${ratio.toFixed(2)}:1`;
+    : portraitMatch
+      ? portraitMatch.label.split(":").reverse().join(":")
+      : `${ratio.toFixed(2)}:1`;
   const scenarioLabel =
     SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
   const elevation = device.elevation?.[scenario];
@@ -272,7 +252,10 @@ export function DeviceEditor({
       {/* Viewing distance above display size (Taylor 2026-08-18). */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Microlabel>Viewing distance</Microlabel>
+          <span className="flex items-center gap-1.5">
+            <RulerDimensionLineIcon className="size-3.5 text-muted-foreground" />
+            <Microlabel>Viewing distance</Microlabel>
+          </span>
           <DistanceUnitFlip />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
@@ -309,7 +292,10 @@ export function DeviceEditor({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Microlabel>Display size · diagonal</Microlabel>
+          <span className="flex items-center gap-1.5">
+            <ProportionsIcon className="size-3.5 text-muted-foreground" />
+            <Microlabel>Display size · diagonal</Microlabel>
+          </span>
           <UnitFlip value={sizeUnit} onChange={setSizeUnit} />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
@@ -510,7 +496,9 @@ export function DeviceEditor({
         ) : null}
       </div>
 
-      {device.deviceName && HANDHELD_BODIES[device.deviceName] ? (
+      {FEATURE_3D_DEVICE_BODY &&
+      device.deviceName &&
+      HANDHELD_BODIES[device.deviceName] ? (
         <label className="flex h-8 items-center justify-between text-base">
           <span className="text-muted-foreground">3D device body</span>
           <Switch
@@ -576,22 +564,23 @@ interface ReorderHooks {
 
 function DeviceRow({
   device,
-  onPatch,
   onToggleVisible,
   reorder,
 }: {
   device: Device;
-  onPatch: (patch: Partial<Device>) => void;
   onToggleVisible: () => void;
   /** Present only for reorderable (test) devices. */
   reorder?: ReorderHooks;
 }) {
-  const openDetailId = useUiStore((s) => s.openDetailId);
+  // Row selection IS the app-wide device selection (Taylor
+  // 2026-08-19): clicking a row highlights the device in the 2D/3D
+  // views, and clicking a device in a view highlights its row here.
+  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const pinned = useUiStore((s) => s.pinnedDetails[device.id]);
-  const openDetail = useUiStore((s) => s.openDetail);
-  const detailOpen = openDetailId === device.id || Boolean(pinned);
+  const detailOpen = selectedDeviceId === device.id || Boolean(pinned);
   const toggleDetail = () =>
-    openDetail(openDetailId === device.id ? null : device.id);
+    selectDevice(selectedDeviceId === device.id ? null : device.id);
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -627,19 +616,6 @@ function DeviceRow({
             <EyeOffIcon className="size-4 opacity-50" />
           )}
         </Button>
-        {/* Key color: compact swatch, native picker on click. */}
-        <label
-          className="relative block h-5 w-5 cursor-pointer overflow-hidden rounded-[6px] border border-border"
-          title="Key color"
-          style={{ background: device.color }}
-        >
-          <input
-            type="color"
-            className="absolute inset-0 cursor-pointer opacity-0"
-            value={device.color}
-            onChange={(e) => onPatch({ color: e.target.value })}
-          />
-        </label>
         <button
           type="button"
           draggable={Boolean(reorder)}
@@ -665,27 +641,17 @@ function DeviceRow({
           }
           className={cn(
             "min-w-0 truncate text-left text-base",
-            !device.visible && "text-muted-foreground",
+            // The name wears the device's key color (Taylor 2026-08-19);
+            // hidden devices dim rather than losing their identity.
+            !device.visible && "opacity-50",
             reorder && "cursor-grab active:cursor-grabbing",
           )}
+          style={{ color: device.color }}
           onClick={toggleDetail}
           title={device.deviceName || device.label}
         >
           {device.label}
         </button>
-        <DeviceRowReadout device={device} />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={detailOpen ? "Close details" : "Open details"}
-          className={cn(
-            "size-7 text-muted-foreground hover:text-foreground",
-            detailOpen && "text-foreground",
-          )}
-          onClick={toggleDetail}
-        >
-          <EllipsisVerticalIcon className="size-4" />
-        </Button>
       </div>
     </div>
   );
@@ -772,7 +738,8 @@ const DEFAULT_DEVICES_PANEL_POS = { x: 64, y: 16 };
  * Media Library and Perception Report).
  */
 function EditorColumn() {
-  const openDetailId = useUiStore((s) => s.openDetailId);
+  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
+  const selectDevice = useUiStore((s) => s.selectDevice);
   const pinDetail = useUiStore((s) => s.pinDetail);
   const panelPos = useUiStore(
     (s) => s.panelPositions.workbench ?? DEFAULT_DEVICES_PANEL_POS,
@@ -784,21 +751,35 @@ function EditorColumn() {
   const updateDevice = useDeviceStore((s) => s.updateDevice);
   const removeDevice = useDeviceStore((s) => s.removeDevice);
   const duplicateDevice = useDeviceStore((s) => s.duplicateDevice);
-  const openDetail = useUiStore((s) => s.openDetail);
 
   const device =
-    (openDetailId && thisDevice.id !== openDetailId
-      ? devices.find((d) => d.id === openDetailId)
+    (selectedDeviceId && thisDevice.id !== selectedDeviceId
+      ? devices.find((d) => d.id === selectedDeviceId)
       : thisDevice) ?? thisDevice;
   const isThis = device.id === thisDevice.id;
 
   return (
     <div className="flex min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-2.5">
-        <span
-          className="size-2.5 shrink-0 rounded-full"
+        {/* Key color picker lives on the selected device's title —
+            styled as a button so it reads as customizable. */}
+        <label
+          className="relative block h-6 w-8 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border shadow-sm transition-shadow hover:ring-2 hover:ring-ring"
+          title="Change this device's key color"
           style={{ background: device.color }}
-        />
+        >
+          <input
+            type="color"
+            aria-label="Device key color"
+            className="absolute inset-0 cursor-pointer opacity-0"
+            value={device.color}
+            onChange={(e) =>
+              isThis
+                ? updateThisDevice({ color: e.target.value })
+                : updateDevice(device.id, { color: e.target.value })
+            }
+          />
+        </label>
         <span className="min-w-0 flex-1 truncate text-base font-medium">
           {device.label}
           {isThis ? (
@@ -807,21 +788,23 @@ function EditorColumn() {
             </span>
           ) : null}
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Pin details as a window"
-          title="Pin — keep these details open and inspect another device"
-          className="size-7 text-muted-foreground hover:text-foreground"
-          onClick={() =>
-            pinDetail(device.id, {
-              x: panelPos.x + panelWidth + 8,
-              y: panelPos.y,
-            })
-          }
-        >
-          <PinIcon className="size-4" />
-        </Button>
+        {FEATURE_PINNED_DEVICES ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Pin details as a window"
+            title="Pin — keep these details open and inspect another device"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              pinDetail(device.id, {
+                x: panelPos.x + panelWidth + 8,
+                y: panelPos.y,
+              })
+            }
+          >
+            <PinIcon className="size-4" />
+          </Button>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-x-clip overflow-y-scroll">
         <DeviceEditor
@@ -834,7 +817,7 @@ function EditorColumn() {
               ? undefined
               : () => {
                   removeDevice(device.id);
-                  openDetail(null);
+                  selectDevice(null);
                 }
           }
           onDuplicate={() => duplicateDevice(device.id)}
@@ -850,7 +833,6 @@ export function DeviceManagerContent() {
   const devices = useDeviceStore((s) => s.devices);
   const openPanel = useUiStore((s) => s.openPanel);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
-  const updateDevice = useDeviceStore((s) => s.updateDevice);
   const moveDevice = useDeviceStore((s) => s.moveDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const listRef = useRef<HTMLDivElement>(null);
@@ -886,7 +868,6 @@ export function DeviceManagerContent() {
         </div>
         <DeviceRow
           device={thisDevice}
-          onPatch={updateThisDevice}
           onToggleVisible={() =>
             updateThisDevice({ visible: !thisDevice.visible })
           }
@@ -907,7 +888,6 @@ export function DeviceManagerContent() {
             <DeviceRow
               key={d.id}
               device={d}
-              onPatch={(patch) => updateDevice(d.id, patch)}
               onToggleVisible={() => toggleVisible(d.id)}
               reorder={{
                 onDragOver: rowDragOver(i),

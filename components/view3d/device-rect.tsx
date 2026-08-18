@@ -21,6 +21,7 @@ import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { containFit } from "@/lib/fit";
+import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
@@ -605,7 +606,7 @@ export default function DeviceRect({
   const nameOffsetRef = useRef<Group>(null);
 
   const body =
-    device.show3dBody !== false && device.deviceName
+    FEATURE_3D_DEVICE_BODY && device.show3dBody !== false && device.deviceName
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
 
@@ -676,7 +677,8 @@ export default function DeviceRect({
           <group position={[0, 0, -R]}>
             {/* Letterbox backing, a hair inside the outline's arc. */}
             {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device. */}
+                image stays visible from behind the device (double-sided
+                screens are intentional — Taylor). */}
             <mesh>
               <cylinderGeometry
                 args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
@@ -695,7 +697,8 @@ export default function DeviceRect({
         ) : (
           <>
             {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device. */}
+                image stays visible from behind the device (double-sided
+                screens are intentional — Taylor). */}
             <mesh position={[0, 0, -0.15]}>
               <planeGeometry args={[widthCm, heightCm]} />
               <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
@@ -749,8 +752,6 @@ export default function DeviceRect({
             // feeds the inspector's live text details (Taylor).
             const yCenter = fit.h / 2 - (cb.rect.y + cb.rect.h / 2) * fit.h;
             const uc = 0.5 - (cb.rect.x + cb.rect.w / 2);
-            const r = curved ? R - 0.5 : 0;
-            const theta = curved ? (fit.w / r) * uc : 0;
             // Fatter hot zone than the visible outline: half a line of
             // padding, floored at ~1.2% of the screen height, so small
             // text is hoverable from across the room. Neighbors may
@@ -767,53 +768,72 @@ export default function DeviceRect({
                   transparent
                   opacity={sel ? 1 : 0.9}
                 />
-                <mesh
-                  position={
-                    curved
-                      ? [r * Math.sin(theta), yCenter, -R + r * Math.cos(theta)]
-                      : [uc * fit.w, yCenter, -0.35]
-                  }
-                  rotation={[0, theta, 0]}
-                  onPointerOver={(e) => {
-                    e.stopPropagation();
-                    setDeviceHover({
-                      deviceId: device.id,
-                      box: {
-                        id: cb.id,
-                        label: cb.label,
-                        srcPx: cb.srcPx,
-                        hFull: cb.hFull,
-                        groupId: cb.groupId,
-                        bounds: projectBounds(
-                          e,
-                          cb.rect.w * fit.w,
-                          cb.rect.h * fit.h,
-                        ),
-                        // The panel's own footprint, so the card can
-                        // sit fully off the screen space.
-                        screen: rectRef.current
-                          ? projectBounds(
+                {/* One catcher per SIDE of the screen: pointer events
+                    deliver front-to-back, so from behind the (nearer)
+                    media plane would swallow the hit before a single
+                    viewer-side catcher ever saw it. The back catcher
+                    sits just past the screen surface, making a catcher
+                    the first hit from either side — hovering the
+                    mirrored view works too, and the DOM card reads
+                    normally regardless (bounds are min/max normalized). */}
+                {([-1, 1] as const).map((face) => {
+                  const r = curved ? (face < 0 ? R - 0.5 : R + 0.05) : 0;
+                  const theta = curved ? (fit.w / r) * uc : 0;
+                  return (
+                    <mesh
+                      key={face}
+                      position={
+                        curved
+                          ? [
+                              r * Math.sin(theta),
+                              yCenter,
+                              -R + r * Math.cos(theta),
+                            ]
+                          : [uc * fit.w, yCenter, face < 0 ? -0.35 : 0.05]
+                      }
+                      rotation={[0, theta, 0]}
+                      onPointerOver={(e) => {
+                        e.stopPropagation();
+                        setDeviceHover({
+                          deviceId: device.id,
+                          box: {
+                            id: cb.id,
+                            label: cb.label,
+                            srcPx: cb.srcPx,
+                            hFull: cb.hFull,
+                            groupId: cb.groupId,
+                            bounds: projectBounds(
                               e,
-                              widthCm,
-                              heightCm,
-                              rectRef.current,
-                            )
-                          : undefined,
-                      },
-                    });
-                  }}
-                  // No pointerout handler: the leave bubbles to the
-                  // group (clearing hover), and whatever the pointer
-                  // lands on next re-sets it in the same event batch.
-                >
-                  <planeGeometry args={[hitW, hitH]} />
-                  <meshBasicMaterial
-                    transparent
-                    opacity={0}
-                    depthWrite={false}
-                    side={DoubleSide}
-                  />
-                </mesh>
+                              cb.rect.w * fit.w,
+                              cb.rect.h * fit.h,
+                            ),
+                            // The panel's own footprint, so the card can
+                            // sit fully off the screen space.
+                            screen: rectRef.current
+                              ? projectBounds(
+                                  e,
+                                  widthCm,
+                                  heightCm,
+                                  rectRef.current,
+                                )
+                              : undefined,
+                          },
+                        });
+                      }}
+                      // No pointerout handler: the leave bubbles to the
+                      // group (clearing hover), and whatever the pointer
+                      // lands on next re-sets it in the same event batch.
+                    >
+                      <planeGeometry args={[hitW, hitH]} />
+                      <meshBasicMaterial
+                        transparent
+                        opacity={0}
+                        depthWrite={false}
+                        side={DoubleSide}
+                      />
+                    </mesh>
+                  );
+                })}
               </group>
             );
           })
