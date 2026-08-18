@@ -521,6 +521,8 @@ export default function SceneView({
 
   // The GL canvas element, captured in onCreated for the export action.
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
+  /** Press point of the current gesture — click-vs-camera-drag test. */
+  const pointerDownAt = useRef<{ x: number; y: number } | null>(null);
   const exportPng = () => {
     const canvas = canvasElRef.current;
     if (!canvas) return;
@@ -573,7 +575,15 @@ export default function SceneView({
     ));
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      // Track the press point so empty-space "clicks" that were really
+      // camera drags don't clear the selection (same 4px rule as the
+      // on-device select in DeviceRect).
+      onPointerDownCapture={(e) => {
+        pointerDownAt.current = { x: e.clientX, y: e.clientY };
+      }}
+    >
       <Canvas
         // Render only when something changed: tweens/camera/video/GIF all
         // self-invalidate, and R3F invalidates on React scene commits.
@@ -581,7 +591,11 @@ export default function SceneView({
         // continuously — the single biggest GPU cost in the app.
         frameloop="demand"
         dpr={[1, 1.5]}
-        onPointerMissed={() => selectDevice(null)}
+        onPointerMissed={(e) => {
+          const d = pointerDownAt.current;
+          if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+          selectDevice(null);
+        }}
         // Keep the drawn frame readable so the HUD's "export view" action
         // can capture the canvas as a PNG.
         gl={{ preserveDrawingBuffer: true }}

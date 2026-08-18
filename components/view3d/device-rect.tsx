@@ -31,6 +31,45 @@ const SHOW_LABELS = true;
 const setDeviceHover = (h: DeviceHover | null) =>
   useAnnotationStore.getState().setDeviceHover(h);
 
+const _projCorner = new Vector3();
+
+/**
+ * Screen bounds (client px) of a hovered box's catcher plane: its four
+ * local corners through the mesh's world matrix and the camera, mapped
+ * into the canvas's client rect — so the hover card can position
+ * itself OUTSIDE the box in either view.
+ */
+function projectBounds(
+  e: ThreeEvent<PointerEvent>,
+  w: number,
+  h: number,
+): { left: number; top: number; right: number; bottom: number } {
+  const canvas = e.nativeEvent.target as HTMLElement;
+  const r = canvas.getBoundingClientRect();
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const [cx, cy] of [
+    [-w / 2, -h / 2],
+    [w / 2, -h / 2],
+    [-w / 2, h / 2],
+    [w / 2, h / 2],
+  ]) {
+    _projCorner
+      .set(cx, cy, 0)
+      .applyMatrix4(e.object.matrixWorld)
+      .project(e.camera);
+    const x = r.left + ((_projCorner.x + 1) / 2) * r.width;
+    const y = r.top + ((1 - _projCorner.y) / 2) * r.height;
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+  }
+  return { left, top, right, bottom };
+}
+
 /**
  * Barlow Medium for the 3D labels, matching the app's primary typeface.
  * troika-three-text can't read the CSS-registered @fontsource faces (or
@@ -589,6 +628,11 @@ export default function DeviceRect({
         onSelect
           ? (e) => {
               e.stopPropagation();
+              // Select on RELEASE of a stationary click only — past a
+              // 4px drag it was a camera move, not a selection (same
+              // threshold as the 2D view). R3F's delta is the pixel
+              // distance between pointerdown and pointerup.
+              if (e.delta > 4) return;
               onSelect();
             }
           : undefined
@@ -732,6 +776,11 @@ export default function DeviceRect({
                         srcPx: cb.srcPx,
                         hFull: cb.hFull,
                         groupId: cb.groupId,
+                        bounds: projectBounds(
+                          e,
+                          cb.rect.w * fit.w,
+                          cb.rect.h * fit.h,
+                        ),
                       },
                     });
                   }}

@@ -5,7 +5,7 @@ import { create } from "zustand";
 /** How scan visuals are colored, everywhere they render (panel, 2D, 3D). */
 export type ScanColorMode = "group" | "rating";
 
-/** Text box hovered in the 3D view, with everything the inspector shows. */
+/** Text box hovered in a view, with everything the hover card shows. */
 export interface HoverBox {
   id: string;
   label?: string;
@@ -14,6 +14,8 @@ export interface HoverBox {
   /** Full-image normalized measure height, for boxMetricsOnDevice. */
   hFull: number;
   groupId?: number;
+  /** Screen bounds (client px) — the card positions OUTSIDE these. */
+  bounds: { left: number; top: number; right: number; bottom: number };
 }
 
 export interface DeviceHover {

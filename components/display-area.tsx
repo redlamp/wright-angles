@@ -484,7 +484,8 @@ function BoxLayer({
                   }
                 : undefined
             }
-            onPointerEnter={() =>
+            onPointerEnter={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
               setDeviceHover({
                 deviceId,
                 box: {
@@ -493,9 +494,15 @@ function BoxLayer({
                   srcPx: Math.round(b.h * media.height),
                   hFull: b.h,
                   groupId: groupById.get(b.id),
+                  bounds: {
+                    left: r.left,
+                    top: r.top,
+                    right: r.right,
+                    bottom: r.bottom,
+                  },
                 },
-              })
-            }
+              });
+            }}
             onPointerLeave={() => setDeviceHover({ deviceId, box: null })}
           />
         );

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { DraftingCompassIcon, RulerDimensionLineIcon } from "lucide-react";
 import {
   ACUITY,
@@ -22,14 +21,15 @@ const bandColor = (arcmin: number) =>
       : "#e5484d";
 
 /**
- * Cursor-following hover card for text boxes (Taylor 2026-08-18 v2):
- * the label on its own unwrapped line (the card grows to fit), the
- * owning device @ its distance, source/display pixel sizes, then the
- * angular size (drafting-compass icon, verdict-graded color) and the
- * physical size (dimension-ruler icon, mm or inches per the unit
- * setting). The card's border wears the same color as the hovered
- * box's outline. One card rides the shared deviceHover state from
- * both views; pointer-transparent.
+ * Hover card for text boxes (Taylor 2026-08-18 v2): the label on its
+ * own unwrapped line (the card grows to fit), the owning device @ its
+ * distance, source/display pixel sizes, then the angular size
+ * (drafting-compass icon, verdict-graded color) and the physical size
+ * (dimension-ruler icon, mm or inches per the unit setting). The
+ * card's border wears the same color as the hovered box's outline. It
+ * pins just outside the box's screen bounds — never covering the text
+ * it describes. One card rides the shared deviceHover state from both
+ * views; pointer-transparent.
  */
 export function HoverTextCard() {
   const deviceHover = useAnnotationStore((s) => s.deviceHover);
@@ -39,20 +39,8 @@ export function HoverTextCard() {
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const unit = useSettingsStore((s) => s.unit);
-  const [pt, setPt] = useState<{ x: number; y: number } | null>(null);
 
   const box = deviceHover?.box ?? null;
-  const hasBox = box !== null;
-
-  // Track the pointer only while a box is hovered; the card appears on
-  // the first move (hovering implies the pointer is moving). Stale pt
-  // after unhover is harmless — no box, no render.
-  useEffect(() => {
-    if (!hasBox) return;
-    const move = (e: PointerEvent) => setPt({ x: e.clientX, y: e.clientY });
-    window.addEventListener("pointermove", move);
-    return () => window.removeEventListener("pointermove", move);
-  }, [hasBox]);
 
   const device =
     deviceHover &&
@@ -60,7 +48,7 @@ export function HoverTextCard() {
       ? thisDevice
       : devices.find((d) => d.id === deviceHover.deviceId));
   const activeItem = items.find((i) => i.id === activeId);
-  if (!box || !device || !activeItem || !pt) return null;
+  if (!box || !device || !activeItem) return null;
 
   const m = boxMetricsOnDevice(box.hFull, activeItem, device);
   const band = bandColor(m.arcmin);
@@ -73,20 +61,25 @@ export function HoverTextCard() {
   const phys =
     unit === "in" ? `${(m.mm / 25.4).toFixed(2)}″` : `${m.mm.toFixed(1)}mm`;
 
-  // The card is content-sized (no wrap), so anchor it to whichever
-  // side of the cursor has the room.
-  const anchorRight = pt.x > window.innerWidth / 2;
-  const top = pt.y + 16 + 104 > window.innerHeight ? pt.y - 16 - 104 : pt.y + 16;
+  // Pin the card OUTSIDE the box bounds (below, flipping above when
+  // there's no room) so it never covers the text it describes; stable
+  // per hover instead of chasing the cursor. Content-sized, so anchor
+  // horizontally to whichever box edge has the room.
+  const b = box.bounds;
+  const below = b.bottom + 10 + 120 <= window.innerHeight;
+  const anchorRight = (b.left + b.right) / 2 > window.innerWidth / 2;
 
   return (
     <div
       className="panel-frame pointer-events-none fixed z-[260] rounded-md border px-2.5 py-1.5 whitespace-nowrap"
       style={{
         borderColor,
-        top,
+        ...(below
+          ? { top: b.bottom + 10 }
+          : { top: b.top - 10, transform: "translateY(-100%)" }),
         ...(anchorRight
-          ? { right: window.innerWidth - pt.x + 16 }
-          : { left: pt.x + 16 }),
+          ? { right: Math.max(8, window.innerWidth - b.right) }
+          : { left: Math.max(8, b.left) }),
       }}
     >
       <div className="text-sm font-medium">
