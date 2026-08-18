@@ -272,7 +272,10 @@ export function DeviceEditor({
       {/* Viewing distance above display size (Taylor 2026-08-18). */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Microlabel>Viewing distance</Microlabel>
+          <span className="flex items-center gap-1.5">
+            <RulerDimensionLineIcon className="size-3.5 text-muted-foreground" />
+            <Microlabel>Viewing distance</Microlabel>
+          </span>
           <DistanceUnitFlip />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
@@ -309,7 +312,10 @@ export function DeviceEditor({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Microlabel>Display size · diagonal</Microlabel>
+          <span className="flex items-center gap-1.5">
+            <ProportionsIcon className="size-3.5 text-muted-foreground" />
+            <Microlabel>Display size · diagonal</Microlabel>
+          </span>
           <UnitFlip value={sizeUnit} onChange={setSizeUnit} />
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
