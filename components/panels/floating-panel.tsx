@@ -20,7 +20,8 @@ interface FloatingPanelProps {
   id: PanelId;
   title: string;
   icon: LucideIcon;
-  defaultPosition: { x: number; y: number };
+  /** Override for the shared default (top center, under the rail). */
+  defaultPosition?: { x: number; y: number };
   width?: number;
   /** Resize cap; "none" allows growing to the viewport edge. */
   maxWidth?: number | "none";
@@ -59,7 +60,13 @@ export function FloatingPanel({
 
   const width = storedWidth ?? defaultWidth;
   const height = resizableHeight ? storedHeight : undefined;
-  const pos = stored ?? defaultPosition;
+  // Un-dragged panels open top-center, just under the rail (Taylor
+  // 2026-08-18). Client-only render, so window is available here.
+  const pos = stored ??
+    defaultPosition ?? {
+      x: Math.max(8, Math.round((window.innerWidth - width) / 2)),
+      y: 56,
+    };
   const resize = useRef<{
     edge: "left" | "right" | "bottom" | "corner";
     startX: number;

@@ -116,10 +116,12 @@ export function CvdChip({ className }: { className?: string }) {
       <SelectContent>
         {CVD_CHOICES.map((c) => (
           <SelectItem key={c.mode} value={c.mode}>
-            <span>
+            <span className="flex w-full items-center justify-between gap-6">
               {c.name}
               {c.desc ? (
-                <span className="ml-3 text-muted-foreground">{c.desc}</span>
+                <span className="text-right text-muted-foreground">
+                  {c.desc}
+                </span>
               ) : null}
             </span>
           </SelectItem>

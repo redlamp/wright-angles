@@ -18,6 +18,14 @@ import { downloadSetup, importSetupFile } from "@/lib/setup-io";
 import { CalibrationDialog } from "@/components/calibration-dialog";
 import { FloatingPanel } from "./floating-panel";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import type { LengthUnit } from "@/lib/types";
 
@@ -117,7 +125,7 @@ export function SettingsPanel() {
   const setOnboarded = useSettingsStore((s) => s.setOnboarded);
   const resetDevices = useDeviceStore((s) => s.resetAll);
   const wipeMedia = useMediaStore((s) => s.wipeAll);
-  const [armed, setArmed] = useState(false);
+  const [confirmingWipe, setConfirmingWipe] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -138,7 +146,7 @@ export function SettingsPanel() {
       // localStorage unavailable — in-memory stores were reset anyway.
     }
     useUiStore.persist.rehydrate();
-    setArmed(false);
+    setConfirmingWipe(false);
   };
 
   return (
@@ -146,44 +154,10 @@ export function SettingsPanel() {
       id="settings"
       title="Settings"
       icon={SettingsIcon}
-      defaultPosition={{ x: 64, y: 420 }}
       width={300}
     >
       <div className="max-h-[calc(100vh-8rem)] space-y-3 overflow-y-auto p-3">
         <Section label="Setup">
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 text-sm"
-              onClick={downloadSetup}
-            >
-              <DownloadIcon className="size-3.5" /> Export
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="h-8 text-sm"
-              onClick={() => importRef.current?.click()}
-            >
-              <UploadIcon className="size-3.5" /> Import
-            </Button>
-          </div>
-          <input
-            ref={importRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (!f) return;
-              void importSetupFile(f).then(setImportError);
-            }}
-          />
-          {importError ? (
-            <p className="text-sm text-destructive">{importError}</p>
-          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -192,9 +166,6 @@ export function SettingsPanel() {
           >
             <SparklesIcon className="size-3.5" /> Run setup assistant again
           </Button>
-        </Section>
-
-        <Section label="This device">
           <Button
             variant="ghost"
             size="sm"
@@ -203,9 +174,6 @@ export function SettingsPanel() {
           >
             <RulerIcon className="size-3.5" /> Calibrate screen size…
           </Button>
-          <p className="px-2.5 text-sm leading-4 text-muted-foreground">
-            match a credit card to measure your true screen size
-          </p>
         </Section>
 
         <Section label="Units">
@@ -262,33 +230,76 @@ export function SettingsPanel() {
           </span>
         </div>
 
-        {armed ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="h-8 flex-1 rounded-md bg-destructive text-sm text-white transition-opacity hover:opacity-90"
-              onClick={() => void wipeEverything()}
-            >
-              Really wipe everything
-            </button>
-            <button
-              type="button"
-              className="ctl-quiet h-8 flex-1 text-sm"
-              onClick={() => setArmed(false)}
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 text-sm"
+            onClick={downloadSetup}
+          >
+            <DownloadIcon className="size-3.5" /> Export
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 text-sm"
+            onClick={() => importRef.current?.click()}
+          >
+            <UploadIcon className="size-3.5" /> Import
+          </Button>
+        </div>
+        <input
+          ref={importRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            void importSetupFile(f).then(setImportError);
+          }}
+        />
+        {importError ? (
+          <p className="text-sm text-destructive">{importError}</p>
+        ) : null}
+
+        <button
+          type="button"
+          className="h-8 w-full rounded-md border border-destructive/40 text-sm text-destructive transition-colors hover:bg-destructive/10"
+          onClick={() => setConfirmingWipe(true)}
+        >
+          Wipe local data…
+        </button>
+      </div>
+      <Dialog open={confirmingWipe} onOpenChange={setConfirmingWipe}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Wipe local data?</DialogTitle>
+            <DialogDescription>
+              Removes every device, setting, and imported image from this
+              browser. There is no server copy — this cannot be undone.
+              Export a setup file first if you want a backup.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmingWipe(false)}
             >
               Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="h-8 w-full rounded-md border border-destructive/40 text-sm text-destructive transition-colors hover:bg-destructive/10"
-            onClick={() => setArmed(true)}
-          >
-            Wipe local data…
-          </button>
-        )}
-      </div>
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void wipeEverything()}
+            >
+              Wipe everything
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <CalibrationDialog open={calibrating} onOpenChange={setCalibrating} />
     </FloatingPanel>
   );

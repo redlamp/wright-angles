@@ -32,7 +32,6 @@ export function WorkbenchPanel() {
       id="workbench"
       title={active.label}
       icon={active.icon}
-      defaultPosition={{ x: 64, y: 16 }}
       width={640}
       maxWidth="none"
       resizableHeight
