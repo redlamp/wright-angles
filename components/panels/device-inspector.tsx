@@ -11,9 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   ACUITY,
   boxMetricsOnDevice,
-  deviceAngles,
   formatDistance,
-  physicalSizeCm,
   strokesSubAcuity,
 } from "@/lib/display-math";
 import { groupColor } from "@/lib/text-groups";
@@ -71,28 +69,28 @@ export function DeviceInspector() {
 
   const byId = (id: string | null | undefined) =>
     id === thisDevice.id ? thisDevice : devices.find((d) => d.id === id);
-  // Hovering a device in 3D shows it live; a selection is the sticky
-  // fallback the card returns to when the hover ends.
+  // A selection PINS the card to that device (Taylor 2026-08-18);
+  // without one, a 3D hover shows its device transiently.
   const hoverDevice = byId(hover3d?.deviceId);
-  const device = hoverDevice ?? byId(selectedId);
+  const device = byId(selectedId) ?? hoverDevice;
   if (!device) return null;
   const isThis = device.id === thisDevice.id;
+  // Box details always measure on the box's OWN device, even when the
+  // card is pinned to a different one (called out in the section).
   const hoverBox = hoverDevice ? hover3d?.box : null;
   const boxMetrics =
-    hoverBox && activeItem
-      ? boxMetricsOnDevice(hoverBox.hFull, activeItem, device)
+    hoverBox && hoverDevice && activeItem
+      ? boxMetricsOnDevice(hoverBox.hFull, activeItem, hoverDevice)
       : null;
-
-  const size = physicalSizeCm(device.diagonalIn, device.aspect);
-  const a = deviceAngles(device);
 
   return (
     <div
       ref={ref}
       className={cn(
         "panel-frame fixed w-64 rounded-lg border border-border transition-opacity duration-150",
-        // Full alpha while hovering the device in 3D or the panel itself.
-        hover3d
+        // Full alpha while pinned to a selection, hovering a device in
+        // 3D, or hovering the panel itself.
+        selectedId || hover3d
           ? "opacity-100"
           : "opacity-40 hover:opacity-100 focus-within:opacity-100",
       )}
@@ -170,28 +168,15 @@ export function DeviceInspector() {
         </button>
       </div>
 
+      {/* Three lines (Taylor 2026-08-18): label lives in the header;
+          then size · res · curvature (omitted when flat); distance. */}
       <div className="space-y-2 border-t border-border px-2.5 py-2">
-        {device.deviceName ? (
-          <div className="truncate text-sm text-muted-foreground">
-            {device.deviceName}
-            {isThis ? " · This Device" : ""}
-          </div>
-        ) : isThis ? (
-          <div className="text-sm text-muted-foreground">This Device</div>
-        ) : null}
         <div className="font-mono text-sm leading-5 text-muted-foreground">
           <div>
             {device.diagonalIn}″ · {device.resolution.w}×{device.resolution.h}
             {device.curvatureR ? ` · ${device.curvatureR}R` : ""}
           </div>
-          <div>
-            {size.widthCm.toFixed(1)} × {size.heightCm.toFixed(1)} cm panel
-          </div>
           <div>viewed at {formatDistance(device.distanceCm, unit)}</div>
-          <div>
-            {a.horizontalDeg.toFixed(0)}° × {a.verticalDeg.toFixed(0)}° ·{" "}
-            {a.ppd.toFixed(0)} PPD
-          </div>
         </div>
         <button
           type="button"
@@ -221,6 +206,15 @@ export function DeviceInspector() {
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {hoverBox.label?.trim() || "Text box"}
             </span>
+            {hoverDevice && hoverDevice.id !== device.id ? (
+              <span
+                className="shrink-0 text-sm"
+                style={{ color: hoverDevice.color }}
+                title={`Measured on ${hoverDevice.label}, not the pinned device`}
+              >
+                on {hoverDevice.label}
+              </span>
+            ) : null}
           </div>
           <div className="font-mono text-sm leading-5 text-muted-foreground">
             <div>{hoverBox.srcPx}px in source</div>
