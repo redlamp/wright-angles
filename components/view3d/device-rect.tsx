@@ -751,6 +751,13 @@ export default function DeviceRect({
             const uc = 0.5 - (cb.rect.x + cb.rect.w / 2);
             const r = curved ? R - 0.5 : 0;
             const theta = curved ? (fit.w / r) * uc : 0;
+            // Fatter hot zone than the visible outline: half a line of
+            // padding, floored at ~1.2% of the screen height, so small
+            // text is hoverable from across the room. Neighbors may
+            // overlap slightly; whichever catcher wins is fine.
+            const pad = Math.max(cb.rect.h * fit.h * 0.5, fit.h * 0.012);
+            const hitW = cb.rect.w * fit.w + pad * 2;
+            const hitH = cb.rect.h * fit.h + pad * 2;
             return (
               <group key={cb.id}>
                 <Line
@@ -799,7 +806,7 @@ export default function DeviceRect({
                   // group (clearing hover), and whatever the pointer
                   // lands on next re-sets it in the same event batch.
                 >
-                  <planeGeometry args={[cb.rect.w * fit.w, cb.rect.h * fit.h]} />
+                  <planeGeometry args={[hitW, hitH]} />
                   <meshBasicMaterial
                     transparent
                     opacity={0}
