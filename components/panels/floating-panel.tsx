@@ -138,6 +138,13 @@ export function FloatingPanel({
 
   const bringToFront = useCallback(() => setZ(nextZ()), []);
 
+  // Opening a panel raises it above everything else — a panel opened
+  // FROM another panel (table from the Device Manager) must land on
+  // top, not under the panel that launched it.
+  useEffect(() => {
+    if (open) setZ(nextZ());
+  }, [open]);
+
   const onHeaderPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Buttons inside the header (close) handle their own clicks.

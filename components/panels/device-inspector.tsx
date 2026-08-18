@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CornerDownRightIcon,
   EyeIcon,
@@ -39,6 +39,11 @@ export function DeviceInspector() {
   const [z, setZ] = useState(45);
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
+
+  // A fresh selection opens (or re-targets) the card — surface it.
+  useEffect(() => {
+    if (selectedId) setZ(nextZ());
+  }, [selectedId]);
 
   const device =
     selectedId === thisDevice.id
