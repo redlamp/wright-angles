@@ -600,13 +600,17 @@ export default function DeviceRect({
         lineWidth={selected ? 3 : 2}
       />
       {showProjection || selected ? (
-        <lineSegments>
+        // Overlay treatment like the distance markers/labels: no depth
+        // test plus a late renderOrder, so scene props (the desk) never
+        // occlude the rays — but still below the labels at 15/20.
+        <lineSegments renderOrder={10}>
           <bufferGeometry ref={projRef} />
           <lineBasicMaterial
             color={device.color}
             transparent
             opacity={selected ? 0.85 : 0.22}
             depthWrite={false}
+            depthTest={false}
           />
         </lineSegments>
       ) : null}
