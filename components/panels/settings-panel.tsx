@@ -126,7 +126,7 @@ export function SettingsPanel() {
   const resetDevices = useDeviceStore((s) => s.resetAll);
   const wipeMedia = useMediaStore((s) => s.wipeAll);
   const [confirmingWipe, setConfirmingWipe] = useState(false);
-  const [resetArmed, setResetArmed] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -231,39 +231,6 @@ export function SettingsPanel() {
           </span>
         </div>
 
-        {/* Preferences only — devices and the media library survive. */}
-        <button
-          type="button"
-          className={cn(
-            "h-8 w-full rounded-md border text-sm transition-colors",
-            resetArmed
-              ? "border-destructive bg-destructive text-white"
-              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-          title="Restore every setting, panel position, and viewer option to defaults. Devices and uploaded images are kept."
-          onBlur={() => setResetArmed(false)}
-          onClick={() => {
-            if (!resetArmed) {
-              setResetArmed(true);
-              return;
-            }
-            try {
-              for (const k of [
-                "wright-angles:settings",
-                "wright-angles:ui",
-                "wright-angles:viewer",
-              ]) {
-                localStorage.removeItem(k);
-              }
-            } catch {
-              // localStorage unavailable — reload still resets session state.
-            }
-            window.location.reload();
-          }}
-        >
-          {resetArmed ? "Really reset all settings" : "Reset all settings…"}
-        </button>
-
         <div className="grid grid-cols-2 gap-1.5">
           <Button
             variant="secondary"
@@ -298,6 +265,17 @@ export function SettingsPanel() {
           <p className="text-sm text-destructive">{importError}</p>
         ) : null}
 
+        {/* Destructive actions live together below the rule. */}
+        <hr className="border-border" />
+
+        <button
+          type="button"
+          className="h-8 w-full rounded-md border border-destructive/40 text-sm text-destructive transition-colors hover:bg-destructive/10"
+          title="Restore every setting, panel position, and viewer option to defaults. Devices and uploaded images are kept."
+          onClick={() => setConfirmingReset(true)}
+        >
+          Reset all settings…
+        </button>
         <button
           type="button"
           className="h-8 w-full rounded-md border border-destructive/40 text-sm text-destructive transition-colors hover:bg-destructive/10"
@@ -306,6 +284,47 @@ export function SettingsPanel() {
           Wipe local data…
         </button>
       </div>
+      <Dialog open={confirmingReset} onOpenChange={setConfirmingReset}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reset all settings?</DialogTitle>
+            <DialogDescription>
+              Restores every setting, panel position, and viewer option to
+              defaults, then reloads. Your devices and uploaded images are
+              kept.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmingReset(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                try {
+                  for (const k of [
+                    "wright-angles:settings",
+                    "wright-angles:ui",
+                    "wright-angles:viewer",
+                  ]) {
+                    localStorage.removeItem(k);
+                  }
+                } catch {
+                  // localStorage unavailable — reload still resets state.
+                }
+                window.location.reload();
+              }}
+            >
+              Reset settings
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={confirmingWipe} onOpenChange={setConfirmingWipe}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
