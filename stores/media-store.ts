@@ -157,6 +157,23 @@ export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
  * visitor", seed and all.
  */
 const SEED_KEY = "wright-angles:seeded";
+/** Active selection survives reloads (Taylor 2026-08-18). */
+const ACTIVE_KEY = "wright-angles:active-media";
+const rememberActive = (id: string | null) => {
+  try {
+    if (id === null) localStorage.removeItem(ACTIVE_KEY);
+    else localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    // Session-only environment.
+  }
+};
+const recallActive = (): string | null => {
+  try {
+    return localStorage.getItem(ACTIVE_KEY);
+  } catch {
+    return null;
+  }
+};
 const wasSeeded = () => {
   try {
     return localStorage.getItem(SEED_KEY) !== null;
@@ -282,12 +299,19 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           (a, b) =>
             (a.sortIndex ?? a.addedAt) - (b.sortIndex ?? b.addedAt),
         );
+      // The remembered selection wins over "first item" — a refresh
+      // must not hop back to whatever sorts first.
+      const remembered = recallActive();
+      const rememberedValid =
+        remembered !== null && items.some((i) => i.id === remembered)
+          ? remembered
+          : null;
       set((s) => ({
         items,
         objectUrls: urls,
         videoUrls: vids,
         hydrated: true,
-        activeId: s.activeId ?? items[0]?.id ?? null,
+        activeId: s.activeId ?? rememberedValid ?? items[0]?.id ?? null,
       }));
       // First run: seed the gradient card as the default image.
       if (items.length === 0 && !wasSeeded()) {
@@ -461,7 +485,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     });
   },
 
-  setActive: (id) => set({ activeId: id }),
+  setActive: (id) => {
+    rememberActive(id);
+    set({ activeId: id });
+  },
 
   setReferenceHeight: (id, referenceHeight) => {
     set((s) => ({
@@ -554,6 +581,7 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     // A wipe means "fresh visitor" — the next load seeds again.
     try {
       localStorage.removeItem(SEED_KEY);
+      localStorage.removeItem(ACTIVE_KEY);
     } catch {
       // localStorage unavailable; nothing to clear.
     }

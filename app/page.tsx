@@ -49,6 +49,12 @@ export default function Home() {
   // the canvas over a live matching frame instead of a mount pop.
   const [show3d, setShow3d] = useState(viewMode === "3d");
   const [sceneShown, setSceneShown] = useState(viewMode === "3d");
+  // A session that BOOTS in 3D starts at the orbit pose — there's no 2D
+  // frame to fly away from. Cleared once that boot scene goes away, so
+  // later 2D→3D toggles get their entry tween (SceneView snapshots the
+  // prop at mount, so clearing never affects a live scene).
+  const [instantEntry, setInstantEntry] = useState(viewMode === "3d");
+  if (!show3d && instantEntry) setInstantEntry(false);
   const [exiting3d, setExiting3d] = useState(false);
   const [prevMode, setPrevMode] = useState(viewMode);
   const handoffTimer = useRef<number | null>(null);
@@ -168,6 +174,7 @@ export default function Home() {
                 )}
               >
                 <SceneView
+                  instantEntry={instantEntry}
                   exiting={exiting3d}
                   onExited={() => {
                     // The camera flew to a head-on pose matching 2D's OWN

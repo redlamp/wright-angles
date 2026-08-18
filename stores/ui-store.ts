@@ -98,7 +98,9 @@ export const useUiStore = create<UiState>()(
         }),
       panelPositions: {},
       panelWidths: {},
-      viewMode: "2d",
+      // Default view is 3D (Taylor 2026-08-18); a stored choice — e.g.
+      // a user who was last in 2D — wins via persistence.
+      viewMode: "3d",
       togglePanel: (id) =>
         set((s) => ({
           openPanels: { ...s.openPanels, [id]: !s.openPanels[id] },
