@@ -105,7 +105,15 @@ function dropLen(y: number, heightCm: number): number {
  * Rewrite the 4 eye→corner rays in the rect's local space, extended
  * THROUGH the corners out to `reachZ` (world distance) so the cone
  * visibly lands on the farthest display.
+ *
+ * The rays are overlay-drawn (no depth test), so anything they cross
+ * gets painted over — including the figure's head, which the eye
+ * point sits inside. Each ray therefore STARTS a head's clearance
+ * along its direction instead of at the eye; the convergence point
+ * stays legible, the face stays clean (Taylor 2026-08-19).
  */
+const HEAD_CLEAR_CM = 20;
+
 function updateProjection(
   geom: BufferGeometry | null,
   eye: [number, number, number],
@@ -127,10 +135,15 @@ function updateProjection(
     // Local z of the eye is -distCm; scale the ray so its end lands on
     // the reachZ plane (world) = reachZ - distCm (local).
     const k = dirZ > 1e-6 ? reachZ / dirZ : 1;
+    // Start offset in ray-parameter units (1 = the corner). Capped at
+    // half the eye→corner run so a handheld at 36 cm keeps a visible
+    // segment rather than losing it all to the clearance.
+    const len = Math.hypot(dirX, dirY, dirZ);
+    const s = len > 1e-6 ? Math.min(HEAD_CLEAR_CM / len, 0.5) : 0;
     const o = i * 6;
-    a[o] = eye[0];
-    a[o + 1] = eye[1];
-    a[o + 2] = eye[2];
+    a[o] = eye[0] + dirX * s;
+    a[o + 1] = eye[1] + dirY * s;
+    a[o + 2] = eye[2] + dirZ * s;
     a[o + 3] = eye[0] + dirX * k;
     a[o + 4] = eye[1] + dirY * k;
     a[o + 5] = eye[2] + dirZ * k;
