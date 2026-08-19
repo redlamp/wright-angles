@@ -40,12 +40,13 @@ import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
 import {
   boxInCrop,
-  cropOf,
-  cropScaleStyle,
-  effectiveDims,
-  viewBoxStyle,
+  cropDims,
+  cropScaleOf,
+  effectiveCropFor,
+  isFullFrame,
+  viewBoxOf,
 } from "@/lib/media-crop";
-import type { Device, HighlightBox, MediaItem } from "@/lib/types";
+import type { Device, HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
 
 /**
  * Where the window's client area sits on the physical screen, in CSS px.
@@ -131,23 +132,26 @@ export function useScreenViewport() {
  */
 function CropFrame({
   item,
+  crop,
   w,
   h,
   children,
 }: {
   item: MediaItem;
+  /** The crop to show — the owning device's EFFECTIVE crop. */
+  crop: MediaCrop;
   w: number;
   h: number;
   children: React.ReactNode;
 }) {
-  const eff = effectiveDims(item);
+  const eff = cropDims(item, crop);
   const area = containFit(eff.width, eff.height, w, h);
   return (
     <div
       className="absolute overflow-hidden"
       style={{ left: area.x, top: area.y, width: area.w, height: area.h }}
     >
-      <div className="absolute" style={cropScaleStyle(item)}>
+      <div className="absolute" style={cropScaleOf(crop)}>
         {children}
       </div>
     </div>
@@ -251,6 +255,7 @@ function PixelLoupe({
   hostW,
   hostH,
   item,
+  crop,
   url,
   thisDevice,
 }: {
@@ -259,6 +264,8 @@ function PixelLoupe({
   hostW: number;
   hostH: number;
   item: MediaItem;
+  /** This Device's effective crop (the loupe rides the host rect). */
+  crop: MediaCrop;
   url: string;
   thisDevice: Device;
 }) {
@@ -308,8 +315,7 @@ function PixelLoupe({
     };
   }, [containerRef]);
 
-  const crop = cropOf(item);
-  const eff = effectiveDims(item);
+  const eff = cropDims(item, crop);
   const area = containFit(eff.width, eff.height, hostW, hostH);
   let sx = -1;
   let sy = -1;
@@ -426,6 +432,7 @@ function BoxLayer({
   groupById,
   isHost,
   deviceId,
+  crop,
 }: {
   rectW: number;
   rectH: number;
@@ -438,12 +445,13 @@ function BoxLayer({
   isHost: boolean;
   /** Owning rect's device — box hovers feed the inspector with it. */
   deviceId: string;
+  /** The owning device's effective crop (overrides included). */
+  crop: MediaCrop;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const colorMode = useAnnotationStore((s) => s.scanColorMode);
-  const crop = cropOf(media);
-  const eff = effectiveDims(media);
+  const eff = cropDims(media, crop);
   const area = containFit(eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
   return (
@@ -566,20 +574,16 @@ export function DisplayArea() {
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
   const activeVideoUrl =
     activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
-  // All contain-fit math below runs on the cropped (effective) dims.
-  // Memoized so the react-compiler can keep the manual memos below —
-  // it can't see into the helpers to prove they don't mutate activeItem.
-  const { eff, crop, imgViewBox } = useMemo(
-    () =>
-      activeItem
-        ? {
-            eff: effectiveDims(activeItem),
-            crop: cropOf(activeItem),
-            imgViewBox: viewBoxStyle(activeItem),
-          }
-        : { eff: null, crop: null, imgViewBox: undefined },
-    [activeItem],
-  );
+  // All contain-fit math below runs on effective (cropped) dims. The
+  // host pair drives the annotation layer + loupe (This Device's rect);
+  // other rects derive their own effective crop inline. Memoized so the
+  // react-compiler can keep the manual memos below — it can't see into
+  // the helpers to prove they don't mutate activeItem.
+  const { eff, crop } = useMemo(() => {
+    if (!activeItem) return { eff: null, crop: null };
+    const c = effectiveCropFor(activeItem, thisDevice.id);
+    return { eff: cropDims(activeItem, c), crop: c };
+  }, [activeItem, thisDevice.id]);
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
@@ -630,8 +634,6 @@ export function DisplayArea() {
   const worstByBox = useMemo(() => {
     const map = new Map<string, number>();
     if (!activeItem) return map;
-    const c = cropOf(activeItem);
-    const dims = effectiveDims(activeItem);
     const devs = [
       ...(thisDevice.visible ? [thisDevice] : []),
       ...devices.filter((d) => d.visible),
@@ -644,12 +646,17 @@ export function DisplayArea() {
       const hNorm = kfSize.get(b.id) ?? b.h;
       let worst = Infinity;
       for (const d of devs) {
-        // The cropped region is what contain-fits onto each device, so
-        // the box height re-normalizes against the crop (h/c.h of
-        // dims.height = the box's unchanged source-pixel height).
+        // Each device measures through ITS effective crop: the cropped
+        // region is what contain-fits onto the panel, so the box height
+        // re-normalizes against that crop (h/c.h of the crop's height =
+        // the box's unchanged source-pixel height). A device whose crop
+        // excludes the box doesn't show it, so it can't drag the
+        // worst-case verdict either.
+        const c = effectiveCropFor(activeItem, d.id);
+        if (!boxInCrop(b, c)) continue;
         worst = Math.min(
           worst,
-          boxMetricsOnDevice(hNorm / c.h, dims, d).arcmin,
+          boxMetricsOnDevice(hNorm / c.h, cropDims(activeItem, c), d).arcmin,
         );
       }
       map.set(b.id, worst);
@@ -821,8 +828,11 @@ export function DisplayArea() {
       if (img) {
         g.fillStyle = "#000";
         g.fillRect(x, y, w, h);
-        // Draw only the crop window (full frame when no crop).
-        const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
+        // Draw only this device's effective crop window (per-device
+        // overrides included; full frame when no crop at all).
+        const c = activeItem
+          ? effectiveCropFor(activeItem, d.id)
+          : { x: 0, y: 0, w: 1, h: 1 };
         const sw = c.w * img.naturalWidth;
         const sh = c.h * img.naturalHeight;
         const s = Math.min(w / sw, h / sh);
@@ -871,7 +881,7 @@ export function DisplayArea() {
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [thisDevice, devices, activeUrl, crop, displayFill, unit]);
+  }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
   /** Topmost device rect (highest z = last in draw order) under a point. */
   const deviceAt = (clientX: number, clientY: number) => {
@@ -961,7 +971,13 @@ export function DisplayArea() {
         setPanOffset({ x: 0, y: 0 });
       }}
     >
-      {rects.map(({ device, w, h }, i) => (
+      {rects.map(({ device, w, h }, i) => {
+        // This rect's effective crop — its own override, else the
+        // media crop. Everything drawn inside maps through it.
+        const dCrop = activeItem
+          ? effectiveCropFor(activeItem, device.id)
+          : null;
+        return (
         <div
           key={device.id}
           className="absolute -translate-x-1/2 -translate-y-1/2"
@@ -1001,15 +1017,16 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl && activeItem ? (
-              // One master decode; each rect mirrors it (crop applied at
-              // draw time, so no wrapper needed).
+              // One master decode; each rect mirrors it (its effective
+              // crop applied at draw time, so no wrapper needed).
               <VideoMirror
                 item={activeItem}
+                crop={dCrop ?? undefined}
                 className="size-full object-contain select-none"
               />
             ) : activeItem?.type === "image/gif" && activeUrl ? (
-              activeItem.crop ? (
-                <CropFrame item={activeItem} w={w} h={h}>
+              dCrop && !isFullFrame(dCrop) ? (
+                <CropFrame item={activeItem} crop={dCrop} w={w} h={h}>
                   <GifView url={activeUrl} className="size-full select-none" />
                 </CropFrame>
               ) : (
@@ -1024,14 +1041,14 @@ export function DisplayArea() {
                 src={activeUrl}
                 alt=""
                 draggable={false}
-                style={imgViewBox}
+                style={viewBoxOf(dCrop ?? undefined)}
                 className="size-full object-contain select-none"
               />
             ) : null}
             {/* Boxes live INSIDE each rect so a nested device naturally
                 covers the ones beneath it — tied to the device they're
                 on (Taylor 2026-08-17). Only the host's are clickable. */}
-            {activeItem && overlayBoxes.length > 0 && showTextBoxes ? (
+            {activeItem && dCrop && overlayBoxes.length > 0 && showTextBoxes ? (
               <BoxLayer
                 rectW={w}
                 rectH={h}
@@ -1041,6 +1058,7 @@ export function DisplayArea() {
                 groupById={groupById}
                 isHost={!!device.isThis && !drawMode}
                 deviceId={device.id}
+                crop={dCrop}
               />
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
@@ -1061,7 +1079,8 @@ export function DisplayArea() {
             {device.label} · {formatDistance(device.distanceCm, unit)}
           </span>
         </div>
-      ))}
+        );
+      })}
 
       {/* Host annotation layer sits above every device rect so drawing
           and box selection are never blocked by nested rects. */}
@@ -1160,6 +1179,7 @@ export function DisplayArea() {
         return loupeOn &&
           host &&
           activeItem &&
+          crop &&
           activeItem.kind === "image" &&
           activeItem.type !== "image/gif" &&
           activeUrl ? (
@@ -1169,6 +1189,7 @@ export function DisplayArea() {
             hostW={host.w}
             hostH={host.h}
             item={activeItem}
+            crop={crop}
             url={activeUrl}
             thisDevice={thisDevice}
           />

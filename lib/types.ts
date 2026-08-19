@@ -120,6 +120,14 @@ export interface MediaItem {
    */
   crop?: MediaCrop;
   /**
+   * Per-device crop overrides, keyed by device id. Each window is
+   * normalized to the FULL intrinsic image exactly like `crop` (NOT
+   * relative to it) — the same rule that keeps boxes and scans valid
+   * when any crop changes. An absent entry inherits the plain media
+   * crop, so existing libraries need no migration.
+   */
+  deviceCrops?: Record<string, MediaCrop>;
+  /**
    * OCR keyframes for timeline media (video/GIF): user-placed points on
    * the timeline, each optionally holding its frame's scan. A scan stays
    * on screen until the playhead passes the NEXT keyframe.
