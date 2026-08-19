@@ -23,7 +23,7 @@ import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
-import { boxInCrop, cropOf, effectiveDims } from "@/lib/media-crop";
+import { boxInCrop, cropDims, effectiveCropFor } from "@/lib/media-crop";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
@@ -80,35 +80,94 @@ function useScreenTexture(tex: Texture, crop?: MediaCrop) {
   useMemo(() => initScreenTexture(tex, crop), [tex, crop]);
 }
 
+/**
+ * Per-device screen textures. The base texture wears the plain media
+ * crop; each DISTINCT device-crop override gets ONE clone (clones share
+ * the pixel upload via texture.source — only repeat/offset differ per
+ * Texture object), so N devices on two crops cost two textures, not N.
+ * Devices without an override resolve to the base.
+ */
+interface ScreenTextures {
+  forDevice: (deviceId: string) => Texture;
+  /** Base + clones — engine-driven screens mark ALL of them dirty. */
+  all: Texture[];
+}
+
+function useCropTextures(
+  base: Texture,
+  mediaCrop: MediaCrop | undefined,
+  deviceCrops: Record<string, MediaCrop> | undefined,
+): ScreenTextures {
+  useScreenTexture(base, mediaCrop);
+  const clones = useMemo(() => {
+    const byDevice = new Map<string, Texture>();
+    const made: Texture[] = [];
+    if (deviceCrops) {
+      const byKey = new Map<string, Texture>();
+      for (const [devId, crop] of Object.entries(deviceCrops)) {
+        const key = `${crop.x},${crop.y},${crop.w},${crop.h}`;
+        let t = byKey.get(key);
+        if (!t) {
+          t = base.clone();
+          initScreenTexture(t, crop);
+          byKey.set(key, t);
+          made.push(t);
+        }
+        byDevice.set(devId, t);
+      }
+    }
+    return { byDevice, made };
+  }, [base, deviceCrops]);
+  useEffect(
+    () => () => {
+      for (const t of clones.made) t.dispose();
+    },
+    [clones],
+  );
+  return useMemo(
+    () => ({
+      forDevice: (deviceId: string) => clones.byDevice.get(deviceId) ?? base,
+      all: [base, ...clones.made],
+    }),
+    [base, clones],
+  );
+}
+
 function ImageScreens({
   url,
   crop,
+  deviceCrops,
   children,
 }: {
   url: string;
   crop?: MediaCrop;
-  children: (tex: Texture) => ReactNode;
+  deviceCrops?: Record<string, MediaCrop>;
+  children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useLoader(TextureLoader, url);
-  useScreenTexture(tex, crop);
-  return <>{children(tex)}</>;
+  const texs = useCropTextures(tex, crop, deviceCrops);
+  return <>{children(texs)}</>;
 }
 
 /** Screens driven by the playback engine's master video element. */
 function EngineVideoScreens({
   video,
   crop,
+  deviceCrops,
   children,
 }: {
   video: HTMLVideoElement;
   crop?: MediaCrop;
-  children: (tex: Texture) => ReactNode;
+  deviceCrops?: Record<string, MediaCrop>;
+  children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new VideoTexture(video), [video]);
-  useScreenTexture(tex, crop);
+  const texs = useCropTextures(tex, crop, deviceCrops);
   useEffect(() => () => tex.dispose(), [tex]);
   // Demand frameloop: request a render per decoded video frame — no
-  // frames while paused, native cadence while playing.
+  // frames while paused, native cadence while playing. (VideoTexture
+  // clones each pull the current video frame when rendered, so the
+  // per-device textures stay in lockstep without extra marking.)
   const invalidate = useThree((s) => s.invalidate);
   useEffect(() => {
     let handle = 0;
@@ -124,34 +183,36 @@ function EngineVideoScreens({
       video.cancelVideoFrameCallback(handle);
     };
   }, [video, invalidate]);
-  return <>{children(tex)}</>;
+  return <>{children(texs)}</>;
 }
 
 /** Screens mirroring the GIF engine's frame canvas. */
 function EngineGifScreens({
   engine,
   crop,
+  deviceCrops,
   children,
 }: {
   engine: GifEngine;
   crop?: MediaCrop;
-  children: (tex: Texture) => ReactNode;
+  deviceCrops?: Record<string, MediaCrop>;
+  children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  useScreenTexture(tex, crop);
+  const texs = useCropTextures(tex, crop, deviceCrops);
   useEffect(() => () => tex.dispose(), [tex]);
-  // Demand frameloop: each decoded GIF frame marks the texture dirty and
-  // requests exactly one render.
+  // Demand frameloop: each decoded GIF frame marks every screen texture
+  // (base + per-device clones) dirty and requests exactly one render.
   const invalidate = useThree((s) => s.invalidate);
   useEffect(
     () =>
       engine.subscribe(() => {
-        markTextureDirty(tex);
+        for (const t of texs.all) markTextureDirty(t);
         invalidate();
       }),
-    [engine, tex, invalidate],
+    [engine, texs, invalidate],
   );
-  return <>{children(tex)}</>;
+  return <>{children(texs)}</>;
 }
 
 /**
@@ -388,10 +449,11 @@ export default function SceneView({
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
-  // Crop: rects letterbox against the effective (cropped) dims; the crop
-  // window itself is applied on the shared texture's repeat/offset.
+  // Crop: rects letterbox against their EFFECTIVE (cropped) dims —
+  // per-device overrides included; the crop window itself rides each
+  // screen texture's repeat/offset (per-device clones when needed).
   const mediaCrop = activeItem?.crop;
-  const mediaDims = activeItem ? effectiveDims(activeItem) : null;
+  const deviceCrops = activeItem?.deviceCrops;
 
   // Measure boxes + the active keyframe's detected lines, mapped into
   // crop space once and drawn on every screen (per-device colors happen
@@ -410,19 +472,28 @@ export default function SceneView({
   // Plain computation (no manual memo): it's a handful of array ops and
   // the demand frameloop only renders on real changes anyway — and the
   // react-compiler can memoize it itself where profitable.
-  const contentBoxes: ContentBox[] = [];
+  // Entries stay full-image normalized here; each rect maps them
+  // through ITS effective crop below (per-device overrides differ).
+  const groupById = new Map<string, number>();
+  const boxEntries: {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    hNorm: number;
+    text?: string;
+  }[] = [];
   if (activeItem && showTextBoxes) {
-    const crop = cropOf(activeItem);
     const kf =
       animatedActive && activeItem.scanKeyframes
         ? activeKeyframe(activeItem.scanKeyframes, timeSec)
         : null;
     // Group ids come from the persisted scan / keyframe lines so the
     // global Groups color mode carries into the 3D outlines.
-    const groupById = new Map<string, number>();
     for (const l of activeItem.scan?.lines ?? [])
       if (l.groupId !== undefined) groupById.set(l.id, l.groupId);
-    const entries = [
+    boxEntries.push(
       ...(activeItem.boxes ?? []).map((b) => ({
         ...b,
         hNorm: b.h,
@@ -437,11 +508,16 @@ export default function SceneView({
           text: l.text,
         };
       }),
-    ];
-    for (const e of entries) {
+    );
+  }
+  const boxesFor = (deviceId: string): ContentBox[] => {
+    if (!activeItem || boxEntries.length === 0) return [];
+    const crop = effectiveCropFor(activeItem, deviceId);
+    const out: ContentBox[] = [];
+    for (const e of boxEntries) {
       const rect = boxInCrop(e, crop);
       if (!rect) continue;
-      contentBoxes.push({
+      out.push({
         id: e.id,
         rect,
         hMeasure: e.hNorm / crop.h,
@@ -451,7 +527,8 @@ export default function SceneView({
         hFull: e.hNorm,
       });
     }
-  }
+    return out;
+  };
 
   const eyeH = eyeHeightCm(scenario, heightCm);
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
@@ -551,40 +628,50 @@ export default function SceneView({
     }, "image/png");
   };
 
-  // The media texture is loaded ONCE here and shared by every rect.
-  const rects = (tex: Texture | null) =>
-    visible.map((d, i) => (
-      <DeviceRect
-        key={d.id}
-        device={d}
-        zBias={i * 0.04}
-        centerY={d.elevation?.[scenario] ?? eyeH}
-        poseKey={scenario}
-        distLabel={formatDistance(d.distanceCm, unit)}
-        palette={palette}
-        displayFill={displayFill}
-        labels={labelPlacements.get(d.id)}
-        eyeYRef={liveEye}
-        projectTo={farZ + 5}
-        showProjection={showProjection}
-        selected={selectedId === d.id}
-        onSelect={() => selectDevice(selectedId === d.id ? null : d.id)}
-        onDistanceDrag={(distanceCm) =>
-          d.id === thisDevice.id
-            ? updateThisDevice({ distanceCm })
-            : updateDevice(d.id, { distanceCm })
-        }
-        onDragState={setNodeDragging}
-        contentBoxes={contentBoxes}
-        selectedBoxId={selectedBoxId}
-        boxColorMode={scanColorMode}
-        media={
-          tex && mediaDims
-            ? { texture: tex, width: mediaDims.width, height: mediaDims.height }
-            : null
-        }
-      />
-    ));
+  // The media texture is loaded ONCE here; rects share it (or a
+  // per-device clone when the device has its own crop override).
+  const rects = (texs: ScreenTextures | null) =>
+    visible.map((d, i) => {
+      const dims = activeItem
+        ? cropDims(activeItem, effectiveCropFor(activeItem, d.id))
+        : null;
+      return (
+        <DeviceRect
+          key={d.id}
+          device={d}
+          zBias={i * 0.04}
+          centerY={d.elevation?.[scenario] ?? eyeH}
+          poseKey={scenario}
+          distLabel={formatDistance(d.distanceCm, unit)}
+          palette={palette}
+          displayFill={displayFill}
+          labels={labelPlacements.get(d.id)}
+          eyeYRef={liveEye}
+          projectTo={farZ + 5}
+          showProjection={showProjection}
+          selected={selectedId === d.id}
+          onSelect={() => selectDevice(selectedId === d.id ? null : d.id)}
+          onDistanceDrag={(distanceCm) =>
+            d.id === thisDevice.id
+              ? updateThisDevice({ distanceCm })
+              : updateDevice(d.id, { distanceCm })
+          }
+          onDragState={setNodeDragging}
+          contentBoxes={boxesFor(d.id)}
+          selectedBoxId={selectedBoxId}
+          boxColorMode={scanColorMode}
+          media={
+            texs && dims
+              ? {
+                  texture: texs.forDevice(d.id),
+                  width: dims.width,
+                  height: dims.height,
+                }
+              : null
+          }
+        />
+      );
+    });
 
   return (
     <div
@@ -673,15 +760,27 @@ export default function SceneView({
         {/* Fallback keeps the plain rects up while a texture loads. */}
         <Suspense fallback={rects(null)}>
           {activeItem && engine?.kind === "video" ? (
-            <EngineVideoScreens video={engine.video} crop={mediaCrop}>
+            <EngineVideoScreens
+              video={engine.video}
+              crop={mediaCrop}
+              deviceCrops={deviceCrops}
+            >
               {rects}
             </EngineVideoScreens>
           ) : activeItem && engine?.kind === "gif" ? (
-            <EngineGifScreens engine={engine} crop={mediaCrop}>
+            <EngineGifScreens
+              engine={engine}
+              crop={mediaCrop}
+              deviceCrops={deviceCrops}
+            >
               {rects}
             </EngineGifScreens>
           ) : activeItem && imageUrl ? (
-            <ImageScreens url={imageUrl} crop={mediaCrop}>
+            <ImageScreens
+              url={imageUrl}
+              crop={mediaCrop}
+              deviceCrops={deviceCrops}
+            >
               {rects}
             </ImageScreens>
           ) : (

@@ -7,6 +7,7 @@
 import type { HighlightBox, MediaCrop, MediaItem } from "./types";
 
 type Cropped = Pick<MediaItem, "width" | "height" | "crop">;
+type DeviceCropped = Pick<MediaItem, "crop" | "deviceCrops">;
 
 export const FULL_CROP: MediaCrop = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -14,16 +15,48 @@ export function cropOf(item: Pick<MediaItem, "crop">): MediaCrop {
   return item.crop ?? FULL_CROP;
 }
 
+/** The raw per-device override, if this device has one. */
+export function deviceCropOf(
+  item: DeviceCropped,
+  deviceId: string | null | undefined,
+): MediaCrop | undefined {
+  return deviceId ? item.deviceCrops?.[deviceId] : undefined;
+}
+
+/**
+ * The crop a given device actually renders: its override when present,
+ * else the plain media crop. Both layers are full-image normalized, so
+ * everything downstream (boxes, scans, textures) composes identically.
+ */
+export function effectiveCropFor(
+  item: DeviceCropped,
+  deviceId: string | null | undefined,
+): MediaCrop {
+  return deviceCropOf(item, deviceId) ?? cropOf(item);
+}
+
+/** True when any device carries its own crop override. */
+export function hasDeviceCrops(item: DeviceCropped): boolean {
+  return !!item.deviceCrops && Object.keys(item.deviceCrops).length > 0;
+}
+
+/** Pixel dims (rounded) of an arbitrary crop window over the item. */
+export function cropDims(
+  item: Pick<MediaItem, "width" | "height">,
+  crop: MediaCrop,
+): { width: number; height: number } {
+  return {
+    width: Math.round(crop.w * item.width),
+    height: Math.round(crop.h * item.height),
+  };
+}
+
 /** Cropped pixel dims (rounded); the intrinsic dims when no crop. */
 export function effectiveDims(item: Cropped): {
   width: number;
   height: number;
 } {
-  const c = cropOf(item);
-  return {
-    width: Math.round(c.w * item.width),
-    height: Math.round(c.h * item.height),
-  };
+  return cropDims(item, cropOf(item));
 }
 
 const EPS = 1e-4;
@@ -55,8 +88,12 @@ export function isFullFrame(crop: MediaCrop): boolean {
  * effective dims. Empty when no crop, keeping that path byte-identical.
  */
 export function viewBoxStyle(item: Cropped): { objectViewBox?: string } {
-  const c = item.crop;
-  if (!c) return {};
+  return viewBoxOf(item.crop);
+}
+
+/** viewBoxStyle for an explicit crop (per-device rendering paths). */
+export function viewBoxOf(c: MediaCrop | undefined): { objectViewBox?: string } {
+  if (!c || isFullFrame(c)) return {};
   const pct = (v: number) => `${(v * 100).toFixed(4)}%`;
   return {
     objectViewBox: `inset(${pct(c.y)} ${pct(1 - c.x - c.w)} ${pct(1 - c.y - c.h)} ${pct(c.x)})`,
@@ -76,7 +113,16 @@ export function cropScaleStyle(item: Cropped): {
   width: string;
   height: string;
 } {
-  const c = cropOf(item);
+  return cropScaleOf(cropOf(item));
+}
+
+/** cropScaleStyle for an explicit crop (per-device rendering paths). */
+export function cropScaleOf(c: MediaCrop): {
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+} {
   return {
     left: `${(-c.x / c.w) * 100}%`,
     top: `${(-c.y / c.h) * 100}%`,

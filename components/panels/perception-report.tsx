@@ -24,6 +24,7 @@ import {
   clearCurrentKeyframeScan,
   detectTextForItem,
 } from "@/lib/scan-actions";
+import { boxInCrop, effectiveCropFor } from "@/lib/media-crop";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -112,6 +113,8 @@ interface TextEntry {
   kfTime: number | null;
   /** Removable only for real measure boxes. */
   removable: boolean;
+  /** Full-image box rect, for per-device crop visibility. */
+  box: { x: number; y: number; w: number; h: number };
 }
 
 const fmtKfTime = (t: number) => {
@@ -130,6 +133,7 @@ function buildTextEntries(item: MediaItem): TextEntry[] {
       srcH: Math.round(b.h * item.height),
       kfTime: null,
       removable: true,
+      box: { x: b.x, y: b.y, w: b.w, h: b.h },
     });
   });
   for (const k of item.scanKeyframes ?? [])
@@ -141,6 +145,7 @@ function buildTextEntries(item: MediaItem): TextEntry[] {
         srcH: Math.round(l.sizePx ?? l.box.h * item.height),
         kfTime: k.timeSec,
         removable: false,
+        box: l.box,
       });
   return entries;
 }
@@ -471,6 +476,30 @@ export function PerceptionReportContent() {
                       title names the device with mm/px. */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                     {verdictDevices.map((d) => {
+                      // Per-device crops: a box outside this device's
+                      // effective crop isn't on that screen at all —
+                      // show a muted dash instead of a verdict.
+                      if (
+                        activeItem &&
+                        !boxInCrop(
+                          e.box,
+                          effectiveCropFor(activeItem, d.id),
+                        )
+                      ) {
+                        return (
+                          <span
+                            key={d.id}
+                            className="flex items-center gap-1.5 font-mono text-sm"
+                            title={`${d.label}: outside this device's crop — not shown on this screen`}
+                          >
+                            <span
+                              className="inline-block size-2 rounded-full opacity-35"
+                              style={{ background: d.color }}
+                            />
+                            <span className="text-muted-foreground/60">—</span>
+                          </span>
+                        );
+                      }
                       const m = boxMetricsOnDevice(e.h, activeItem!, d);
                       return (
                         <span
