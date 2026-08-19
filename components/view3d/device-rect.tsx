@@ -108,11 +108,13 @@ function dropLen(y: number, heightCm: number): number {
  *
  * The rays are overlay-drawn (no depth test), so anything they cross
  * gets painted over — including the figure's head, which the eye
- * point sits inside. Each ray therefore STARTS a head's clearance
- * along its direction instead of at the eye; the convergence point
- * stays legible, the face stays clean (Taylor 2026-08-19).
+ * point sits inside. Each ray therefore STARTS just outside the
+ * head's surface instead of at the eye: seen THROUGH the head is fine,
+ * entering its space is not (Taylor 2026-08-19). The figure's cranium
+ * is a 10.5 cm sphere about the eye point (viewer-figure), so its
+ * radius plus a hair of margin is the clearance.
  */
-const HEAD_CLEAR_CM = 20;
+const HEAD_CLEAR_CM = 11.5;
 
 function updateProjection(
   geom: BufferGeometry | null,
