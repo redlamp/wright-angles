@@ -74,12 +74,34 @@ export function fitModeOf(device: Pick<Device, "fit">): FitMode {
   return device.fit ?? "contain";
 }
 
-/** The user-facing names for the four modes, in UI order. */
-export const FIT_MODES: { id: FitMode; label: string }[] = [
-  { id: "contain", label: "Scale to fit" },
-  { id: "fill-width", label: "Fill width (crop top/bottom)" },
-  { id: "fill-height", label: "Fill height (crop sides)" },
-  { id: "stretch", label: "Stretch to fit" },
+/**
+ * The user-facing names for the four modes, in UI order. Deliberately
+ * short: the closed trigger and the open menu item must read as the
+ * SAME string, and the trigger shares its row with Curve, so a longer
+ * label would truncate in one place and not the other. What each mode
+ * gives up lives in `hint`, surfaced as the item's title.
+ */
+export const FIT_MODES: { id: FitMode; label: string; hint: string }[] = [
+  {
+    id: "contain",
+    label: "Scale to fit",
+    hint: "Whole frame visible; bars where it doesn't reach",
+  },
+  {
+    id: "fill-width",
+    label: "Fill width",
+    hint: "Match the width; crop off top and bottom",
+  },
+  {
+    id: "fill-height",
+    label: "Fill height",
+    hint: "Match the height; crop off left and right",
+  },
+  {
+    id: "stretch",
+    label: "Stretch to fit",
+    hint: "Touch all four edges; pixels distort, arc minutes read vertical",
+  },
 ];
 
 export const fitLabel = (mode: FitMode): string =>

@@ -44,6 +44,9 @@ import {
   TILT_LIMIT_DEG,
   autoOrientDefaultFor,
   autoOrientOf,
+  autoTiltDeg,
+  centerYFor,
+  eyeLevelForScenario,
 } from "@/lib/viewing-geometry";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
@@ -453,7 +456,36 @@ export function DeviceEditor({
       </div>
 
       <div className="space-y-1.5">
-        <Microlabel>Dimensions</Microlabel>
+        {/* Prefabs ride the header row (Taylor 2026-08-20) — they're
+            shortcuts to the controls below, not a section of their own,
+            and the editor was a row taller for no reason. */}
+        <div className="flex items-center justify-between gap-2">
+          <Microlabel>Dimensions</Microlabel>
+          {COMMON_RESOLUTIONS[aspectLabel] ? (
+            <div className="flex flex-wrap justify-end gap-1">
+              {COMMON_RESOLUTIONS[aspectLabel].map((r) => (
+                <button
+                  key={`${r.w}x${r.h}`}
+                  type="button"
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-sm transition-colors",
+                    r.w === device.resolution.w && r.h === device.resolution.h
+                      ? "bg-foreground text-background"
+                      : "bg-muted text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() =>
+                    onPatch({
+                      resolution: { w: r.w, h: r.h },
+                      aspect: aspectFromResolution({ w: r.w, h: r.h }),
+                    })
+                  }
+                >
+                  {r.w}×{r.h}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="flex items-center gap-1.5">
           <Select
             value={aspectLabel}
@@ -523,86 +555,75 @@ export function DeviceEditor({
             <RotateCwSquareIcon className="size-4" />
           </Button>
         </div>
-        {COMMON_RESOLUTIONS[aspectLabel] ? (
-          <div className="flex flex-wrap gap-1 pt-0.5">
-            {COMMON_RESOLUTIONS[aspectLabel].map((r) => (
-              <button
-                key={`${r.w}x${r.h}`}
-                type="button"
-                className={cn(
-                  "rounded-md px-2 py-1 font-mono text-sm transition-colors",
-                  r.w === device.resolution.w && r.h === device.resolution.h
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() =>
-                  onPatch({
-                    resolution: { w: r.w, h: r.h },
-                    aspect: aspectFromResolution({ w: r.w, h: r.h }),
-                  })
-                }
-              >
-                {r.w}×{r.h}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <Microlabel>Curve</Microlabel>
-        <Select
-          value={String(device.curvatureR ?? 0)}
-          onValueChange={(v) => onPatch({ curvatureR: Number(v) || undefined })}
-        >
-          <SelectTrigger className="w-28">
-            <SelectValue>
-              {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="0">Flat</SelectItem>
-            {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
-              <SelectItem key={r} value={String(r)}>
-                {r}R
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Curve and Fit share a row, both triggers the same width with
+          their labels beside them (Taylor 2026-08-20). w-36 is the
+          popup's own min-width, so the open menu is exactly as wide as
+          the closed trigger and the selected string reads identically
+          in both — which is also why the fit modes carry short labels
+          and put the explanation in a title. */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex items-center justify-between gap-1.5">
+          <Microlabel>Curve</Microlabel>
+          <Select
+            value={String(device.curvatureR ?? 0)}
+            onValueChange={(v) =>
+              onPatch({ curvatureR: Number(v) || undefined })
+            }
+          >
+            <SelectTrigger className="w-36 shrink-0">
+              <SelectValue>
+                {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Flat</SelectItem>
+              {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
+                <SelectItem key={r} value={String(r)}>
+                  {r}R
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* What this panel does when the media's shape disagrees with
+            its own (decision-media-crop-vs-device-fit). Contain persists
+            as UNDEFINED so devices saved before fit modes existed — and
+            every device that never leaves the default — stay
+            byte-identical. */}
+        <div className="flex items-center justify-between gap-1.5">
+          <Microlabel>Fit</Microlabel>
+          <Select
+            value={fitModeOf(device)}
+            onValueChange={(v) =>
+              onPatch({ fit: v === "contain" ? undefined : (v as FitMode) })
+            }
+          >
+            <SelectTrigger className="w-36 shrink-0" aria-label="Content fit">
+              <SelectValue>{fitLabel(fitModeOf(device))}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {FIT_MODES.map((m) => (
+                <SelectItem key={m.id} value={m.id} title={m.hint}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* What this panel does when the media's shape disagrees with its
-          own (decision-media-crop-vs-device-fit). Contain persists as
-          UNDEFINED so devices saved before fit modes existed — and every
-          device that never leaves the default — stay byte-identical. */}
-      <div className="space-y-1.5">
-        <Microlabel>Fit</Microlabel>
-        <Select
-          value={fitModeOf(device)}
-          onValueChange={(v) =>
-            onPatch({ fit: v === "contain" ? undefined : (v as FitMode) })
-          }
-        >
-          <SelectTrigger className="w-full" aria-label="Content fit">
-            <SelectValue>{fitLabel(fitModeOf(device))}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {FIT_MODES.map((m) => (
-              <SelectItem key={m.id} value={m.id}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {/* Stretch is the one mode with non-square pixels — say by how
-            much, and that the reported arc minutes are the height. */}
-        {stretchNote ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]">
-            <TriangleAlertIcon className="size-3 shrink-0" />
-            {stretchNote}
-          </span>
-        ) : null}
-      </div>
+      {/* Stretch is the one mode with non-square pixels — say by how
+          much, and that the reported arc minutes are the height. Its own
+          row now that Fit shares one with Curve. */}
+      {stretchNote ? (
+        <span className="inline-flex items-center gap-1 self-start rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]">
+          <TriangleAlertIcon className="size-3 shrink-0" />
+          {stretchNote}
+        </span>
+      ) : null}
 
       {/* Height and pitch are scene-dressing next to size and distance,
           so they fold away by default (Taylor 2026-08-20). Both are
@@ -641,43 +662,49 @@ export function DeviceEditor({
           </div>
           {SCENARIOS.map((s) => {
             const auto = autoOrientOf(device, s.id);
-            const deg = device.tilt?.[s.id] ?? 0;
+            // While auto-orienting the controls stay put but go inert,
+            // showing the angle the geometry WORKED OUT rather than a
+            // dead zero — you can read off that a screen below the gaze
+            // is pitched up to meet it. Same row shape as screen height
+            // above, so the two blocks line up (Taylor 2026-08-20).
+            const eyeY = eyeLevelForScenario(s.id, heightCm);
+            const deg = auto
+              ? autoTiltDeg(
+                  centerYFor(device, s.id, eyeY),
+                  eyeY,
+                  device.distanceCm,
+                )
+              : (device.tilt?.[s.id] ?? 0);
             const patchTilt = (v: number | undefined) =>
               onPatch({ tilt: { ...device.tilt, [s.id]: v } });
             return (
               <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
-                {auto ? (
-                  <>
-                    <span className="col-span-2 truncate text-sm text-muted-foreground">
-                      facing the viewer
-                    </span>
-                    <span />
-                  </>
-                ) : (
-                  <>
-                    <Slider
-                      min={-TILT_LIMIT_DEG}
-                      max={TILT_LIMIT_DEG}
-                      step={1}
-                      value={deg}
-                      aria-label={`${s.label} screen tilt`}
-                      onValueChange={(v) =>
-                        patchTilt(Array.isArray(v) ? v[0] : v)
-                      }
-                    />
-                    <NumberStepper
-                      ariaLabel={`${s.label} screen tilt in degrees`}
-                      value={deg}
-                      onChange={patchTilt}
-                      step={1}
-                      bigStep={5}
-                      min={-TILT_LIMIT_DEG}
-                      max={TILT_LIMIT_DEG}
-                      suffix="°"
-                      className="h-7"
-                    />
-                  </>
-                )}
+                <Slider
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  step={1}
+                  // An auto angle can exceed the slider's range (a
+                  // handheld in the lap needs ~48°); the track pins at
+                  // its end while the readout keeps the true figure.
+                  value={Math.max(-TILT_LIMIT_DEG, Math.min(TILT_LIMIT_DEG, deg))}
+                  disabled={auto}
+                  aria-label={`${s.label} screen tilt`}
+                  onValueChange={(v) =>
+                    patchTilt(Array.isArray(v) ? v[0] : v)
+                  }
+                />
+                <NumberStepper
+                  ariaLabel={`${s.label} screen tilt in degrees`}
+                  value={deg}
+                  onChange={patchTilt}
+                  step={1}
+                  bigStep={5}
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  suffix="°"
+                  disabled={auto}
+                  className="h-7"
+                />
                 {/* Per stance, the same shape as eye level above. Stored
                     only when it disagrees with the category, so
                     untouched devices serialize byte-identically. */}
