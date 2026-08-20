@@ -195,6 +195,11 @@ export function CalibrationPanel({
     setBox({ width, left, top });
   };
 
+  // Inverted on purpose: a SMALLER card on screen means a BIGGER panel,
+  // so the widest the card can go is the LOW end of the diagonal range.
+  const rangeLow = diagonalFromCardPx(env.maxPx, env.dpr, resolution);
+  const rangeHigh = diagonalFromCardPx(env.minPx, env.dpr, resolution);
+
   const implied = diagonalFromCardPx(box.width, env.dpr, resolution);
   const roundedImplied = Math.round(implied * 10) / 10;
 
@@ -319,12 +324,8 @@ export function CalibrationPanel({
               tabIndex={0}
               aria-label={`${edge} edge of calibration card`}
               aria-valuenow={roundedImplied}
-              aria-valuemin={Math.round(
-                diagonalFromCardPx(env.minPx, env.dpr, resolution) * 10,
-              ) / 10}
-              aria-valuemax={Math.round(
-                diagonalFromCardPx(env.maxPx, env.dpr, resolution) * 10,
-              ) / 10}
+              aria-valuemin={Math.round(rangeLow * 10) / 10}
+              aria-valuemax={Math.round(rangeHigh * 10) / 10}
               aria-valuetext={`${roundedImplied.toFixed(1)} inch diagonal`}
               className="absolute touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
               style={style}
