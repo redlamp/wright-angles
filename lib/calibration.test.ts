@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   CARD_ASPECT,
+  CARD_DIAGONAL_RATIO,
   CARD_H_MM,
   CARD_W_MM,
   COMMON_DIAGONALS_IN,
   cardWidthCssPx,
   diagonalFromCardPx,
   heightFromWidthPx,
+  widthFromDiagonalPx,
   widthFromHeightPx,
 } from "./calibration";
 
@@ -70,6 +72,21 @@ describe("heightFromWidthPx / widthFromHeightPx", () => {
 
   test("CARD_ASPECT is height/width", () => {
     expect(CARD_ASPECT).toBeCloseTo(CARD_H_MM / CARD_W_MM, 10);
+  });
+});
+
+describe("widthFromDiagonalPx / CARD_DIAGONAL_RATIO", () => {
+  test("a card built at its own diagonal has the right hypotenuse", () => {
+    const width = widthFromDiagonalPx(100);
+    const height = heightFromWidthPx(width);
+    expect(Math.hypot(width, height)).toBeCloseTo(100, 6);
+  });
+
+  test("ratio matches the real card's own diagonal/width", () => {
+    expect(CARD_DIAGONAL_RATIO).toBeCloseTo(
+      Math.hypot(CARD_W_MM, CARD_H_MM) / CARD_W_MM,
+      10,
+    );
   });
 });
 

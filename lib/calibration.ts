@@ -71,6 +71,19 @@ export function widthFromHeightPx(heightPx: number): number {
 }
 
 /**
+ * Card diagonal, in units of width (i.e. diagonal = width *
+ * CARD_DIAGONAL_RATIO). A corner drag scales the card along its own
+ * diagonal — the opposite corner pins, and the distance from that pin
+ * to the pointer, projected onto the card's true diagonal direction,
+ * is the new diagonal length. This ratio converts that back to width.
+ */
+export const CARD_DIAGONAL_RATIO = Math.hypot(1, CARD_ASPECT);
+
+export function widthFromDiagonalPx(diagonalPx: number): number {
+  return diagonalPx / CARD_DIAGONAL_RATIO;
+}
+
+/**
  * Common diagonal sizes (inches), laptop through TV, for the "I think
  * the display is…" fallback — the lazy alternative to measuring, for
  * users who won't hold a card against the screen at all.
