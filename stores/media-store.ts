@@ -14,6 +14,7 @@ import {
   idbGetAllMedia,
   idbPutMedia,
 } from "@/lib/idb";
+import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
 import { stripImageMetadata } from "@/lib/strip-metadata";
 
 const newId = () =>
@@ -410,6 +411,20 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       referenceHeight: canvas.height,
       addedAt: Date.now(),
     };
+    if (kind === "gradient") {
+      // The gradient card's draw is deterministic, so its OCR result is
+      // pinned data rather than a live scan (wiki/research/ocr-cost.md) —
+      // ships identically whether this is the first-run seed or a manual
+      // "Test → Gradient card". `boxes` is derived the same way
+      // detectTextForItem's live path builds it, so the overlay/report
+      // treat a seeded card exactly like a freshly scanned one.
+      meta.scan = GRADIENT_SEED_SCAN;
+      meta.boxes = GRADIENT_SEED_SCAN.lines.map((line) => ({
+        id: line.id,
+        label: line.text,
+        ...line.box,
+      }));
+    }
     await idbPutMedia(meta.id, { meta, blob });
     const url = URL.createObjectURL(blob);
     set((s) => ({
