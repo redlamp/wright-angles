@@ -9,6 +9,7 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { NumberStepper } from "@/components/number-stepper";
+import { CalibrationPanel } from "@/components/calibration-panel";
 import { SegmentedToggle } from "@/components/panels/settings-panel";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,10 @@ export function Onboarding() {
 
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Device>(thisDevice);
+  // Jean-Luc churned here: he doesn't know his monitor's diagonal and
+  // has no ruler. This drops into the card-calibration flow without
+  // nesting a second Dialog inside the onboarding one.
+  const [calibrating, setCalibrating] = useState(false);
 
   const monitorPresets = useMemo(
     () =>
@@ -75,8 +80,23 @@ export function Onboarding() {
         if (!open) skip();
       }}
     >
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        {step === 0 ? (
+      <DialogContent
+        className={cn(calibrating ? "w-auto max-w-none sm:max-w-none" : "sm:max-w-md")}
+        showCloseButton={false}
+      >
+        {calibrating ? (
+          <CalibrationPanel
+            aspect={draft.aspect}
+            resolution={draft.resolution}
+            diagonalIn={draft.diagonalIn}
+            cancelLabel="Back"
+            onCancel={() => setCalibrating(false)}
+            onApply={(diagonalIn) => {
+              setDraft((d) => ({ ...d, diagonalIn }));
+              setCalibrating(false);
+            }}
+          />
+        ) : step === 0 ? (
           <>
             <DialogHeader>
               <DialogTitle>Welcome to Wright Angles</DialogTitle>
@@ -234,6 +254,15 @@ export function Onboarding() {
                 fills {angles.horizontalDeg.toFixed(0)}° of your view ·{" "}
                 {angles.ppd.toFixed(0)} px/°
               </p>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-full text-muted-foreground"
+                onClick={() => setCalibrating(true)}
+              >
+                I don&rsquo;t know my screen size
+              </Button>
             </div>
             <div className="flex justify-between pt-1">
               <Button variant="ghost" size="sm" onClick={() => setStep(0)}>
