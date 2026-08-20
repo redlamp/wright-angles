@@ -225,6 +225,30 @@ describe("heldGripFor", () => {
     expect(heldGripFor([tiny], "desk", 120)!.halfGripCm).toBe(6);
   });
 
+  test("the wrist hangs below the screen centre, by chassis height", () => {
+    // Deck chassis is 11.7cm tall: 15% of that, plus the wrist's own
+    // 3cm below the palm. A wrist level with the centre read as holding
+    // the thing by its top edge.
+    const grip = heldGripFor([deck], "desk", 120)!;
+    expect(grip.centerY).toBe(120);
+    expect(grip.wristY).toBeCloseTo(120 - (11.7 * 0.15 + 3), 5);
+    expect(grip.wristY).toBeLessThan(grip.centerY);
+  });
+
+  test("a taller chassis drops the wrist further", () => {
+    const lite = heldGripFor(
+      [dev({ category: "handheld", deviceName: "Nintendo Switch Lite" })],
+      "desk",
+      120,
+    )!;
+    const deckGrip = heldGripFor([deck], "desk", 120)!;
+    // Switch Lite body 9.1cm vs the Deck's 11.7 — the smaller device is
+    // gripped closer to its middle, in absolute cm.
+    expect(lite.centerY - lite.wristY).toBeLessThan(
+      deckGrip.centerY - deckGrip.wristY,
+    );
+  });
+
   test("the grip follows the eye line through a stance change", () => {
     const g1 = heldGripFor([deck], "desk", 120)!;
     const g2 = heldGripFor([deck], "couch", 90)!;

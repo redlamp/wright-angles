@@ -136,13 +136,24 @@ const BEZEL_CM = 1.5;
 const GRIP_INSET_CM = 2;
 /** Hands never close nearer than this, however small the device. */
 const MIN_HALF_GRIP_CM = 6;
+/**
+ * A grip is not level with the screen's middle. The palm meets the
+ * chassis a little below the mid-line, and the wrist hangs below the
+ * palm again — the hand mesh is a slab the size of the palm's base, so
+ * drawing it at screen-centre height reads as holding the device by its
+ * top edge (Taylor 2026-08-20).
+ */
+const PALM_BELOW_CENTER = 0.15;
+const WRIST_BELOW_PALM_CM = 3;
 
 /** Where the figure's hands should be to hold a device, in world cm. */
 export interface HeldGrip {
   /** Distance from the eye — the panel's own z. */
   distanceCm: number;
-  /** Screen-centre height; grips sit level with it on a handheld. */
+  /** Screen-centre height. */
   centerY: number;
+  /** Where the WRIST goes — below the screen centre, see the constants. */
+  wristY: number;
   /** Half the hand span: the CHASSIS's edge, not the screen's. */
   halfGripCm: number;
 }
@@ -182,11 +193,13 @@ export function heldGripFor(
   if (!best) return null;
   const { d, centerY } = best;
   const body = d.deviceName ? HANDHELD_BODIES[d.deviceName] : undefined;
-  const spanCm =
-    body?.bodyWCm ?? physicalSizeCm(d.diagonalIn, d.aspect).widthCm + BEZEL_CM * 2;
+  const screen = physicalSizeCm(d.diagonalIn, d.aspect);
+  const spanCm = body?.bodyWCm ?? screen.widthCm + BEZEL_CM * 2;
+  const chassisHCm = body?.bodyHCm ?? screen.heightCm + BEZEL_CM * 2;
   return {
     distanceCm: d.distanceCm,
     centerY,
+    wristY: centerY - (chassisHCm * PALM_BELOW_CENTER + WRIST_BELOW_PALM_CM),
     halfGripCm: Math.max(MIN_HALF_GRIP_CM, spanCm / 2 - GRIP_INSET_CM),
   };
 }

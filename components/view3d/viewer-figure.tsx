@@ -157,10 +157,16 @@ function makePose(
           // Hands on the chassis edges, not the glass — a wide grip is
           // what actually reads as holding the thing.
           x: held.halfGripCm / s,
-          y: (held.centerY - rootY) / s,
+          // Below the screen centre, not level with it: the hand mesh is
+          // a palm-base slab, so a wrist at centre height hung the whole
+          // hand above the device (Taylor 2026-08-20). heldGripFor does
+          // the anatomy; this just divides through by the figure's scale.
+          y: (held.wristY - rootY) / s,
           z: held.distanceCm / s,
         },
-        pole: { x: 0.5, y: -1, z: -0.3 },
+        // Elbows tucked toward the ribs rather than winged out, which is
+        // how anyone actually holds a handheld for more than a minute.
+        pole: { x: 0.3, y: -1, z: -0.45 },
       };
     }
     // Nothing hand-held on screen: the original raised two-hand hold,
