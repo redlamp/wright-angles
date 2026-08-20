@@ -33,13 +33,28 @@ export function SegmentedToggle<T extends string>({
   value,
   options,
   onChange,
+  onFill = false,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  /**
+   * Legible sitting on a SOLID bg-foreground fill (the calibration
+   * card's face) instead of the app's usual panel background. The
+   * normal active state is bg-foreground/text-background — the exact
+   * tokens a bg-foreground fill already uses — so unchanged it vanishes
+   * into that fill in both themes. This inverts the tokens instead of
+   * moving the control off the fill it's meant to sit on.
+   */
+  onFill?: boolean;
 }) {
   return (
-    <div className="panel-inset flex h-8 items-center gap-0.5 rounded-md p-0.5">
+    <div
+      className={cn(
+        "flex h-8 items-center gap-0.5 rounded-md p-0.5",
+        onFill ? "bg-background/15" : "panel-inset",
+      )}
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -47,8 +62,12 @@ export function SegmentedToggle<T extends string>({
           className={cn(
             "h-full flex-1 rounded-[6px] text-sm transition-colors",
             o.value === value
-              ? "bg-foreground text-background"
-              : "text-muted-foreground hover:text-foreground",
+              ? onFill
+                ? "bg-background text-foreground"
+                : "bg-foreground text-background"
+              : onFill
+                ? "text-background/70 hover:text-background"
+                : "text-muted-foreground hover:text-foreground",
           )}
           onClick={() => onChange(o.value)}
         >

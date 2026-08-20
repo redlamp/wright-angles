@@ -42,20 +42,26 @@ const DIALOG_MARGIN_PX = 96;
 
 /**
  * Non-stage chrome inside the dialog when calibrating: header + optional
- * zoom warning + "I think the display is…" row + slider + combined
- * readout row + footer, plus the grid gaps and padding between them.
- * Kept as a single named budget rather than measuring live, so this is
- * a rough reservation, not exact — the outer DialogContent's own
- * max-height is the hard guarantee that the dialog never exceeds the
- * viewport even if this estimate runs short.
+ * zoom warning + "I think the display is…" row + slider + the
+ * implies/configured readout line + footer, plus the grid gaps and
+ * padding between them. Kept as a single named budget rather than
+ * measuring live, so this is a rough reservation, not exact — the
+ * outer DialogContent's own max-height is the hard guarantee that the
+ * dialog never exceeds the viewport even if this estimate runs short.
  */
-const RESERVED_CHROME_PX = 420;
+const RESERVED_CHROME_PX = 380;
 const MIN_STAGE_VIEWPORT_PX = 200;
 
-/** Below this width the "Standard Bank Card / dimensions" label can't
- * fit at the app's normal type size without wrapping into the card's
- * own edges, so it's dropped rather than shrunk illegibly. */
-const LABEL_MIN_PX = 150;
+/**
+ * Below this width the full in-card label — name, "dimensions", the
+ * measurements, and the cm/in toggle — can't fit at the app's normal
+ * type size without wrapping into the card's own edges, so the whole
+ * label drops rather than shrinking illegibly. That does mean the unit
+ * toggle becomes unreachable below this width; the card being that
+ * small means the user is already mid-drag toward a bigger one, so it
+ * isn't the moment they'd reach for the toggle anyway.
+ */
+const LABEL_MIN_PX = 190;
 
 type Edge = "left" | "right" | "top" | "bottom";
 type Corner = "tl" | "tr" | "bl" | "br";
@@ -504,13 +510,27 @@ export function CalibrationPanel({
             }}
           >
             {showLabel ? (
-              <div className="flex flex-col items-center gap-0.5 px-2 text-center leading-tight text-background">
+              <div className="flex flex-col items-center gap-1 px-2 text-center leading-tight text-background">
                 <span className="text-base font-medium">
                   Standard Bank Card
                 </span>
                 <span className="text-sm text-background/70">
                   dimensions
                 </span>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className="font-mono text-sm">
+                    {shownW} × {shownH}
+                  </span>
+                  <SegmentedToggle
+                    onFill
+                    value={unit}
+                    options={[
+                      { value: "cm", label: "cm" },
+                      { value: "in", label: "in" },
+                    ]}
+                    onChange={setUnit}
+                  />
+                </div>
               </div>
             ) : null}
           </div>
@@ -611,24 +631,12 @@ export function CalibrationPanel({
         onValueChange={onSliderChange}
       />
 
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-sm text-muted-foreground">
-          implies {implied.toFixed(1)}″ — configured {diagonalIn.toFixed(1)}″
-        </p>
-        <div className="flex items-center gap-1.5">
-          <span className="font-mono text-sm text-muted-foreground">
-            {shownW} × {shownH}
-          </span>
-          <SegmentedToggle
-            value={unit}
-            options={[
-              { value: "cm", label: "cm" },
-              { value: "in", label: "in" },
-            ]}
-            onChange={setUnit}
-          />
-        </div>
-      </div>
+      {/* This readout is about the PANEL (what the drag implies vs
+          what's configured), not the card — it stays here regardless
+          of where the card's own label lives. */}
+      <p className="font-mono text-sm text-muted-foreground">
+        implies {implied.toFixed(1)}″ — configured {diagonalIn.toFixed(1)}″
+      </p>
 
       <DialogFooter>
         <Button variant="ghost" onClick={onCancel}>
