@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { RulerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CM_PER_IN, aspectFromResolution, deviceAngles } from "@/lib/display-math";
 import { DEVICE_PRESETS } from "@/lib/presets";
@@ -9,6 +10,7 @@ import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
 import { NumberStepper } from "@/components/number-stepper";
+import { CalibrationPanel } from "@/components/calibration-panel";
 import { SegmentedToggle } from "@/components/panels/settings-panel";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +43,10 @@ export function Onboarding() {
 
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Device>(thisDevice);
+  // Playtesting churned here: a user who doesn't know their monitor's
+  // diagonal and has no ruler. This drops into the card-calibration
+  // flow without nesting a second Dialog inside the onboarding one.
+  const [calibrating, setCalibrating] = useState(false);
 
   const monitorPresets = useMemo(
     () =>
@@ -75,8 +81,27 @@ export function Onboarding() {
         if (!open) skip();
       }}
     >
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        {step === 0 ? (
+      <DialogContent
+        className={cn(
+          calibrating
+            ? "max-h-[calc(100vh-2rem)] w-auto max-w-none overflow-y-auto sm:max-w-none"
+            : "sm:max-w-md",
+        )}
+        showCloseButton={false}
+      >
+        {calibrating ? (
+          <CalibrationPanel
+            aspect={draft.aspect}
+            resolution={draft.resolution}
+            diagonalIn={draft.diagonalIn}
+            cancelLabel="Back"
+            onCancel={() => setCalibrating(false)}
+            onApply={(diagonalIn) => {
+              setDraft((d) => ({ ...d, diagonalIn }));
+              setCalibrating(false);
+            }}
+          />
+        ) : step === 0 ? (
           <>
             <DialogHeader>
               <DialogTitle>Welcome to Wright Angles</DialogTitle>
@@ -110,6 +135,21 @@ export function Onboarding() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2.5">
+              {/* Offered before the preset select, not after every field
+                  the user might not be able to fill in — the way out has
+                  to be visible before the numbers are (Taylor
+                  2026-08-20). secondary + icon matches how Export/Import
+                  read as real, standing offers in Settings without
+                  competing with the dialog's own primary action. */}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 w-full text-sm"
+                onClick={() => setCalibrating(true)}
+              >
+                <RulerIcon className="size-3.5" /> I don&rsquo;t know my screen size
+              </Button>
+
               <Select
                 value=""
                 onValueChange={(v) => {

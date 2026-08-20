@@ -52,3 +52,42 @@ export function diagonalFromCardPx(
   const diagPx = Math.hypot(resolution.w, resolution.h);
   return diagPx / nativePxPerCm / CM_PER_IN;
 }
+
+/**
+ * Card aspect, height/width. The card's shape is fixed (it's a real
+ * object), so dragging a top/bottom edge changes height directly and
+ * this ratio is how that maps back to the width the rest of the math
+ * runs on — the four-edge drag requirement that "a vertical drag drives
+ * width through the ID-1 ratio".
+ */
+export const CARD_ASPECT = CARD_H_MM / CARD_W_MM;
+
+export function heightFromWidthPx(widthPx: number): number {
+  return widthPx * CARD_ASPECT;
+}
+
+export function widthFromHeightPx(heightPx: number): number {
+  return heightPx / CARD_ASPECT;
+}
+
+/**
+ * Card diagonal, in units of width (i.e. diagonal = width *
+ * CARD_DIAGONAL_RATIO). A corner drag scales the card along its own
+ * diagonal — the opposite corner pins, and the distance from that pin
+ * to the pointer, projected onto the card's true diagonal direction,
+ * is the new diagonal length. This ratio converts that back to width.
+ */
+export const CARD_DIAGONAL_RATIO = Math.hypot(1, CARD_ASPECT);
+
+export function widthFromDiagonalPx(diagonalPx: number): number {
+  return diagonalPx / CARD_DIAGONAL_RATIO;
+}
+
+/**
+ * Common diagonal sizes (inches), laptop through TV, for the "I think
+ * the display is…" fallback — the lazy alternative to measuring, for
+ * users who won't hold a card against the screen at all.
+ */
+export const COMMON_DIAGONALS_IN = [
+  13.3, 14, 15.6, 16, 21.5, 24, 27, 32, 34, 42, 48, 55, 65,
+];
