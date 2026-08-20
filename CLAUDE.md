@@ -53,9 +53,18 @@ conflict before coding.
   git log --oneline -1                              # verify before editing
   ```
 
-  Whoever merges the branch back checks `git merge-base --is-ancestor
-  origin/main HEAD` first: if that succeeds, the branch is main-based and
-  needs rebasing onto `dev` before it lands.
+  Whoever merges the branch back verifies the base with:
+
+  ```sh
+  git merge-base --is-ancestor origin/dev HEAD   # must SUCCEED
+  git log --oneline origin/dev..<branch>         # must list only its own work
+  ```
+
+  (Testing whether `origin/main` is an ancestor does NOT work: `dev`
+  already contains `main`, so that succeeds for every branch and proves
+  nothing. Ask whether the branch contains `dev`, not whether it
+  contains `main`.) Release merge commits appearing in that log are the
+  tell that a branch is main-based.
 - **Refactors run in a worktree, never in this tree.** Taylor keeps
   `bun run dev` pointed at the working tree; a multi-file refactor is
   inconsistent between its first edit and its last, so hot reload serves
