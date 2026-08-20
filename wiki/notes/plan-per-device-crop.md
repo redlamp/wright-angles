@@ -1,8 +1,16 @@
 ---
-tags: [domain/product, status/adopted, origin/taylor]
+tags: [domain/product, status/superseded, origin/taylor]
 ---
 
 # Plan — Per-Device Cropping
+
+> **Superseded 2026-08-20** by [[decision-media-crop-vs-device-fit]].
+> Built and shipped in v0.7.0, then rejected on review: the plan solved
+> a *display* problem with a *source-editing* control. Hand-drawn
+> per-device crops are replaced by named fit modes owned by the device.
+> The render pipeline this plan produced survives and is reused; only
+> the authoring layer described under "UI" below is retired. Kept for
+> the model and the rendering notes, which remain accurate.
 
 Taylor (2026-08-19): "we may need device-by-device cropping options —
 come up with a plan for how that can be done and how it'd work with

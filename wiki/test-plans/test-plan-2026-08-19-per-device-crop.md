@@ -12,6 +12,11 @@ Tick what passes; annotate anything that feels off.
 
 ## 2. Per-device crop — basics
 
+> **Sections 2–4 are void (2026-08-20).** Taylor rejected the approach
+> on review; see [[decision-media-crop-vs-device-fit]]. Don't tick
+> these — the device-scope crop UI is being replaced by device fit
+> modes. Section 1 still stands.
+
 Select a device (row, 2D, or 3D — selection is shared), then Media
 Library → Crop.
 
