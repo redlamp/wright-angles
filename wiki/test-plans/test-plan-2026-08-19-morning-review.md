@@ -1,8 +1,14 @@
 ---
-tags: [domain/product, status/open]
+tags: [domain/product, status/superseded]
 ---
 
 # Test Plan v5 — Morning Review (2026-08-19)
+
+> **Closed 2026-08-20** → [[test-plan-2026-08-20-device-fit]].
+> §2 (per-device crops) is void: reviewed and rejected, replaced by
+> device fit modes. §3's v0.6.0 spot-check was overtaken — main is at
+> v0.7.0 and was smoke-tested on a clean origin at promotion. §4's
+> backlog carried forward intact as v6 §8; nothing was dropped.
 
 Written while you slept (01:34 go-to-bed). Housekeeping done tonight:
 v3/v4 and both 08-15 plans are closed out — everything exercised

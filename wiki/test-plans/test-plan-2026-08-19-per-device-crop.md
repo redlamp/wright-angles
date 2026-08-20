@@ -1,4 +1,13 @@
+---
+tags: [domain/product, status/superseded]
+---
+
 # Test Plan — 2026-08-19 — Per-Device Crop + Mirrored-Side Hover
+
+> **Closed 2026-08-20** → [[test-plan-2026-08-20-device-fit]]. Section 1
+> (mirrored-side hover, shipped in v0.6.0) passed and stands. Sections
+> 2–4 are void: the feature they test was rejected on review and
+> replaced by device fit modes.
 
 Built overnight on dev (v0.6.0 already promoted to main before this).
 Tick what passes; annotate anything that feels off.
