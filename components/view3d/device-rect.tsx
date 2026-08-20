@@ -328,6 +328,19 @@ function boxLoopPoints(
   return pts;
 }
 
+/**
+ * Device name labels are one size for every screen, in scene units (1 =
+ * 1cm). They used to scale with the rect (`heightCm * 0.14`, clamped
+ * 4–12) so a handheld wouldn't drown in text, but that made the name a
+ * second, competing readout of how big the panel is — a 120″ projector
+ * shouted while a Switch whispered, and the labels stopped reading as
+ * one set. They are chrome, not scenery (see `raiseNameLabel`: no depth
+ * test, drawn over the room), so they get one type size like any other
+ * UI text. Shared with `computeLabelPlacements`, which sizes the
+ * de-collision stack from it.
+ */
+export const NAME_FONT_CM = 8;
+
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
   nameX: number;
@@ -625,8 +638,7 @@ export default function DeviceRect({
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
 
-  // Name label scales with the rect so a phone at 36cm doesn't drown in text.
-  const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
+  const nameSize = NAME_FONT_CM;
 
   return (
     <group

@@ -33,6 +33,7 @@ import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/lib/use-theme";
 import DeviceRect, {
+  NAME_FONT_CM,
   type ContentBox,
   type LabelPlacement,
 } from "./device-rect";
@@ -260,6 +261,8 @@ function computeLabelPlacements(
     topY: number;
     halfW: number;
     nameSize: number;
+    /** Rough rendered width of the name, in scene cm. */
+    nameW: number;
   }
   const infos: Info[] = visible
     .map((d) => {
@@ -271,8 +274,10 @@ function computeLabelPlacements(
         // Name-label anchor height (rect top + 3), at the tween's target.
         topY: centerY + heightCm / 2 + 3,
         halfW: widthCm / 2,
-        // Mirrors DeviceRect's name font sizing.
-        nameSize: Math.min(12, Math.max(4, heightCm * 0.14)),
+        nameSize: NAME_FONT_CM,
+        // Average glyph advance for this face is ~0.55em; close enough to
+        // decide overlap without measuring troika's laid-out geometry.
+        nameW: d.label.length * NAME_FONT_CM * 0.55,
       };
     })
     .sort((a, b) => a.z - b.z);
@@ -305,10 +310,15 @@ function computeLabelPlacements(
   };
   for (const info of infos) {
     const prev = cluster[cluster.length - 1];
+    // Two names clash when their anchors are closer than the names are
+    // WIDE — a multiple of font size missed that, so "Steam Deck OLED"
+    // and "27″ 1440p Monitor" sat 28cm apart in z and still overlapped
+    // by half their length. Every rect is centred on x=0, so the anchor
+    // gap is all that keeps them apart.
     if (
       prev &&
       Math.hypot(info.z - prev.z, info.topY - prev.topY) >
-        1.5 * Math.max(prev.nameSize, info.nameSize)
+        (prev.nameW + info.nameW) / 2
     ) {
       flushNames();
     }
