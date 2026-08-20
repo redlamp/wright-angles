@@ -30,16 +30,12 @@ import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
 import {
   ASPECT_PRESETS,
-  FULL_CROP,
   aspectCrop,
   boxInCrop,
   cropOf,
   cropsEqual,
-  deviceCropOf,
   dragCrop,
-  effectiveCropFor,
   effectiveDims,
-  hasDeviceCrops,
   isFullFrame,
   type CropHandle,
 } from "@/lib/media-crop";
@@ -518,22 +514,15 @@ const CROP_HANDLES: { id: CropHandle; className: string }[] = [
  */
 function CropOverlayFrame({
   item,
-  scopeDevice,
   overlay,
   children,
 }: {
   item: MediaItem;
-  /**
-   * Non-null: the editor shows THIS device's effective crop and drags
-   * write its override (media crop untouched). Null: media scope.
-   */
-  scopeDevice: Device | null;
   /** Extra full-frame-coordinate layers (e.g. detected-text boxes). */
   overlay?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const setCrop = useMediaStore((s) => s.setCrop);
-  const setDeviceCrop = useMediaStore((s) => s.setDeviceCrop);
   const [draft, setDraft] = useState<MediaCrop | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -543,17 +532,9 @@ function CropOverlayFrame({
     base: MediaCrop;
   } | null>(null);
 
-  // Device scope starts from the EFFECTIVE crop: dragging an inherited
-  // window is exactly how an override is born.
-  const stored = scopeDevice
-    ? effectiveCropFor(item, scopeDevice.id)
-    : cropOf(item);
+  const stored = cropOf(item);
   const crop = draft ?? stored;
-  const hasWindow = draft
-    ? true
-    : scopeDevice
-      ? !isFullFrame(stored)
-      : !!item.crop;
+  const hasWindow = draft ? true : !!item.crop;
   const wide = item.width / item.height >= 16 / 9;
 
   // The handle id rides on data-handle so one handler serves all nine
@@ -590,20 +571,7 @@ function CropOverlayFrame({
   const onDragEnd = () => {
     if (!drag.current) return;
     drag.current = null;
-    if (draft) {
-      if (scopeDevice) {
-        // A full-frame override is MEANINGFUL when a media crop exists
-        // (this device shows the whole frame); with no media crop it's
-        // identical to inheriting, so clear it.
-        setDeviceCrop(
-          item.id,
-          scopeDevice.id,
-          isFullFrame(draft) && !item.crop ? undefined : draft,
-        );
-      } else {
-        setCrop(item.id, isFullFrame(draft) ? undefined : draft);
-      }
-    }
+    if (draft) setCrop(item.id, isFullFrame(draft) ? undefined : draft);
     setDraft(null);
   };
 
@@ -619,9 +587,7 @@ function CropOverlayFrame({
       {children}
       {/* The crop window; the oversized shadow is the outside scrim.
           Rendered only while a crop (or live drag) exists, so the frame
-          doubles as a plain full-frame host for other overlays. In
-          device scope the outline wears the device's key color so it's
-          obvious WHOSE window is being edited. */}
+          doubles as a plain full-frame host for other overlays. */}
       {hasWindow ? (
         <div
           className="absolute cursor-move touch-none"
@@ -631,7 +597,7 @@ function CropOverlayFrame({
             width: `${crop.w * 100}%`,
             height: `${crop.h * 100}%`,
             boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
-            outline: `1px solid ${scopeDevice ? scopeDevice.color : "rgba(255,255,255,0.9)"}`,
+            outline: "1px solid rgba(255,255,255,0.9)",
           }}
           data-handle="move"
           onPointerDown={onDragStart}
@@ -670,44 +636,16 @@ function CropOverlayFrame({
  * largest centered window; Custom for anything else — including a preset
  * freely adjusted on the overlay until it no longer matches.
  *
- * Per-device scope (plan-per-device-crop): once a device is selected
- * app-wide, an "applies to" control appears and the dropdown can target
- * that device's OVERRIDE instead of the shared media crop. Overrides
- * inherit the media crop until set and clear back to it via Inherit.
+ * SOURCE crop only (decision-media-crop-vs-device-fit): one window per
+ * item, applied everywhere. How a panel of a different shape presents
+ * that content is the device's own `fit` mode, edited in the Device
+ * Manager and the device hover card — not here.
  */
-function CropSection({
-  item,
-  selectedDevice,
-  scope,
-  setScope,
-}: {
-  item: MediaItem;
-  /** App-wide selected device — the device-scope target, if any. */
-  selectedDevice: Device | null;
-  scope: "media" | "device";
-  setScope: (s: "media" | "device") => void;
-}) {
+function CropSection({ item }: { item: MediaItem }) {
   const setCrop = useMediaStore((s) => s.setCrop);
-  const setDeviceCrop = useMediaStore((s) => s.setDeviceCrop);
 
-  const deviceScope = scope === "device" && selectedDevice ? selectedDevice : null;
-  const override = deviceScope
-    ? deviceCropOf(item, deviceScope.id)
-    : undefined;
-  const current = deviceScope ? (override ?? cropOf(item)) : cropOf(item);
-  const noCrop = deviceScope
-    ? !override
-    : !item.crop || isFullFrame(current);
-
-  // Device scope leads with "match this panel's shape" — the one-click
-  // "show me what fits this screen" default from the plan note.
-  const deviceAspect = deviceScope
-    ? aspectCrop(
-        deviceScope.aspect.w / deviceScope.aspect.h,
-        item.width,
-        item.height,
-      )
-    : null;
+  const current = cropOf(item);
+  const noCrop = !item.crop || isFullFrame(current);
   const presets = ASPECT_PRESETS.map(({ label, ratio }) => {
     const crop = aspectCrop(ratio, item.width, item.height);
     // An exact-aspect image makes this preset the full frame: uncropped,
@@ -718,184 +656,65 @@ function CropSection({
       label,
       crop,
       wholeFrame,
-      active: deviceScope
-        ? !!override && cropsEqual(override, crop)
-        : wholeFrame
-          ? noCrop
-          : !noCrop && cropsEqual(current, crop),
+      active: wholeFrame ? noCrop : !noCrop && cropsEqual(current, crop),
     };
   });
-  const value = deviceScope
-    ? !override
-      ? "inherit"
-      : isFullFrame(override)
-        ? "none"
-        : deviceAspect && cropsEqual(override, deviceAspect)
-          ? "device-aspect"
-          : (presets.find((p) => p.active)?.label ?? "custom")
-    : (presets.find((p) => p.active)?.label ?? (noCrop ? "none" : "custom"));
-
-  const commit = (crop: MediaCrop | undefined) => {
-    if (deviceScope) setDeviceCrop(item.id, deviceScope.id, crop);
-    else setCrop(item.id, crop);
-  };
+  const value =
+    presets.find((p) => p.active)?.label ?? (noCrop ? "none" : "custom");
 
   const applyChoice = (v: string | null) => {
     if (v === null) return;
-    if (v === "inherit") {
-      commit(undefined);
-      return;
-    }
     if (v === "none") {
-      // Device scope: an explicit full-frame override (meaningful when
-      // a media crop exists; identical to inherit when none does).
-      commit(deviceScope && item.crop ? { ...FULL_CROP } : undefined);
-      return;
-    }
-    if (v === "device-aspect") {
-      if (deviceAspect) {
-        commit(
-          isFullFrame(deviceAspect) && !item.crop
-            ? undefined
-            : deviceAspect,
-        );
-      }
+      setCrop(item.id, undefined);
       return;
     }
     if (v === "custom") {
       pauseIfAnimated();
-      if (isFullFrame(current)) {
+      if (noCrop) {
         // Start a centered ~80% window.
-        commit({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+        setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
       } else {
         // Entering Custom FROM a preset (Taylor): keep the window
         // where it is, nudged a hair (0.4%) off the preset match
         // so Custom takes the highlight and edits are freeform.
-        commit({ ...current, w: current.w * 0.996, h: current.h * 0.996 });
+        setCrop(item.id, {
+          ...current,
+          w: current.w * 0.996,
+          h: current.h * 0.996,
+        });
       }
       return;
     }
     const preset = presets.find((p) => p.label === v);
-    if (preset) {
-      commit(
-        preset.wholeFrame && !(deviceScope && item.crop)
-          ? undefined
-          : preset.crop,
-      );
-    }
+    if (preset) setCrop(item.id, preset.wholeFrame ? undefined : preset.crop);
   };
 
-  const overrideCount = hasDeviceCrops(item)
-    ? Object.keys(item.deviceCrops!).length
-    : 0;
-  const deviceAspectLabel = deviceScope
-    ? `${deviceScope.aspect.w}:${deviceScope.aspect.h}`
-    : "";
-
   return (
-    <div className="space-y-1">
-      <div className="flex h-9 items-center justify-between gap-2">
-        <span className="flex items-center gap-2">
-          <SectionLabel>Crop</SectionLabel>
-          {overrideCount > 0 ? (
-            <span
-              className="text-sm text-muted-foreground"
-              title="Devices with their own crop override on this media"
-            >
-              {overrideCount} per-device
-            </span>
-          ) : null}
-        </span>
-        <Select value={value} onValueChange={applyChoice}>
-          <SelectTrigger size="sm" aria-label="Crop aspect">
-            <SelectValue>
-              {value === "inherit"
-                ? "Inherit"
-                : value === "none"
-                  ? deviceScope
-                    ? "Full frame"
-                    : "None"
-                  : value === "device-aspect"
-                    ? `Match ${deviceAspectLabel}`
-                    : value === "custom"
-                      ? "Custom"
-                      : presets.find((p) => p.active)?.wholeFrame && !deviceScope
-                        ? `${value} (native)`
-                        : value}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {deviceScope ? (
-              <SelectItem value="inherit">
-                Inherit — use the media crop
-              </SelectItem>
-            ) : null}
-            <SelectItem value="none">
-              {deviceScope ? "Full frame on this device" : "None — full frame"}
+    <div className="flex h-9 items-center justify-between gap-2">
+      <SectionLabel>Crop</SectionLabel>
+      <Select value={value} onValueChange={applyChoice}>
+        <SelectTrigger size="sm" aria-label="Crop aspect">
+          <SelectValue>
+            {value === "none"
+              ? "None"
+              : value === "custom"
+                ? "Custom"
+                : presets.find((p) => p.active)?.wholeFrame
+                  ? `${value} (native)`
+                  : value}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">None — full frame</SelectItem>
+          {presets.map(({ label, wholeFrame }) => (
+            <SelectItem key={label} value={label}>
+              {label}
+              {wholeFrame ? " (native)" : ""}
             </SelectItem>
-            {deviceScope ? (
-              <SelectItem value="device-aspect">
-                Match {deviceAspectLabel} — this device&apos;s shape
-              </SelectItem>
-            ) : null}
-            {presets.map(({ label, wholeFrame }) => (
-              <SelectItem key={label} value={label}>
-                {label}
-                {wholeFrame && !deviceScope ? " (native)" : ""}
-              </SelectItem>
-            ))}
-            <SelectItem value="custom">Custom — drag on the preview</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {selectedDevice ? (
-        <div className="flex h-7 items-center justify-end gap-1.5">
-          <span className="text-sm text-muted-foreground">applies to</span>
-          <span className="panel-inset flex h-7 items-center gap-0.5 rounded-md p-0.5">
-            {(
-              [
-                { id: "media", label: "All devices" },
-                { id: "device", label: selectedDevice.label },
-              ] as const
-            ).map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                aria-pressed={scope === o.id}
-                title={
-                  o.id === "media"
-                    ? "Edit the shared media crop (devices without an override follow it)"
-                    : `Edit ${selectedDevice.label}'s own crop override`
-                }
-                className={cn(
-                  "flex h-full max-w-40 items-center gap-1.5 rounded-[5px] px-1.5 text-sm transition-colors",
-                  scope === o.id
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => setScope(o.id)}
-              >
-                {o.id === "device" ? (
-                  <span
-                    className="size-2 shrink-0 rounded-full"
-                    style={{
-                      background: selectedDevice.color,
-                      // Hollow dot until this device actually overrides.
-                      ...(deviceCropOf(item, selectedDevice.id)
-                        ? {}
-                        : {
-                            background: "transparent",
-                            border: `1.5px solid ${selectedDevice.color}`,
-                          }),
-                    }}
-                  />
-                ) : null}
-                <span className="truncate">{o.label}</span>
-              </button>
-            ))}
-          </span>
-        </div>
-      ) : null}
+          ))}
+          <SelectItem value="custom">Custom — drag on the preview</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -1413,20 +1232,6 @@ function DetailCard({ item }: { item: MediaItem }) {
   const [armed, setArmed] = useState(false);
   const eff = effectiveDims(item);
 
-  // Per-device crop scope rides the app-wide selection: with a device
-  // selected, the crop controls can target ITS override; the preview's
-  // crop editor follows the same scope.
-  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
-  const scopeThisDevice = useDeviceStore((s) => s.thisDevice);
-  const scopeDevices = useDeviceStore((s) => s.devices);
-  const selectedDevice = selectedDeviceId
-    ? selectedDeviceId === scopeThisDevice.id
-      ? scopeThisDevice
-      : (scopeDevices.find((d) => d.id === selectedDeviceId) ?? null)
-    : null;
-  const [cropScope, setCropScope] = useState<"media" | "device">("media");
-  const scopeDevice =
-    cropScope === "device" && selectedDevice ? selectedDevice : null;
   const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
 
   // OCR scan state lives here so the detected boxes can render over the
@@ -1587,7 +1392,6 @@ function DetailCard({ item }: { item: MediaItem }) {
             boxes (when scanned + shown) layered directly over it. */}
         <CropOverlayFrame
           item={item}
-          scopeDevice={scopeDevice}
           overlay={
             showScanBoxes && effectiveScan && effectiveScan.lines.length > 0 ? (
               <ScanBoxesOverlay lines={effectiveScan.lines} item={item} />
@@ -1619,12 +1423,7 @@ function DetailCard({ item }: { item: MediaItem }) {
 
       <TransportControls />
 
-      <CropSection
-        item={item}
-        selectedDevice={selectedDevice}
-        scope={cropScope}
-        setScope={setCropScope}
-      />
+      <CropSection item={item} />
 
       <label className="flex h-9 items-center justify-between gap-2 text-base text-muted-foreground">
         <span className="flex items-center gap-1.5">

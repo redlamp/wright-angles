@@ -24,7 +24,8 @@ import {
   clearCurrentKeyframeScan,
   detectTextForItem,
 } from "@/lib/scan-actions";
-import { boxInCrop, effectiveCropFor } from "@/lib/media-crop";
+import { boxInCrop } from "@/lib/media-crop";
+import { deviceFitCrop, fitLabel, fitModeOf } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -113,7 +114,7 @@ interface TextEntry {
   kfTime: number | null;
   /** Removable only for real measure boxes. */
   removable: boolean;
-  /** Full-image box rect, for per-device crop visibility. */
+  /** Full-image box rect, for per-device fit-crop visibility. */
   box: { x: number; y: number; w: number; h: number };
 }
 
@@ -476,21 +477,18 @@ export function PerceptionReportContent() {
                       title names the device with mm/px. */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                     {verdictDevices.map((d) => {
-                      // Per-device crops: a box outside this device's
-                      // effective crop isn't on that screen at all —
-                      // show a muted dash instead of a verdict.
+                      // Fit modes crop: a box the device's fit trims
+                      // away isn't on that screen at all — show a muted
+                      // dash instead of a verdict.
                       if (
                         activeItem &&
-                        !boxInCrop(
-                          e.box,
-                          effectiveCropFor(activeItem, d.id),
-                        )
+                        !boxInCrop(e.box, deviceFitCrop(activeItem, d))
                       ) {
                         return (
                           <span
                             key={d.id}
                             className="flex items-center gap-1.5 font-mono text-sm"
-                            title={`${d.label}: outside this device's crop — not shown on this screen`}
+                            title={`${d.label}: cropped out by "${fitLabel(fitModeOf(d))}" — not shown on this screen`}
                           >
                             <span
                               className="inline-block size-2 rounded-full opacity-35"

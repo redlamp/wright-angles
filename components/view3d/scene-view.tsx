@@ -137,16 +137,16 @@ function useCropTextures(
 function ImageScreens({
   url,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   url: string;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useLoader(TextureLoader, url);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
   return <>{children(texs)}</>;
 }
 
@@ -154,16 +154,16 @@ function ImageScreens({
 function EngineVideoScreens({
   video,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   video: HTMLVideoElement;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new VideoTexture(video), [video]);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
   useEffect(() => () => tex.dispose(), [tex]);
   // Demand frameloop: request a render per decoded video frame — no
   // frames while paused, native cadence while playing. (VideoTexture
@@ -191,16 +191,16 @@ function EngineVideoScreens({
 function EngineGifScreens({
   engine,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   engine: GifEngine;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
   useEffect(() => () => tex.dispose(), [tex]);
   // Demand frameloop: each decoded GIF frame marks every screen texture
   // (base + per-device clones) dirty and requests exactly one render.
@@ -437,7 +437,12 @@ export default function SceneView({
   const inputType = useViewerStore((s) => s.inputType);
   const heightCm = useViewerStore((s) => s.heightCm);
   const palette = SCENE_PALETTES[useSceneTheme()];
-  const visible = [thisDevice, ...devices].filter((d) => d.visible);
+  // Memoized: the fit-crop and label memos below key off this list, and
+  // a fresh array each render would re-clone every screen texture.
+  const visible = useMemo(
+    () => [thisDevice, ...devices].filter((d) => d.visible),
+    [thisDevice, devices],
+  );
 
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
@@ -450,11 +455,22 @@ export default function SceneView({
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
-  // Crop: rects letterbox against their EFFECTIVE (cropped) dims —
-  // per-device overrides included; the crop window itself rides each
-  // screen texture's repeat/offset (per-device clones when needed).
+  // Crop: rects letterbox against their RENDERED dims — the media's
+  // source crop, reframed by each device's fit mode; the window itself
+  // rides each screen texture's repeat/offset (clones when needed).
   const mediaCrop = activeItem?.crop;
-  const deviceCrops = activeItem?.deviceCrops;
+  // Only devices whose fit actually reframes get an entry, so a scene
+  // of contain panels (the default) still shares one base texture.
+  const fitCrops = useMemo(() => {
+    if (!activeItem) return undefined;
+    const src = cropOf(activeItem);
+    const out: Record<string, MediaCrop> = {};
+    for (const d of visible) {
+      const c = deviceFitCrop(activeItem, d);
+      if (!cropsEqual(c, src)) out[d.id] = c;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }, [activeItem, visible]);
 
   // Measure boxes + the active keyframe's detected lines, mapped into
   // crop space once and drawn on every screen (per-device colors happen
@@ -474,7 +490,7 @@ export default function SceneView({
   // the demand frameloop only renders on real changes anyway — and the
   // react-compiler can memoize it itself where profitable.
   // Entries stay full-image normalized here; each rect maps them
-  // through ITS effective crop below (per-device overrides differ).
+  // through ITS rendered crop below (fit modes differ per device).
   const groupById = new Map<string, number>();
   const boxEntries: {
     id: string;
@@ -511,9 +527,9 @@ export default function SceneView({
       }),
     );
   }
-  const boxesFor = (deviceId: string): ContentBox[] => {
+  const boxesFor = (device: Device): ContentBox[] => {
     if (!activeItem || boxEntries.length === 0) return [];
-    const crop = effectiveCropFor(activeItem, deviceId);
+    const crop = deviceFitCrop(activeItem, device);
     const out: ContentBox[] = [];
     for (const e of boxEntries) {
       const rect = boxInCrop(e, crop);
@@ -629,12 +645,12 @@ export default function SceneView({
     }, "image/png");
   };
 
-  // The media texture is loaded ONCE here; rects share it (or a
-  // per-device clone when the device has its own crop override).
+  // The media texture is loaded ONCE here; rects share it (or a clone
+  // when the device's fit mode derives a different crop).
   const rects = (texs: ScreenTextures | null) =>
     visible.map((d, i) => {
       const dims = activeItem
-        ? cropDims(activeItem, effectiveCropFor(activeItem, d.id))
+        ? cropDims(activeItem, deviceFitCrop(activeItem, d))
         : null;
       return (
         <DeviceRect
@@ -658,7 +674,7 @@ export default function SceneView({
               : updateDevice(d.id, { distanceCm })
           }
           onDragState={setNodeDragging}
-          contentBoxes={boxesFor(d.id)}
+          contentBoxes={boxesFor(d)}
           selectedBoxId={selectedBoxId}
           boxColorMode={scanColorMode}
           media={
@@ -764,7 +780,7 @@ export default function SceneView({
             <EngineVideoScreens
               video={engine.video}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </EngineVideoScreens>
@@ -772,7 +788,7 @@ export default function SceneView({
             <EngineGifScreens
               engine={engine}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </EngineGifScreens>
@@ -780,7 +796,7 @@ export default function SceneView({
             <ImageScreens
               url={imageUrl}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </ImageScreens>

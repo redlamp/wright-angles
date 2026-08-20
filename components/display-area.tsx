@@ -445,7 +445,7 @@ function BoxLayer({
   isHost: boolean;
   /** Owning rect's device — box hovers feed the inspector with it. */
   deviceId: string;
-  /** The owning device's effective crop (overrides included). */
+  /** The owning device's rendered crop (source crop, fit-reframed). */
   crop: MediaCrop;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
@@ -1015,7 +1015,7 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl && activeItem ? (
-              // One master decode; each rect mirrors it (its effective
+              // One master decode; each rect mirrors it (its rendered
               // crop applied at draw time, so no wrapper needed).
               <VideoMirror
                 item={activeItem}
