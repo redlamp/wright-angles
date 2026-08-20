@@ -21,6 +21,7 @@ import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
 import { fitBox, fitModeOf } from "@/lib/fit";
+import { degToRad } from "@/lib/viewing-geometry";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import { groupColor } from "@/lib/text-groups";
@@ -390,10 +391,17 @@ export default function DeviceRect({
   selectedBoxId,
   boxColorMode = "rating",
   zBias,
+  tiltDeg,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
   centerY: number;
+  /**
+   * Panel pitch in degrees, positive tipping the face up (top edge away
+   * from the viewer). Resolved in scene-view, which knows the stance and
+   * eye height; this component stays store-free.
+   */
+  tiltDeg?: number;
   /**
    * Changes when the stance does; a centerY change WITH a poseKey change
    * tweens, one without (the height slider) snaps.
@@ -460,8 +468,19 @@ export default function DeviceRect({
   // Curved panels use their actual arc-end corners.
   const projW = fit ? fit.w : widthCm;
   const projH = fit ? fit.h : heightCm;
+  const tiltRad = degToRad(tiltDeg ?? 0);
   const projCorners = useMemo<[number, number, number][]>(() => {
     const hh = projH / 2;
+    // The panel's own group carries the pitch, but the cone does not
+    // live in that group (its rays start at the eye), so the corners
+    // are pitched here instead — same rotation about +X, by hand.
+    const cos = Math.cos(tiltRad);
+    const sin = Math.sin(tiltRad);
+    const pitch = (c: [number, number, number]): [number, number, number] => [
+      c[0],
+      c[1] * cos - c[2] * sin,
+      c[1] * sin + c[2] * cos,
+    ];
     if (!curved) {
       const hw = projW / 2;
       return [
@@ -469,7 +488,7 @@ export default function DeviceRect({
         [hw, -hh, 0],
         [hw, hh, 0],
         [-hw, hh, 0],
-      ];
+      ].map((c) => pitch(c as [number, number, number]));
     }
     // Content sits on a slightly smaller radius than the outline.
     const r = fit ? R - 0.25 : R;
@@ -481,8 +500,8 @@ export default function DeviceRect({
       [x, -hh, z],
       [x, hh, z],
       [-x, hh, z],
-    ];
-  }, [projW, projH, curved, R, fit]);
+    ].map((c) => pitch(c as [number, number, number]));
+  }, [projW, projH, curved, R, fit, tiltRad]);
 
   const rectRef = useRef<Group>(null);
   const dropRef = useRef<Group>(null);
@@ -670,26 +689,20 @@ export default function DeviceRect({
           : undefined
       }
     >
+      {/* Everything that is PART OF THE PANEL pitches together: outline,
+          chassis, content and the box overlays measured off it. The
+          projection cone, the name, the drop line and the floor readout
+          stay in untilted space — the cone's rays start at the eye (a
+          point in this group's frame, which a rotation would move), and
+          the rest are readouts about the panel rather than parts of it.
+          projCorners is pitched arithmetically instead, so the rays
+          still land on the panel's real corners. */}
+      <group rotation={[tiltRad, 0, 0]}>
       <Line
         points={outline}
         color={device.color}
         lineWidth={selected ? 3 : 2}
       />
-      {showProjection || selected ? (
-        // Overlay treatment like the distance markers/labels: no depth
-        // test plus a late renderOrder, so scene props (the desk) never
-        // occlude the rays — but still below the labels at 15/20.
-        <lineSegments renderOrder={10}>
-          <bufferGeometry ref={projRef} />
-          <lineBasicMaterial
-            color={device.color}
-            transparent
-            opacity={selected ? 0.85 : 0.22}
-            depthWrite={false}
-            depthTest={false}
-          />
-        </lineSegments>
-      ) : null}
 
       {body ? (
         // Full chassis behind the screen so device-vs-screen size reads.
@@ -868,6 +881,23 @@ export default function DeviceRect({
             );
           })
         : null}
+      </group>
+
+      {showProjection || selected ? (
+        // Overlay treatment like the distance markers/labels: no depth
+        // test plus a late renderOrder, so scene props (the desk) never
+        // occlude the rays — but still below the labels at 15/20.
+        <lineSegments renderOrder={10}>
+          <bufferGeometry ref={projRef} />
+          <lineBasicMaterial
+            color={device.color}
+            transparent
+            opacity={selected ? 0.85 : 0.22}
+            depthWrite={false}
+            depthTest={false}
+          />
+        </lineSegments>
+      ) : null}
 
       {SHOW_LABELS ? (
         <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>

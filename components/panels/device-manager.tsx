@@ -39,6 +39,12 @@ import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
+import {
+  TILT_LIMIT_DEG,
+  autoOrientDefaultFor,
+  autoOrientOf,
+  eyeLevelForScenario,
+} from "@/lib/viewing-geometry";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -217,9 +223,7 @@ export function DeviceEditor({
     : portraitMatch
       ? portraitMatch.label.split(":").reverse().join(":")
       : `${ratio.toFixed(2)}:1`;
-  const scenarioLabel =
-    SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
-  const elevation = device.elevation?.[scenario];
+  const autoOrient = autoOrientOf(device);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _hc = heightCm; // keeps the editor reactive to height changes
   const sizeShown = sizeInches
@@ -477,65 +481,149 @@ export function DeviceEditor({
         ) : null}
       </div>
 
-      <div className="space-y-1.5">
+      {/* Height AND pitch for every stance at once (Taylor 2026-08-20).
+          The same monitor is met at a different height and angle from a
+          desk chair than from a couch, and being able to compare the
+          three is worth more than the vertical space one-at-a-time
+          saved. The active stance is the only one in full contrast. */}
+      <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Microlabel>Screen height · {scenarioLabel.toLowerCase()}</Microlabel>
+          <Microlabel>Screen height · cm</Microlabel>
+          <span className="text-sm text-muted-foreground">Eye level</span>
+        </div>
+        {SCENARIOS.map((s) => {
+          const stored = device.elevation?.[s.id];
+          const atEyeLevel = stored === undefined;
+          const eyeFor = Math.round(eyeLevelForScenario(s.id, heightCm));
+          const shown = stored ?? eyeFor;
+          const patchHeight = (v: number | undefined) =>
+            onPatch({ elevation: { ...device.elevation, [s.id]: v } });
+          return (
+            <div
+              key={s.id}
+              className="grid grid-cols-[4.25rem_minmax(0,1fr)_5rem_2.25rem] items-center gap-2"
+            >
+              <span
+                className={cn(
+                  "truncate text-sm",
+                  s.id === scenario
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {s.label}
+              </span>
+              {/* Not disabled while at eye level: dragging IS the
+                  intent to set a height, so it takes the override
+                  rather than making you flip the switch first. */}
+              <Slider
+                min={0}
+                max={250}
+                step={1}
+                value={shown}
+                aria-label={`${s.label} screen height`}
+                onValueChange={(v) =>
+                  patchHeight(Array.isArray(v) ? v[0] : v)
+                }
+              />
+              <NumberStepper
+                ariaLabel={`${s.label} screen height from floor`}
+                value={shown}
+                onChange={patchHeight}
+                step={1}
+                bigStep={10}
+                min={0}
+                max={300}
+                className="h-7"
+              />
+              {/* On = follow the viewer's eye (store nothing). Off seeds
+                  the override at THIS stance's eye height, not the
+                  active one's. */}
+              <Switch
+                checked={atEyeLevel}
+                aria-label={`${s.label} at eye level`}
+                onCheckedChange={(on) => patchHeight(on ? undefined : eyeFor)}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Pitch. Auto-orient aims the face at the eye — what a handheld
+          does by virtue of being held; a monitor on a stand does not.
+          Persisted as undefined whenever it matches the category
+          default, so untouched devices serialize byte-identically. */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Microlabel>Tilt</Microlabel>
           <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Eye level
+            Auto-orient
             <Switch
-              checked={elevation === undefined}
+              checked={autoOrient}
+              aria-label="Pitch the screen to face the viewer"
               onCheckedChange={(on) =>
                 onPatch({
-                  elevation: {
-                    ...device.elevation,
-                    [scenario]: on
+                  autoOrient:
+                    on === autoOrientDefaultFor(device.category)
                       ? undefined
-                      : Math.round(
-                          // Start the override at the current eye height.
-                          useViewerStore
-                            .getState()
-                            .heightCm && device.distanceCm
-                            ? eyeLevelNow()
-                            : 120,
-                        ),
-                  },
+                      : on,
                 })
               }
             />
           </label>
         </div>
-        {elevation !== undefined ? (
-          <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
-            <Slider
-              min={0}
-              max={250}
-              step={1}
-              value={elevation}
-              onValueChange={(v) =>
-                onPatch({
-                  elevation: {
-                    ...device.elevation,
-                    [scenario]: Array.isArray(v) ? v[0] : v,
-                  },
-                })
-              }
-            />
-            <NumberStepper
-              ariaLabel="screen height from floor"
-              value={elevation}
-              onChange={(v) =>
-                onPatch({
-                  elevation: { ...device.elevation, [scenario]: v },
-                })
-              }
-              step={1}
-              bigStep={10}
-              min={0}
-              max={300}
-              className="h-7"
-            />
-          </div>
-        ) : null}
+        {autoOrient ? (
+          <p className="text-sm text-muted-foreground">
+            Facing the viewer — the screen turns to meet the eye, the way
+            something held in your hands does.
+          </p>
+        ) : (
+          SCENARIOS.map((s) => {
+            const deg = device.tilt?.[s.id] ?? 0;
+            const patchTilt = (v: number) =>
+              onPatch({
+                tilt: { ...device.tilt, [s.id]: v === 0 ? undefined : v },
+              });
+            return (
+              <div
+                key={s.id}
+                className="grid grid-cols-[4.25rem_minmax(0,1fr)_5rem_2.25rem] items-center gap-2"
+              >
+                <span
+                  className={cn(
+                    "truncate text-sm",
+                    s.id === scenario
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {s.label}
+                </span>
+                <Slider
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  step={1}
+                  value={deg}
+                  aria-label={`${s.label} screen tilt`}
+                  onValueChange={(v) =>
+                    patchTilt(Array.isArray(v) ? v[0] : v)
+                  }
+                />
+                <NumberStepper
+                  ariaLabel={`${s.label} screen tilt in degrees`}
+                  value={deg}
+                  onChange={patchTilt}
+                  step={1}
+                  bigStep={5}
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  className="h-7"
+                />
+                <span className="text-sm text-muted-foreground">°</span>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {FEATURE_3D_DEVICE_BODY &&
@@ -583,18 +671,6 @@ export function DeviceEditor({
   );
 }
 
-function eyeLevelNow(): number {
-  const { scenario, heightCm } = useViewerStore.getState();
-  // Local import cycle avoidance: mirror eyeHeightCm's constants.
-  switch (scenario) {
-    case "standing":
-      return heightCm * 0.936;
-    case "desk":
-      return heightCm * 0.45 + 45;
-    case "couch":
-      return heightCm * 0.45 + 40;
-  }
-}
 
 interface ReorderHooks {
   onDragOver: (e: React.DragEvent) => void;

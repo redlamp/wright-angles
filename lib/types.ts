@@ -65,6 +65,21 @@ export interface Device {
    */
   elevation?: { standing?: number; desk?: number; couch?: number };
   /**
+   * Screen pitch in DEGREES per viewing scenario, positive tipping the
+   * face upward (top edge away from the viewer) — a desk monitor angled
+   * up at a seated head. Per-stance because the same monitor is met at
+   * a different angle from a desk chair than from a couch. Ignored
+   * while the device auto-orients, and absent means flat.
+   * See `lib/viewing-geometry.ts` for the sign convention.
+   */
+  tilt?: { standing?: number; desk?: number; couch?: number };
+  /**
+   * Pitch the screen to face the viewer's eye directly, instead of
+   * using `tilt`. Absent follows the category — held things (handheld,
+   * phone, tablet) track your gaze, furniture doesn't.
+   */
+  autoOrient?: boolean;
+  /**
    * Curvature radius in mm using the industry convention (1000R = 1m
    * radius; smaller = curvier). Undefined/0 = flat panel.
    */
