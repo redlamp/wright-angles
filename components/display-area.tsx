@@ -944,6 +944,14 @@ export function DisplayArea() {
     );
   };
 
+  // Focus emphasis (Up/Down device cycling, and click-select share the
+  // same selectedDeviceId — see hotkeys.tsx): the rest of the devices
+  // recede rather than vanish, since Taylor hasn't decided whether focus
+  // should fully solo a device. Kept as one boolean gate on rect opacity
+  // below so a future true-solo mode is a one-line swap to `display:
+  // none` instead of a re-plumb.
+  const focused = selectedDeviceId !== null;
+
   return (
     <div
       ref={ref}
@@ -1005,7 +1013,13 @@ export function DisplayArea() {
         return (
         <div
           key={device.id}
-          className="absolute -translate-x-1/2 -translate-y-1/2"
+          className={cn(
+            "absolute -translate-x-1/2 -translate-y-1/2 transition-opacity duration-150",
+            // Dims everything but the focused device — label included,
+            // since it lives inside this same wrapper. Same de-emphasis
+            // weight as a hidden device's row in the comparison table.
+            focused && device.id !== selectedDeviceId && "opacity-45",
+          )}
           style={{
             left: center.x,
             top: center.y,

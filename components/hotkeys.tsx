@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { cycleId } from "@/lib/cycle";
 import {
   nextKeyframeTime,
   prevKeyframeTime,
 } from "@/lib/scan-keyframes";
+import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
@@ -36,6 +38,19 @@ const isTyping = (t: EventTarget | null) =>
     t.tagName === "SELECT" ||
     t.isContentEditable);
 
+// NumberStepper's ArrowUp/ArrowDown nudge and the Slider thumb's native
+// <input type="range"> both land on an INPUT, so isTyping already keeps
+// hotkeys off them. What it doesn't catch: an open Select listbox or
+// DropdownMenu, whose options are plain elements (role="option" /
+// "menuitem"), and a modal Dialog, where focus is trapped on its own
+// buttons. All three render their popup body with a shadcn-style
+// `data-slot="…-content"` wrapper (select-content, dropdown-menu-content,
+// dropdown-menu-sub-content, dialog-content) — closest() on that suffix
+// catches "focus is inside an open overlay" without hardcoding every
+// component's internals.
+const isInOverlay = (t: EventTarget | null) =>
+  t instanceof Element && t.closest('[data-slot$="-content"]') !== null;
+
 /** Rows for the cheat-sheet overlay; `soon` = mapped but not built yet. */
 const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "D / M / P", does: "Workbench tabs: Devices · Media · Perception" },
@@ -47,6 +62,7 @@ const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "Double-click", does: "Recenter the 2D composition" },
   { keys: "Esc", does: "Deselect / close this sheet" },
   { keys: "← / →", does: "Previous / next media in the library" },
+  { keys: "↑ / ↓", does: "Focus previous / next visible device" },
   { keys: "Space", does: "Play / pause timeline media" },
   { keys: "< / >", does: "Previous / next OCR keyframe (and pause)" },
   { keys: "X", does: "Crop the active media (again clears the crop)" },
@@ -59,7 +75,14 @@ export function Hotkeys() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (
+        isTyping(e.target) ||
+        isInOverlay(e.target) ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      )
+        return;
       const ui = useUiStore.getState();
       const viewer = useViewerStore.getState();
 
@@ -104,6 +127,25 @@ export function Hotkeys() {
         const step = e.key === "ArrowRight" ? 1 : -1;
         const next = media.items[(Math.max(0, at) + step + n) % n];
         media.setActive(next.id);
+        return;
+      }
+      // Up/Down cycle the FOCUSED device (plan: one screen at a time),
+      // reusing the same app-wide selection the 2D rect, table row, and
+      // 3D rect already light up for — arrow-key focus and click-select
+      // are the same mechanism, just two ways to move it. Visible devices
+      // only, This Device included when it's on, in the same order
+      // display-area.tsx builds its own device lists (This Device first,
+      // then the rest, unsorted — cycling doesn't care about z-order).
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const { thisDevice, devices } = useDeviceStore.getState();
+        const visible = [
+          ...(thisDevice.visible ? [thisDevice] : []),
+          ...devices.filter((d) => d.visible),
+        ];
+        if (visible.length === 0) return;
+        e.preventDefault();
+        const dir = e.key === "ArrowDown" ? 1 : -1;
+        ui.selectDevice(cycleId(visible, ui.selectedDeviceId, dir));
         return;
       }
 
