@@ -549,6 +549,16 @@ function BoxLayer({
   );
 }
 
+// Cycle label corners so tightly nested rects stay readable — shared by
+// the in-stack label and the focused-chrome overlay's copy, so a device's
+// label doesn't jump to a different corner the moment it's focused.
+const LABEL_CORNER_CLASSES = [
+  "top-0 left-0 -translate-y-full pb-0.5",
+  "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
+  "bottom-0 left-0 translate-y-full pt-0.5",
+  "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
+];
+
 /**
  * The 2D overlay: every visible device rendered at equal angular size,
  * mapped through This Device's panel.
@@ -904,9 +914,11 @@ export function DisplayArea() {
   }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
   /**
-   * Topmost device rect (highest z = last in draw order, EXCEPT the
-   * focused device, which the render below raises above the whole
-   * stack) under a point.
+   * Topmost device rect (highest z = last in draw order) under a point.
+   * Focus doesn't change this: it raises only the focused device's OWN
+   * chrome (outline/ring/label) above the stack, never its fill, so the
+   * fill layers below stay in plain area-sorted order and this stays
+   * accurate without needing to know who's focused.
    */
   const deviceAt = (clientX: number, clientY: number) => {
     const el = ref.current;
@@ -915,15 +927,12 @@ export function DisplayArea() {
     const px = clientX - r.left;
     const py = clientY - r.top;
     let hit: string | null = null;
-    let hitFocused = false;
     for (const { device, w, h } of rects) {
-      if (hitFocused) break; // nothing draws above the focused rect
       if (
         Math.abs(px - center.x) <= w / 2 &&
         Math.abs(py - center.y) <= h / 2
       ) {
         hit = device.id; // later entries draw on top; keep the last hit
-        hitFocused = device.id === selectedDeviceId;
       }
     }
     return hit;
@@ -1009,6 +1018,10 @@ export function DisplayArea() {
         const dMode = fitModeOf(device);
         const objectFit =
           dMode === "stretch" ? "object-fill" : "object-contain";
+        // The focused device's OWN chrome (outline, ring, label) draws in
+        // the overlay pass below instead of here — see there for why.
+        // Its fill stays exactly here, at its plain sorted position.
+        const isFocused = device.id === selectedDeviceId;
         return (
         <div
           key={device.id}
@@ -1018,14 +1031,11 @@ export function DisplayArea() {
             top: center.y,
             width: w,
             height: h,
-            // Stacking is otherwise `rects`' own area-descending sort
-            // (biggest device bottom, so a smaller nested one is legible
-            // on top by default). Focus overrides that for exactly one
-            // rect — raised above the whole stack — without touching
-            // anyone else's position in it: rects.length + 1 always
-            // clears every i + 1 below it, and nothing else's zIndex
-            // changes just because focus moved off it.
-            zIndex: device.id === selectedDeviceId ? rects.length + 1 : i + 1,
+            // Plain area-descending sort, unaffected by focus (biggest
+            // device bottom, so a smaller nested one is legible on top
+            // by default) — see the overlay pass below for how focus is
+            // expressed instead.
+            zIndex: i + 1,
           }}
           // Same inspector-feeding hover as the 3D rects. enter/leave
           // (not over/out): descendants — boxes — must not re-fire it.
@@ -1037,14 +1047,13 @@ export function DisplayArea() {
           <div
             className="absolute inset-0 bg-black"
             style={{
-              outline: `2px solid ${device.color}`,
+              // Suppressed on the focused device: its outline moves to
+              // the overlay pass, which draws above the whole stack
+              // instead of wherever the area sort put this fill. Drawing
+              // it here too would double the alpha where the overlay's
+              // copy sits directly on top of it.
+              outline: isFocused ? undefined : `2px solid ${device.color}`,
               outlineOffset: -1,
-              // Selection affordance: a soft ring just outside the rect's
-              // own outline (shared selection with the table and 3D view).
-              boxShadow:
-                device.id === selectedDeviceId
-                  ? `0 0 0 4px ${device.color}59`
-                  : undefined,
               // Fill also backs the letterbox bars when content doesn't
               // cover the panel (16:9 image on a 32:9 display).
               background:
@@ -1109,24 +1118,69 @@ export function DisplayArea() {
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
           </div>
-          {/* Cycle label corners so tightly nested rects stay readable. */}
-          <span
-            className={
-              "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap " +
-              [
-                "top-0 left-0 -translate-y-full pb-0.5",
-                "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
-                "bottom-0 left-0 translate-y-full pt-0.5",
-                "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
-              ][i % 4]
-            }
-            style={{ color: device.color }}
-          >
-            {device.label} · {formatDistance(device.distanceCm, unit)}
-          </span>
+          {/* Suppressed on the focused device — its copy is in the
+              overlay pass below, above the whole stack. */}
+          {isFocused ? null : (
+            <span
+              className={cn(
+                "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap",
+                LABEL_CORNER_CLASSES[i % 4],
+              )}
+              style={{ color: device.color }}
+            >
+              {device.label} · {formatDistance(device.distanceCm, unit)}
+            </span>
+          )}
         </div>
         );
       })}
+
+      {/* Focused-device chrome overlay: raises just the readable parts
+          (outline, ring, label) of the focused rect above the ENTIRE
+          stack, while its fill and media stay at their plain sorted
+          z-position above. Focusing the biggest device must not paint
+          over every smaller one nested inside it (Taylor 2026-08-20) —
+          so unlike deviceAt/hover, which read the real fill stack, this
+          is a second, pointer-events-none pass that never affects what
+          a click or hover actually lands on. */}
+      {(() => {
+        const fi = rects.findIndex((r) => r.device.id === selectedDeviceId);
+        if (fi === -1) return null;
+        const { device, w, h } = rects[fi];
+        return (
+          <div
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: center.x,
+              top: center.y,
+              width: w,
+              height: h,
+              zIndex: rects.length + 1,
+            }}
+          >
+            <div
+              className="absolute inset-0"
+              style={{
+                outline: `2px solid ${device.color}`,
+                outlineOffset: -1,
+                // Selection affordance: a soft ring just outside the
+                // rect's own outline (shared selection with the table
+                // and 3D view).
+                boxShadow: `0 0 0 4px ${device.color}59`,
+              }}
+            />
+            <span
+              className={cn(
+                "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap",
+                LABEL_CORNER_CLASSES[fi % 4],
+              )}
+              style={{ color: device.color }}
+            >
+              {device.label} · {formatDistance(device.distanceCm, unit)}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Host annotation layer sits above every device rect so drawing
           and box selection are never blocked by nested rects. */}
