@@ -18,6 +18,15 @@ export interface Aspect {
   h: number;
 }
 
+/**
+ * What happens when the device's aspect and the media's aspect disagree
+ * (see wiki/notes/decision-media-crop-vs-device-fit.md). This is a
+ * property of the DEVICE — a TV set to fill, fills — not of the image.
+ * Never stretches: anamorphic scaling would make every arc-minute
+ * reading a lie.
+ */
+export type FitMode = "contain" | "fill-width" | "fill-height";
+
 export type DeviceCategory =
   | "handheld"
   | "phone"
@@ -57,6 +66,12 @@ export interface Device {
    * radius; smaller = curvier). Undefined/0 = flat panel.
    */
   curvatureR?: number;
+  /**
+   * How content of a different aspect is presented on this panel.
+   * Absent = "contain" (scale to fit, bars where it doesn't reach) —
+   * the default, so existing scenes are unchanged.
+   */
+  fit?: FitMode;
   /** Show the device's 3D body/chassis model when one exists. Default on. */
   show3dBody?: boolean;
 }
@@ -119,14 +134,6 @@ export interface MediaItem {
    * intrinsic image so they never shift when the crop changes.
    */
   crop?: MediaCrop;
-  /**
-   * Per-device crop overrides, keyed by device id. Each window is
-   * normalized to the FULL intrinsic image exactly like `crop` (NOT
-   * relative to it) — the same rule that keeps boxes and scans valid
-   * when any crop changes. An absent entry inherits the plain media
-   * crop, so existing libraries need no migration.
-   */
-  deviceCrops?: Record<string, MediaCrop>;
   /**
    * OCR keyframes for timeline media (video/GIF): user-placed points on
    * the timeline, each optionally holding its frame's scan. A scan stays

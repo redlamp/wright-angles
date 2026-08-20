@@ -168,6 +168,11 @@ export function ComparisonTablePanel() {
       title="Comparison Table"
       icon={Table2Icon}
       width={620}
+      /* Nine nowrap columns: at the default width they fit, but the
+         widest unit formats (cm diagonals + imperial distances) need
+         ~680px of panel before the table stops overflowing. The shared
+         640 cap left it scrolling even at max width. */
+      maxWidth={720}
     >
       <div className="max-h-[calc(100vh-8rem)] overflow-auto p-2.5">
         <table className="w-full border-collapse font-mono text-base">
@@ -177,7 +182,7 @@ export function ComparisonTablePanel() {
                 <th
                   key={c.key}
                   title={c.title}
-                  className="cursor-pointer border-b border-border px-1.5 py-1.5 font-medium whitespace-nowrap select-none hover:text-foreground"
+                  className="cursor-pointer border-b border-border px-1 py-1.5 font-medium whitespace-nowrap select-none hover:text-foreground"
                   onClick={() => onSort(c.key)}
                 >
                   {c.label}
@@ -186,7 +191,7 @@ export function ComparisonTablePanel() {
                       widths never shift when the arrow appears or moves. */}
                   <span
                     aria-hidden
-                    className="inline-block w-3.5 text-center"
+                    className="inline-block w-3 text-center"
                   >
                     {sortKey === c.key ? (sortDir === 1 ? "↑" : "↓") : ""}
                   </span>
@@ -209,7 +214,7 @@ export function ComparisonTablePanel() {
                   )
                 }
               >
-                <td className="max-w-36 px-1.5 py-1.5">
+                <td className="max-w-36 px-1 py-1.5">
                   <span className="flex items-center gap-1.5">
                     <span
                       className="size-2 shrink-0 rounded-[3px]"
@@ -224,16 +229,16 @@ export function ComparisonTablePanel() {
                     </span>
                   </span>
                 </td>
-                <td className="px-1.5 py-1.5 whitespace-nowrap">
+                <td className="px-1 py-1.5 whitespace-nowrap">
                   {fmtSize(r.sizeIn)}
                 </td>
-                <td className="px-1.5 py-1.5 whitespace-nowrap">
+                <td className="px-1 py-1.5 whitespace-nowrap">
                   {fmtDist(r.distCm)}
                 </td>
-                <td className="px-1.5 py-1.5">{r.hDeg.toFixed(1)}</td>
-                <td className="px-1.5 py-1.5">{r.vDeg.toFixed(1)}</td>
+                <td className="px-1 py-1.5">{r.hDeg.toFixed(1)}</td>
+                <td className="px-1 py-1.5">{r.vDeg.toFixed(1)}</td>
                 <td
-                  className={cn("px-1.5 py-1.5", ppdClass(r.ppd))}
+                  className={cn("px-1 py-1.5", ppdClass(r.ppd))}
                   title={
                     r.ppd < 60
                       ? "Below the ~60 PPD retina threshold — pixels are resolvable at this distance"
@@ -243,9 +248,9 @@ export function ComparisonTablePanel() {
                   {r.ppd.toFixed(1)}
                   {r.ppd < 60 ? "*" : ""}
                 </td>
-                <td className="px-1.5 py-1.5">{r.arcminPerPx.toFixed(2)}</td>
-                <td className="px-1.5 py-1.5">{Math.round(r.ppi)}</td>
-                <td className="px-1.5 py-1.5 whitespace-nowrap">
+                <td className="px-1 py-1.5">{r.arcminPerPx.toFixed(2)}</td>
+                <td className="px-1 py-1.5">{Math.round(r.ppi)}</td>
+                <td className="px-1 py-1.5 whitespace-nowrap">
                   {r.isThis ? "—" : `${Math.round(r.ratio * 100)}%`}
                 </td>
               </tr>
