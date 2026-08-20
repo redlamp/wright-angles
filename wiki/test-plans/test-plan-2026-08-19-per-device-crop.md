@@ -5,10 +5,10 @@ Tick what passes; annotate anything that feels off.
 
 ## 1. Mirrored-side text hover (shipped in v0.6.0)
 
-- [ ] 1.1 In 3D, orbit BEHIND a screen showing scanned media (mirrored
+- [x] 1.1 In 3D, orbit BEHIND a screen showing scanned media (mirrored
       text). Hovering a text line pops the hover card, right-reading,
       placed off the screen space — same as from the front.
-- [ ] 1.2 From the front, box hover behaves exactly as before.
+- [x] 1.2 From the front, box hover behaves exactly as before.
 
 ## 2. Per-device crop — basics
 
@@ -16,7 +16,7 @@ Select a device (row, 2D, or 3D — selection is shared), then Media
 Library → Crop.
 
 - [ ] 2.1 With a device selected, an "applies to" control appears
-      under the crop dropdown: All devices · <device> (hollow dot =
+      under the crop dropdown: All devices · `<device>` (hollow dot =
       no override yet).
 - [ ] 2.2 In device scope, the dropdown offers: Inherit · Full frame
       on this device · Match W:H (the device's shape) · standard

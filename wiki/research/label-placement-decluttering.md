@@ -151,7 +151,7 @@ This approach works well for sparse layouts (< 10 devices) but fails when many d
 **Code integration:**
 
 - Add priority tier to Device or a selection context.
-- Extend DeviceRect's rendering: conditional leader-line <Line> component if label is hidden but selected.
+- Extend DeviceRect's rendering: conditional leader-line `<Line>` component if label is hidden but selected.
 - Callout box could be a separate DOM overlay (like SceneHud) or a 3D text element in a fixed screen-space position.
 
 **Advantages:** Massive simplification for crowded scenes (near-field cluster); clear hierarchy; eye can trace leader lines.

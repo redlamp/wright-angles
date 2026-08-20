@@ -63,7 +63,7 @@ Effective crop for rendering on device D:
 
 - The crop dropdown in the Media Library grows a scope control once a
   device is selected: "All devices" (edits `item.crop`) vs
-  "<Selected device>" (edits `deviceCrops[id]`) — riding the now
+  "`<Selected device>`" (edits `deviceCrops[id]`) — riding the now
   app-wide selection. Editing overlay is unchanged; it just writes to
   a different slot.
 - A device-crop chip/dot on rows or the crop row indicates "this
@@ -102,7 +102,7 @@ defaults — flag for Taylor's review:
   shape" as a one-click preset. Auto felt too surprising for a scope
   switch that should be read-only until the user acts.
 - **Scope control** sits under the crop dropdown ("applies to: All
-  devices | <selected device>") and appears only while a device is
+  devices | `<selected device>`") and appears only while a device is
   selected app-wide. The dot on the device button is hollow until an
   override exists. The preview editor edits whichever scope is active
   and wears the device's key color in device scope.
