@@ -1,5 +1,11 @@
 # Test Plan v3.1 — Numbered Backlog (2026-08-17)
 
+> **Closed 2026-08-19** (per Taylor): every open item here carried
+> into [[test-plan-2026-08-18-overnight-run]] and is resolved there —
+> see v4 for the per-item notes. Only 11.4 (spec awaiting Taylor's
+> read), 11.6 (deferred), and 11.7 (separate session) remain open;
+> they carry forward in [[test-plan-2026-08-19-morning-review]].
+
 Every topic and item is numbered for call-outs ("do 6.3", "skip 10").
 v0.3.0 was accepted by Taylor except the items reopened below.
 **v0.3.1 hotfix shipped** the same morning: production crashed for
@@ -22,7 +28,7 @@ loop; all dev machines had stored state and sailed past it).
 - [x] 1.7 Standing desk: top sits just below the figure's elbow.
 - [x] 1.8 3D labels render in Barlow (vendored for troika), not the
       generic drei default.
-- [ ] 1.9 Console hygiene: THREE.Clock deprecation is R3F-internal
+- [x] 1.9 Console hygiene: THREE.Clock deprecation is R3F-internal
       (upstream, no action); GPOS/GSUB font-table warnings come from
       troika's font parser — revisit after 1.8; rAF-violation and HMR
       lines are dev-only. Documented, not fixable app-side today.
@@ -41,13 +47,13 @@ loop; all dev machines had stored state and sailed past it).
 
 ## 3. Device side panel (click-to-inspect)
 
-- [ ] 3.1 BUILT, verify: clicking a device in 2D or 3D opens the
+- [x] 3.1 BUILT, verify: clicking a device in 2D or 3D opens the
       inspector card — details + hide/show eye + Device Manager link.
-- [ ] 3.2 BUILT, verify: header + movable; idles at 40% alpha, full
+- [x] 3.2 BUILT, verify: header + movable; idles at 40% alpha, full
       opacity on hover (150ms tween).
-- [ ] 3.3 BUILT, verify: selection is shared app-wide (same store as
+- [x] 3.3 BUILT, verify: selection is shared app-wide (same store as
       1.3); Esc closes.
-- [ ] 3.4 BUILT: Debug overlays section exists in the inspector;
+- [x] 3.4 BUILT: Debug overlays section exists in the inspector;
       color-vision sim (10.5) is its first toggle.
 
 ## 4. Hotkeys
@@ -58,7 +64,7 @@ loop; all dev machines had stored state and sailed past it).
 - [x] 4.2 BUILT except x/o (wire once crop v2 and the OCR overlay
       exist — listed "soon" in the sheet): 1/2/3 stances · q/w/e
       input types · ? cheat-sheet overlay · Esc deselect.
-- [ ] 4.3 BUILT, verify: Space-pan dropped; left mouse selects on a
+- [x] 4.3 BUILT, verify: Space-pan dropped; left mouse selects on a
       stationary click, pans past a 4px drag threshold; double-click
       recenters; measure mode and buttons exempt.
 
@@ -73,11 +79,11 @@ loop; all dev machines had stored state and sailed past it).
       16:9 · 16:10 · 21:9 · 32:9 · Custom), overlay editor on the
       media, playhead pauses on crop interaction, native-aspect
       images highlight their ratio button.
-- [ ] 5.5 BUILT, verify: scan status line (batch shows "Scanning k of
+- [x] 5.5 BUILT, verify: scan status line (batch shows "Scanning k of
       n…"), post-scan links open the comparison table and perception
       report.
 - [x] 5.6 BUILT, verify: reference size "?" tooltip.
-- [ ] 5.7 BUILT, verify (Taylor's 10:43 batch): scan boxes over the
+- [x] 5.7 BUILT, verify (Taylor's 10:43 batch): scan boxes over the
       media (no second image), eye toggle by the section header,
       Detect + Clear on the header line, resizable results list,
       local-only note centered IN the title bar, always two columns,
@@ -92,21 +98,21 @@ loop; all dev machines had stored state and sailed past it).
 - [x] 6.3 Miller columns: "All devices" selected by default, "My
       Display" listed; selecting a device narrows column 2 to that
       device's report.
-- [ ] 6.4 BUILT, verify: OCR-sourced measure boxes carry their read
+- [x] 6.4 BUILT, verify: OCR-sourced measure boxes carry their read
       text as a label; the report names boxes by it, else "Box 1".
-- [ ] 6.5 This Device is blessed (foundation of the vision model);
+- [x] 6.5 This Device is blessed (foundation of the vision model);
       a selected device's details render NEXT TO This Device's for
       comparison.
 
 ## 7. OCR quality — descenders + text grouping
 
-- [ ] 7.1 BUILT, verify: lib/text-groups clusters lines into blocks
+- [x] 7.1 BUILT, verify: lib/text-groups clusters lines into blocks
       (gap, column alignment, height-ratio gates); 7 pinned tests.
-- [ ] 7.2 BUILT, verify: group size = tallest member capped at 1.4×
+- [x] 7.2 BUILT, verify: group size = tallest member capped at 1.4×
       the member median; arcmin verdicts and shown px use it.
-- [ ] 7.3 BUILT, verify: group tint dots in the list and matching
+- [x] 7.3 BUILT, verify: group tint dots in the list and matching
       outline colors on the media overlay.
-- [ ] 7.4 Test steps: scan a screenshot containing a paragraph plus a
+- [x] 7.4 Test steps: scan a screenshot containing a paragraph plus a
       short all-cap line; before = the cap line reports smaller px;
       after = both report the group size, and the group indicator
       wraps both.
@@ -134,25 +140,25 @@ loop; all dev machines had stored state and sailed past it).
 ## 10. Beyond-text debug overlays (later; toggles live in the device
     panel, 3.4)
 
-- [ ] 10.1 Contrast probe (text vs background → WCAG flags).
-- [ ] 10.2 Pixel loupe with px + arcmin ruler.
-- [ ] 10.3 TV safe-area overlays.
-- [ ] 10.4 Sub-acuity detail warning (<1′ strokes).
-- [ ] 10.5 Color-vision simulation — BUILT, verify: Machado 2009
+- [x] 10.1 Contrast probe (text vs background → WCAG flags).
+- [x] 10.2 Pixel loupe with px + arcmin ruler.
+- [x] 10.3 TV safe-area overlays.
+- [x] 10.4 Sub-acuity detail warning (<1′ strokes).
+- [x] 10.5 Color-vision simulation — BUILT, verify: Machado 2009
       matrices (protan/deutan/tritan + 709 achromatopsia) as SVG
       linearRGB filters over the 2D/3D view layers only; control in
       the inspector's Debug overlays section; persisted.
 
 ## 11. Backlog (triaged by Taylor 2026-08-17)
 
-- [ ] 11.1 Browser-zoom ≠ 100% warning. (approved)
-- [ ] 11.2 Credit-card calibration. (approved)
-- [ ] 11.3 Measure boxes mirrored into the 3D texture. (approved)
+- [x] 11.1 Browser-zoom ≠ 100% warning. (approved)
+- [x] 11.2 Credit-card calibration. (approved)
+- [x] 11.3 Measure boxes mirrored into the 3D texture. (approved)
 - [ ] 11.4 Per-device media assignment — awaiting Taylor's read on the
       spec (explained in chat 2026-08-17): each device can hold its
       own image; hot zones in the 2D overlay switch which device's
       content is active under the cursor.
-- [ ] 11.5 EXIF strip on import; non-linear distance slider.
+- [x] 11.5 EXIF strip on import; non-linear distance slider.
 - [ ] 11.6 Shareable setup links — DEFERRED (implies shared data).
 - [ ] 11.7 Licensing — breakout session, scheduled separately.
 
@@ -160,6 +166,6 @@ loop; all dev machines had stored state and sailed past it).
 
 - [x] 12.1 Feature branches (`feature/*`, `fix/*` → dev, `--no-ff`) —
       in effect as of the v0.3.1 hotfix.
-- [ ] 12.2 Promotion gate addition: fresh-state smoke test — clear
+- [x] 12.2 Promotion gate addition: fresh-state smoke test — clear
       site storage, load, confirm boot — before every dev → main.
       This is the class of bug that took down v0.3.0.

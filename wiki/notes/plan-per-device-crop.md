@@ -1,5 +1,5 @@
 ---
-tags: [domain/product, status/draft, origin/taylor]
+tags: [domain/product, status/adopted, origin/taylor]
 ---
 
 # Plan — Per-Device Cropping
@@ -87,3 +87,29 @@ Effective crop for rendering on device D:
 
 Model + helpers + 2D + report visibility ≈ a half-day; 3D texture
 cloning + export + UI scope control ≈ another half-day. No migration.
+
+## Built (2026-08-19, feature/per-device-crop)
+
+Shipped as planned, with the open questions resolved by the plan's own
+defaults — flag for Taylor's review:
+
+- **OCR stays global** with per-device visibility filtering: boxes are
+  culled per rect (2D + 3D), the worst-case verdict ignores devices
+  whose crop excludes the box, and the report shows a muted dash chip
+  ("outside this device's crop") instead of a verdict.
+- **Device scope does NOT auto-apply the device's aspect** — instead
+  the device-scope dropdown leads with "Match W:H — this device's
+  shape" as a one-click preset. Auto felt too surprising for a scope
+  switch that should be read-only until the user acts.
+- **Scope control** sits under the crop dropdown ("applies to: All
+  devices | <selected device>") and appears only while a device is
+  selected app-wide. The dot on the device button is hollow until an
+  override exists. The preview editor edits whichever scope is active
+  and wears the device's key color in device scope.
+- Full-frame OVERRIDE is meaningful when a media crop exists ("this
+  device shows everything"); with no media crop it normalizes away.
+- Deleting a device prunes its overrides from every item
+  (media-store.pruneDeviceCrops).
+- 3D: one texture clone per DISTINCT override crop (clones share the
+  GPU upload via texture.source); GIF engine marks base + clones dirty.
+- 11.4 interplay unchanged — crops shipped first, as the note argued.

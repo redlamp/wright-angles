@@ -3,10 +3,14 @@ import {
   ASPECT_PRESETS,
   aspectCrop,
   boxInCrop,
+  cropDims,
   cropOf,
   cropsEqual,
+  deviceCropOf,
   dragCrop,
+  effectiveCropFor,
   effectiveDims,
+  hasDeviceCrops,
   isFullFrame,
   viewBoxStyle,
 } from "./media-crop";
@@ -26,6 +30,54 @@ describe("effectiveDims", () => {
       width: 1920,
       height: 1080,
     });
+  });
+});
+
+describe("per-device crops", () => {
+  const mediaCrop: MediaCrop = { x: 0, y: 0.1, w: 1, h: 0.8 };
+  const tvCrop: MediaCrop = { x: 0.25, y: 0, w: 0.5, h: 1 };
+  const item = {
+    width: 1920,
+    height: 1080,
+    crop: mediaCrop,
+    deviceCrops: { tv: tvCrop },
+  };
+
+  test("override wins for its device; everyone else inherits", () => {
+    expect(effectiveCropFor(item, "tv")).toEqual(tvCrop);
+    expect(effectiveCropFor(item, "phone")).toEqual(mediaCrop);
+    expect(effectiveCropFor(item, null)).toEqual(mediaCrop);
+  });
+
+  test("no media crop: non-overridden devices get the full frame", () => {
+    const bare = { width: 1920, height: 1080, deviceCrops: { tv: tvCrop } };
+    expect(isFullFrame(effectiveCropFor(bare, "phone"))).toBe(true);
+    expect(effectiveCropFor(bare, "tv")).toEqual(tvCrop);
+  });
+
+  test("deviceCropOf returns only the raw override", () => {
+    expect(deviceCropOf(item, "tv")).toEqual(tvCrop);
+    expect(deviceCropOf(item, "phone")).toBeUndefined();
+    expect(deviceCropOf(item, undefined)).toBeUndefined();
+  });
+
+  test("cropDims sizes an arbitrary window in pixels", () => {
+    expect(cropDims(item, tvCrop)).toEqual({ width: 960, height: 1080 });
+    // effectiveDims stays the media-crop path.
+    expect(effectiveDims(item)).toEqual({ width: 1920, height: 864 });
+  });
+
+  test("hasDeviceCrops distinguishes empty from populated", () => {
+    expect(hasDeviceCrops(item)).toBe(true);
+    expect(hasDeviceCrops({ crop: mediaCrop })).toBe(false);
+    expect(hasDeviceCrops({ deviceCrops: {} })).toBe(false);
+  });
+
+  test("boxes stay valid across override changes (full-image rule)", () => {
+    // A box in the media crop's window can be absent from the TV slice.
+    const box = { x: 0.05, y: 0.2, w: 0.1, h: 0.05 };
+    expect(boxInCrop(box, effectiveCropFor(item, "phone"))).not.toBeNull();
+    expect(boxInCrop(box, effectiveCropFor(item, "tv"))).toBeNull();
   });
 });
 

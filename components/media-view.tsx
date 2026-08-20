@@ -20,7 +20,7 @@ import {
   prevKeyframeTime,
   removeKeyframe,
 } from "@/lib/scan-keyframes";
-import type { MediaItem } from "@/lib/types";
+import type { MediaCrop, MediaItem } from "@/lib/types";
 import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { Slider } from "@/components/ui/slider";
@@ -132,17 +132,19 @@ export function GifView({
  */
 export function VideoMirror({
   item,
+  crop,
   className,
 }: {
   item: MediaItem;
+  /** Explicit crop (a device's effective one); defaults to the media crop. */
+  crop?: MediaCrop;
   className?: string;
 }) {
   usePlaybackStore((s) => s.engineNonce);
   const engine = getEngine();
   const video = engine?.kind === "video" ? engine.video : null;
   const ref = useRef<HTMLCanvasElement>(null);
-  const crop = cropOf(item);
-  const { x: cx, y: cy, w: cw, h: ch } = crop;
+  const { x: cx, y: cy, w: cw, h: ch } = crop ?? cropOf(item);
 
   useEffect(() => {
     if (!video) return;
