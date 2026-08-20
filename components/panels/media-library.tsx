@@ -12,6 +12,7 @@ import {
   GripVerticalIcon,
   LayoutGridIcon,
   ListIcon,
+  LoaderCircleIcon,
   ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
@@ -19,6 +20,8 @@ import {
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { batchLabel } from "@/lib/ocr-queue";
+import { useOcrQueueStore } from "@/stores/ocr-queue-store";
 import type { Device, MediaCrop, MediaItem } from "@/lib/types";
 import {
   ACUITY,
@@ -263,6 +266,52 @@ function Toolbar() {
   );
 }
 
+/**
+ * Per-item auto-scan progress (plan: "per-item progress state while a
+ * scan runs"). A component of its own, not an inline expression in the
+ * list's `.map()`, so the store subscription is a proper per-item hook
+ * call rather than one taken conditionally inside a loop. Silent for the
+ * manual "Detect Text Size" flow — that already has its own "Detecting…"
+ * button label; this badge is specifically the auto-scan queue.
+ */
+function ScanStatusBadge({
+  itemId,
+  variant,
+}: {
+  itemId: string;
+  variant: "grid" | "list";
+}) {
+  const status = useOcrQueueStore(
+    (s) => s.queue.find((q) => q.id === itemId)?.status ?? null,
+  );
+  if (status !== "queued" && status !== "running") return null;
+  const icon = (
+    <LoaderCircleIcon
+      className={cn("size-3", status === "running" && "animate-spin")}
+    />
+  );
+  const title =
+    status === "running" ? "Detecting text…" : "Queued for text detection";
+  if (variant === "grid") {
+    return (
+      <span
+        className="pointer-events-none absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-black/70 text-white"
+        title={title}
+      >
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="shrink-0 text-muted-foreground"
+      title={title}
+    >
+      {icon}
+    </span>
+  );
+}
+
 function LibraryList() {
   const items = useMediaStore((s) => s.items);
   const objectUrls = useMediaStore((s) => s.objectUrls);
@@ -406,7 +455,7 @@ function LibraryList() {
               key={item.id}
               type="button"
               className={cn(
-                "block aspect-video w-full overflow-hidden rounded-md bg-black/40",
+                "relative block aspect-video w-full overflow-hidden rounded-md bg-black/40",
                 item.id === activeId
                   ? "ring-2 ring-ring"
                   : "opacity-80 hover:opacity-100",
@@ -423,6 +472,7 @@ function LibraryList() {
                 draggable={false}
                 className="size-full object-cover"
               />
+              <ScanStatusBadge itemId={item.id} variant="grid" />
             </button>
           ))}
         </div>
@@ -454,6 +504,7 @@ function LibraryList() {
               <span className="min-w-0 flex-1 truncate text-base" title={item.name}>
                 {item.name}
               </span>
+              <ScanStatusBadge itemId={item.id} variant="list" />
             </button>
           ))}
         </div>
@@ -1241,6 +1292,16 @@ function DetailCard({ item }: { item: MediaItem }) {
   // the playhead passes the next marker (plan topic 9).
   const [scanRunning, setScanRunning] = useState(false);
   const [scanFailed, setScanFailed] = useState(false);
+  // The active item can be mid-auto-scan (its turn in the import batch)
+  // without the manual button ever having been clicked — fold that into
+  // the same "running" signal so the button reads Detecting/disabled
+  // either way, rather than looking idle while a scan is genuinely
+  // in flight underneath it.
+  const autoScanStatus = useOcrQueueStore(
+    (s) => s.queue.find((q) => q.id === item.id)?.status ?? null,
+  );
+  const autoScanning =
+    autoScanStatus === "running" || autoScanStatus === "queued";
   // Global eye state — shared with the Perception Report and the
   // 2D/3D world views (Taylor: parity of state across panels/views).
   const showScanBoxes = useAnnotationStore((s) => s.showTextBoxes);
@@ -1469,7 +1530,7 @@ function DetailCard({ item }: { item: MediaItem }) {
       <TextDetectionSection
         item={item}
         scan={effectiveScan}
-        running={scanRunning}
+        running={scanRunning || autoScanning}
         failed={scanFailed}
         showBoxes={showScanBoxes}
         onToggleBoxes={() => setShowScanBoxes(!showScanBoxes)}
@@ -1519,6 +1580,37 @@ function DisplayFillRow() {
   );
 }
 
+/**
+ * Lightweight batch indicator for auto-scan-on-import ("a ten-image
+ * import doesn't look frozen"): a status line plus "Cancel remaining"
+ * for the still-queued tail of the batch. Aborting the item currently
+ * mid-`recognize()` isn't offered — see stores/ocr-queue-store.ts.
+ */
+function AutoScanBanner() {
+  const queue = useOcrQueueStore((s) => s.queue);
+  const cancelRemaining = useOcrQueueStore((s) => s.cancelRemaining);
+  const label = batchLabel(queue);
+  if (!label) return null;
+  const hasQueued = queue.some((q) => q.status === "queued");
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-muted-foreground">
+      <span className="flex items-center gap-1.5 truncate">
+        <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+        {label}
+      </span>
+      {hasQueued ? (
+        <button
+          type="button"
+          className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+          onClick={cancelRemaining}
+        >
+          Cancel remaining
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /** Media Library tab content (hosted by the workbench panel). */
 export function MediaLibraryContent() {
   const items = useMediaStore((s) => s.items);
@@ -1545,6 +1637,7 @@ export function MediaLibraryContent() {
       left={
         <div className="min-h-0 min-w-0 overflow-y-auto">
           <Toolbar />
+          <AutoScanBanner />
           <LibraryList />
         </div>
       }

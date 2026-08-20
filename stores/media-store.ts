@@ -14,6 +14,7 @@ import {
   idbGetAllMedia,
   idbPutMedia,
 } from "@/lib/idb";
+import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
 import { stripImageMetadata } from "@/lib/strip-metadata";
 
 const newId = () =>
@@ -110,6 +111,8 @@ interface MediaState {
   hydrated: boolean;
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
+  /** Imports every decodable file, then queues the whole batch for
+   * auto-OCR (stores/ocr-queue-store.ts) once it's done. */
   addFiles: (files: FileList | File[]) => Promise<void>;
   /** Create a built-in test image (rendered to canvas, stored like any import). */
   addGenerated: (kind: GeneratedKind) => Promise<void>;
@@ -334,6 +337,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       // Fire-and-forget: denial just means default (best-effort) durability.
       void navigator.storage.persist();
     }
+    // Every id that actually made it into the library this call, so OCR
+    // can be queued once for the whole batch below — not per file, and
+    // not for a file that failed to decode.
+    const addedIds: string[] = [];
     for (const file of list) {
       try {
         if (file.type.startsWith("video/")) {
@@ -362,6 +369,7 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             },
             activeId: s.activeId ?? meta.id,
           }));
+          addedIds.push(meta.id);
         } else {
           // Static images (JPEG/PNG/WebP) are re-encoded to shed
           // EXIF/GPS metadata before they touch IndexedDB; GIFs and
@@ -386,10 +394,21 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             objectUrls: { ...s.objectUrls, [meta.id]: url },
             activeId: s.activeId ?? meta.id,
           }));
+          addedIds.push(meta.id);
         }
       } catch {
         // Not decodable as an image/video — skip silently.
       }
+    }
+    if (addedIds.length > 0) {
+      // Dynamic import: keeps media-store free of a static dependency on
+      // the OCR queue store (which itself imports this module to read
+      // items back out — a static cycle both ways). Auto-scan-on-import,
+      // no debounce (wiki/research/ocr-cost.md): the batch is already
+      // fully imported by the time we get here, and the OCR pipeline's
+      // own single-flight lock serializes the scans regardless.
+      const { useOcrQueueStore } = await import("./ocr-queue-store");
+      useOcrQueueStore.getState().enqueue(addedIds);
     }
   },
 
@@ -410,6 +429,20 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       referenceHeight: canvas.height,
       addedAt: Date.now(),
     };
+    if (kind === "gradient") {
+      // The gradient card's draw is deterministic, so its OCR result is
+      // pinned data rather than a live scan (wiki/research/ocr-cost.md) —
+      // ships identically whether this is the first-run seed or a manual
+      // "Test → Gradient card". `boxes` is derived the same way
+      // detectTextForItem's live path builds it, so the overlay/report
+      // treat a seeded card exactly like a freshly scanned one.
+      meta.scan = GRADIENT_SEED_SCAN;
+      meta.boxes = GRADIENT_SEED_SCAN.lines.map((line) => ({
+        id: line.id,
+        label: line.text,
+        ...line.box,
+      }));
+    }
     await idbPutMedia(meta.id, { meta, blob });
     const url = URL.createObjectURL(blob);
     set((s) => ({

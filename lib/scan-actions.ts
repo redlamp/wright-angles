@@ -118,3 +118,134 @@ export async function detectTextForItem(itemId: string): Promise<void> {
     media.addBox(itemId, { id: line.id, label: line.text, ...line.box });
   media.setScan(itemId, { lines, medianPx });
 }
+
+type CapturedFrame = { url: string; revoke: () => void };
+
+/** Decode t=0 straight from a stored video blob, independent of the live
+ * playback engine (`lib/playback-engine.ts` — one engine, bound to
+ * whatever item is on screen). Auto-scan-on-import runs against items
+ * that usually AREN'T the active one, so `scanKeyframeAt`'s seek-the-
+ * engine approach can't be reused here. */
+function captureVideoFrameZero(videoUrl: string): Promise<CapturedFrame | null> {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    v.preload = "auto";
+    v.muted = true;
+    v.playsInline = true;
+    const cleanup = () => {
+      clearTimeout(timer);
+      v.removeAttribute("src");
+      v.load();
+    };
+    // Same hard-timeout-with-teardown shape as media-store's probeVideo:
+    // an element that never fires an event must not hang the batch.
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 10_000);
+    v.onloadeddata = () => {
+      // Explicit seek even though decoders usually already sit at t=0 —
+      // it's what guarantees the `seeked` event actually fires.
+      v.currentTime = 0;
+    };
+    v.onseeked = () => {
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      c.getContext("2d")!.drawImage(v, 0, 0);
+      c.toBlob((blob) => {
+        cleanup();
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        resolve({ url, revoke: () => URL.revokeObjectURL(url) });
+      }, "image/png");
+    };
+    v.onerror = () => {
+      cleanup();
+      resolve(null);
+    };
+    v.src = videoUrl;
+  });
+}
+
+/**
+ * Decode frame 0 straight from a stored GIF blob via WebCodecs
+ * ImageDecoder — the same decoder `lib/playback-engine.ts`'s GifEngine
+ * uses for arbitrary-frame access, called here for just frame 0 instead
+ * of relying on how an off-screen `<img>` happens to render an animated
+ * image (browser-dependent, and never exercised by this codebase before
+ * today). No ImageDecoder support → no auto-scan for this GIF; the
+ * manual button still works once the user opens it (same graceful
+ * degradation as the live engine).
+ */
+async function captureGifFrameZero(
+  gifUrl: string,
+): Promise<CapturedFrame | null> {
+  if (!("ImageDecoder" in window)) return null;
+  const DecoderCtor = (
+    window as unknown as {
+      ImageDecoder: new (init: { data: ArrayBuffer; type: string }) => {
+        tracks: { ready: Promise<void> };
+        decode(opts: { frameIndex: number }): Promise<{ image: VideoFrame }>;
+        close(): void;
+      };
+    }
+  ).ImageDecoder;
+  let decoder: InstanceType<typeof DecoderCtor> | null = null;
+  try {
+    const data = await (await fetch(gifUrl)).arrayBuffer();
+    decoder = new DecoderCtor({ data, type: "image/gif" });
+    await decoder.tracks.ready;
+    const { image } = await decoder.decode({ frameIndex: 0 });
+    const c = document.createElement("canvas");
+    c.width = image.displayWidth;
+    c.height = image.displayHeight;
+    c.getContext("2d")!.drawImage(image, 0, 0);
+    image.close();
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/png"));
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    return { url, revoke: () => URL.revokeObjectURL(url) };
+  } catch {
+    return null;
+  } finally {
+    decoder?.close();
+  }
+}
+
+/**
+ * Auto-scan-on-import for timeline media (video/GIF): OCR the frame at
+ * t=0 only and attach it as a keyframe. Every other frame stays manual
+ * ("run OCR on first frame, additional scans have to be done manually
+ * for now" — Taylor; no scene-change detection, that was explicitly not
+ * chosen). Images should call `detectTextForItem` instead.
+ */
+export async function scanFirstFrame(itemId: string): Promise<void> {
+  const media = useMediaStore.getState();
+  const item = media.items.find((i) => i.id === itemId);
+  if (!item) throw new Error("media item not found");
+
+  // Video: the poster frame saved at import time is taken from the
+  // MIDDLE of the clip (media-store's probeVideo), not the start, so it
+  // can't be reused. GIF: the item's own blob IS the source to decode.
+  const sourceUrl =
+    item.type === "image/gif" ? media.objectUrls[itemId] : media.videoUrls[itemId];
+  if (!sourceUrl) throw new Error("media blob not loaded");
+  const frame =
+    item.type === "image/gif"
+      ? await captureGifFrameZero(sourceUrl)
+      : await captureVideoFrameZero(sourceUrl);
+  if (!frame) throw new Error("no decodable frame at t=0");
+  try {
+    const { lines, medianPx } = await ocrUrl(frame.url, item);
+    const cur =
+      useMediaStore.getState().items.find((i) => i.id === itemId)
+        ?.scanKeyframes ?? [];
+    media.setScanKeyframes(itemId, withScan(cur, 0, lines, medianPx));
+  } finally {
+    frame.revoke();
+  }
+}
