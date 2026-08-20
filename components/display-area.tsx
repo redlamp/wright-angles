@@ -34,15 +34,15 @@ import {
   formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
-import { containFit } from "@/lib/fit";
+import { containFit, deviceFitCrop } from "@/lib/fit";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
 import {
+  FULL_CROP,
   boxInCrop,
   cropDims,
   cropScaleOf,
-  effectiveCropFor,
   isFullFrame,
   viewBoxOf,
 } from "@/lib/media-crop";
@@ -445,7 +445,7 @@ function BoxLayer({
   isHost: boolean;
   /** Owning rect's device — box hovers feed the inspector with it. */
   deviceId: string;
-  /** The owning device's effective crop (overrides included). */
+  /** The owning device's rendered crop (source crop, fit-reframed). */
   crop: MediaCrop;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
@@ -574,16 +574,17 @@ export function DisplayArea() {
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
   const activeVideoUrl =
     activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
-  // All contain-fit math below runs on effective (cropped) dims. The
-  // host pair drives the annotation layer + loupe (This Device's rect);
-  // other rects derive their own effective crop inline. Memoized so the
-  // react-compiler can keep the manual memos below — it can't see into
-  // the helpers to prove they don't mutate activeItem.
+  // All fit math below runs on the rendered (source-cropped, then
+  // fit-reframed) dims. The host pair drives the annotation layer +
+  // loupe (This Device's rect); other rects derive their own fit crop
+  // inline. Memoized so the react-compiler can keep the manual memos
+  // below — it can't see into the helpers to prove they don't mutate
+  // activeItem.
   const { eff, crop } = useMemo(() => {
     if (!activeItem) return { eff: null, crop: null };
-    const c = effectiveCropFor(activeItem, thisDevice.id);
+    const c = deviceFitCrop(activeItem, thisDevice);
     return { eff: cropDims(activeItem, c), crop: c };
-  }, [activeItem, thisDevice.id]);
+  }, [activeItem, thisDevice]);
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
@@ -646,13 +647,13 @@ export function DisplayArea() {
       const hNorm = kfSize.get(b.id) ?? b.h;
       let worst = Infinity;
       for (const d of devs) {
-        // Each device measures through ITS effective crop: the cropped
-        // region is what contain-fits onto the panel, so the box height
-        // re-normalizes against that crop (h/c.h of the crop's height =
-        // the box's unchanged source-pixel height). A device whose crop
-        // excludes the box doesn't show it, so it can't drag the
-        // worst-case verdict either.
-        const c = effectiveCropFor(activeItem, d.id);
+        // Each device measures through ITS rendered crop (source crop
+        // reframed by the device's fit mode): that region is what lands
+        // on the panel, so the box height re-normalizes against it
+        // (h/c.h of the crop's height = the box's unchanged source-pixel
+        // height). A device whose fit crops the box away doesn't show
+        // it, so it can't drag the worst-case verdict either.
+        const c = deviceFitCrop(activeItem, d);
         if (!boxInCrop(b, c)) continue;
         worst = Math.min(
           worst,
@@ -828,11 +829,9 @@ export function DisplayArea() {
       if (img) {
         g.fillStyle = "#000";
         g.fillRect(x, y, w, h);
-        // Draw only this device's effective crop window (per-device
-        // overrides included; full frame when no crop at all).
-        const c = activeItem
-          ? effectiveCropFor(activeItem, d.id)
-          : { x: 0, y: 0, w: 1, h: 1 };
+        // Draw only this device's rendered crop window (source crop
+        // reframed by its fit mode; full frame when neither applies).
+        const c = activeItem ? deviceFitCrop(activeItem, d) : FULL_CROP;
         const sw = c.w * img.naturalWidth;
         const sh = c.h * img.naturalHeight;
         const s = Math.min(w / sw, h / sh);
@@ -972,11 +971,10 @@ export function DisplayArea() {
       }}
     >
       {rects.map(({ device, w, h }, i) => {
-        // This rect's effective crop — its own override, else the
-        // media crop. Everything drawn inside maps through it.
-        const dCrop = activeItem
-          ? effectiveCropFor(activeItem, device.id)
-          : null;
+        // This rect's rendered crop — the media's source crop, reframed
+        // by this device's fit mode. Everything drawn inside maps
+        // through it.
+        const dCrop = activeItem ? deviceFitCrop(activeItem, device) : null;
         return (
         <div
           key={device.id}
@@ -1017,7 +1015,7 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl && activeItem ? (
-              // One master decode; each rect mirrors it (its effective
+              // One master decode; each rect mirrors it (its rendered
               // crop applied at draw time, so no wrapper needed).
               <VideoMirror
                 item={activeItem}

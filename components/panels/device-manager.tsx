@@ -18,7 +18,8 @@ import {
   FEATURE_3D_DEVICE_BODY,
   FEATURE_PINNED_DEVICES,
 } from "@/lib/flags";
-import type { Device } from "@/lib/types";
+import type { Device, FitMode } from "@/lib/types";
+import { FIT_MODES, fitLabel, fitModeOf } from "@/lib/fit";
 import {
   COMMON_ASPECTS,
   COMMON_RESOLUTIONS,
@@ -429,6 +430,31 @@ export function DeviceEditor({
             {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
               <SelectItem key={r} value={String(r)}>
                 {r}R
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* What this panel does when the media's shape disagrees with its
+          own (decision-media-crop-vs-device-fit). Contain persists as
+          UNDEFINED so devices saved before fit modes existed — and every
+          device that never leaves the default — stay byte-identical. */}
+      <div className="space-y-1.5">
+        <Microlabel>Fit</Microlabel>
+        <Select
+          value={fitModeOf(device)}
+          onValueChange={(v) =>
+            onPatch({ fit: v === "contain" ? undefined : (v as FitMode) })
+          }
+        >
+          <SelectTrigger className="w-full" aria-label="Content fit">
+            <SelectValue>{fitLabel(fitModeOf(device))}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {FIT_MODES.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.label}
               </SelectItem>
             ))}
           </SelectContent>
