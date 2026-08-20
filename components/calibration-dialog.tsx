@@ -29,7 +29,7 @@ export function CalibrationDialog({
       {/* Body only mounts while open so every session re-reads the
           current This Device spec and devicePixelRatio. */}
       {open ? (
-        <DialogContent className="w-auto max-w-none sm:max-w-none">
+        <DialogContent className="max-h-[calc(100vh-2rem)] w-auto max-w-none overflow-y-auto sm:max-w-none">
           <CalibrationPanel
             aspect={thisDevice.aspect}
             resolution={thisDevice.resolution}
