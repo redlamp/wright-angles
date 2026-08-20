@@ -73,8 +73,9 @@ export function DeviceInspector() {
 
   // Quick fit access (decision-media-crop-vs-device-fit): shown ONLY
   // when this panel's shape and the active media's actually disagree —
-  // with matching aspects all three modes render identically, so the
-  // control would be pure noise.
+  // with matching aspects all four modes render identically (stretch
+  // included: it only distorts when the shapes differ), so the control
+  // would be pure noise.
   const activeItem = mediaItems.find((i) => i.id === activeMediaId) ?? null;
   const showFit = !!activeItem && aspectsDisagree(activeItem, device);
   const patchDevice = (p: Partial<Device>) =>

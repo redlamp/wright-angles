@@ -3,9 +3,12 @@ import {
   aspectsDisagree,
   containFit,
   deviceFitCrop,
+  fitBox,
   fitCrop,
+  fitDistorts,
   fitModeOf,
   fitScale,
+  fitStretchRatio,
 } from "./fit";
 import { boxInCrop, cropDims, isFullFrame } from "./media-crop";
 import { boxMetricsOnDevice } from "./display-math";
@@ -90,10 +93,27 @@ describe("fitCrop", () => {
   });
 
   test("matching aspects are a no-op in every mode", () => {
-    for (const mode of ["contain", "fill-width", "fill-height"] as const) {
+    for (const mode of [
+      "contain",
+      "fill-width",
+      "fill-height",
+      "stretch",
+    ] as const) {
       const c = fitCrop(mode, FULL, img.width, img.height, 16 / 9);
       expect(isFullFrame(c)).toBe(true);
     }
+  });
+
+  test("stretch never crops — it distorts instead", () => {
+    const src: MediaCrop = { x: 0.1, y: 0.2, w: 0.8, h: 0.5 };
+    // Same identity as contain, at every disagreement the fill modes
+    // would have trimmed for.
+    for (const ratio of [4 / 3, 21 / 9, 32 / 9, 1 / 2]) {
+      expect(fitCrop("stretch", src, img.width, img.height, ratio)).toBe(src);
+    }
+    expect(isFullFrame(fitCrop("stretch", FULL, 1920, 1080, 32 / 9))).toBe(
+      true,
+    );
   });
 
   test("composes with the source crop: source first, fit reframes what remains", () => {
@@ -148,6 +168,16 @@ describe("deviceFitCrop", () => {
     expect(cropDims(item, c)).toEqual({ width: 1440, height: 1080 });
   });
 
+  test("a stretch device renders the plain source crop — nothing is lost", () => {
+    const item = { ...img, crop: { x: 0, y: 0.1, w: 1, h: 0.8 } };
+    const d = device({ fit: "stretch", aspect: { w: 32, h: 9 } });
+    expect(deviceFitCrop(item, d)).toEqual(item.crop);
+    // So no box can be cropped off a stretched screen.
+    expect(
+      boxInCrop({ x: 0.02, y: 0.5, w: 0.05, h: 0.03 }, deviceFitCrop(item, d)),
+    ).not.toBeNull();
+  });
+
   test("a box outside the fill window drops off that screen", () => {
     const item = { ...img };
     const c = deviceFitCrop(
@@ -176,6 +206,108 @@ describe("fitScale", () => {
     const naiveMax = Math.max(1440 / 1920, 1080 / 1080);
     expect(fitScale("fill-width", 1920, 1080, 1440, 1080)).not.toBe(naiveMax);
   });
+
+  test("stretch reports the VERTICAL scale — the axis the app measures", () => {
+    // 16:9 content on a 32:9 panel: widths scale 2×, heights 1×.
+    expect(fitScale("stretch", 1920, 1080, 3840, 1080)).toBeCloseTo(1, 12);
+    // Not the horizontal one, and not the contain compromise.
+    expect(fitScale("stretch", 1920, 1080, 3840, 1080)).not.toBeCloseTo(2, 6);
+    // Tall panel: height is what moves, and stretch follows it.
+    expect(fitScale("stretch", 1920, 1080, 1920, 2160)).toBeCloseTo(2, 12);
+    expect(fitScale("contain", 1920, 1080, 1920, 2160)).toBeCloseTo(1, 12);
+  });
+});
+
+describe("fitDistorts", () => {
+  test("only stretch has non-square pixels", () => {
+    expect(fitDistorts("stretch")).toBe(true);
+    for (const m of ["contain", "fill-width", "fill-height"] as const) {
+      expect(fitDistorts(m)).toBe(false);
+    }
+  });
+});
+
+describe("fitBox", () => {
+  test("stretch covers the whole rect — no bars, no offset", () => {
+    expect(fitBox("stretch", 1920, 1080, 800, 200)).toEqual({
+      x: 0,
+      y: 0,
+      w: 800,
+      h: 200,
+    });
+    expect(fitBox("stretch", 1920, 1080, 400, 900)).toEqual({
+      x: 0,
+      y: 0,
+      w: 400,
+      h: 900,
+    });
+  });
+
+  test("every other mode is containFit, unchanged", () => {
+    for (const m of ["contain", "fill-width", "fill-height"] as const) {
+      expect(fitBox(m, 32, 9, 16, 9)).toEqual(containFit(32, 9, 16, 9));
+    }
+  });
+
+  test("the fill modes' already-cropped content lands flush", () => {
+    // fill-height on a 4:3 panel leaves a 1440×1080 window; contain-fit
+    // into a 4:3 rect then fills it exactly — no bars left to take up.
+    const d = device({ fit: "fill-height", aspect: { w: 4, h: 3 } });
+    const eff = cropDims(img, deviceFitCrop(img, d));
+    const a = fitBox("fill-height", eff.width, eff.height, 800, 600);
+    expect(a).toEqual({ x: 0, y: 0, w: 800, h: 600 });
+  });
+
+  test("degenerate inputs collapse to zero in stretch too", () => {
+    expect(fitBox("stretch", 0, 1080, 16, 9)).toEqual({
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+    });
+    expect(fitBox("stretch", 1920, 1080, 16, 0)).toEqual({
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+    });
+  });
+});
+
+describe("fitStretchRatio", () => {
+  const stretched = (w: number, h: number) =>
+    device({ fit: "stretch", aspect: { w, h } });
+
+  test("1 when the shapes agree — nothing to distort", () => {
+    expect(fitStretchRatio(img, stretched(16, 9))).toBeCloseTo(1, 12);
+  });
+
+  test("a 16:9 image on a 32:9 panel draws every pixel twice as wide", () => {
+    expect(fitStretchRatio(img, stretched(32, 9))).toBeCloseTo(2, 12);
+  });
+
+  test("below 1 the other way: a 16:9 image squeezed onto 8:9", () => {
+    expect(fitStretchRatio(img, stretched(8, 9))).toBeCloseTo(0.5, 12);
+  });
+
+  test("the SOURCE-cropped shape is what stretches", () => {
+    // A 1920×1080 image cropped to its left half is 1:1; on a 16:9
+    // stretch panel that is (16/9)/1 wider than tall.
+    const item = { ...img, crop: { x: 0, y: 0, w: 0.5625, h: 1 } };
+    expect(fitStretchRatio(item, stretched(16, 9))).toBeCloseTo(16 / 9, 10);
+  });
+
+  test("the undistorting modes always answer 1", () => {
+    for (const fit of [undefined, "fill-width", "fill-height"] as const) {
+      expect(
+        fitStretchRatio(img, device({ fit, aspect: { w: 32, h: 9 } })),
+      ).toBe(1);
+    }
+  });
+
+  test("degenerate media is 1, not NaN", () => {
+    expect(fitStretchRatio({ width: 0, height: 0 }, stretched(32, 9))).toBe(1);
+  });
 });
 
 describe("boxMetricsOnDevice honours the device's fit", () => {
@@ -202,6 +334,14 @@ describe("boxMetricsOnDevice honours the device's fit", () => {
   test("fill-height blows the content up: 40 source px → 40 device px", () => {
     expect(
       boxMetricsOnDevice(nh, media, panel("fill-height")).devicePx,
+    ).toBeCloseTo(40, 10);
+  });
+
+  test("stretch reports the height figure: 40 source px → 40 device px", () => {
+    // Same number as fill-height (both follow the vertical scale) —
+    // but nothing was cropped to get there.
+    expect(
+      boxMetricsOnDevice(nh, media, panel("stretch")).devicePx,
     ).toBeCloseTo(40, 10);
   });
 
