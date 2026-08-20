@@ -42,9 +42,9 @@ export function Onboarding() {
 
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Device>(thisDevice);
-  // Jean-Luc churned here: he doesn't know his monitor's diagonal and
-  // has no ruler. This drops into the card-calibration flow without
-  // nesting a second Dialog inside the onboarding one.
+  // Playtesting churned here: a user who doesn't know their monitor's
+  // diagonal and has no ruler. This drops into the card-calibration
+  // flow without nesting a second Dialog inside the onboarding one.
   const [calibrating, setCalibrating] = useState(false);
 
   const monitorPresets = useMemo(
