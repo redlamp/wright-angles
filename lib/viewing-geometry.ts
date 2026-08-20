@@ -165,6 +165,12 @@ export interface HeldGrip {
  * scene the arms have to commit to one, and reaching for the higher one
  * put the hands straight through the lower. Lowest is also the safer
  * read — hands passing over a screen are less wrong than through it.
+ * Lowest means closest to the FLOOR, not to the eye line.
+ *
+ * Two handhelds at exactly the same height — a real case, since every
+ * stance has a default offset and untouched devices share it — go to
+ * the NEARER one. Both are equally low, so height can't decide it, and
+ * the thing you are holding is the thing closest to your face.
  *
  * The span comes from the device's BODY where we know it, because you
  * grip a Switch by its rails, not by the glass; the screen plus a bezel
@@ -188,7 +194,13 @@ export function heldGripFor(
   for (const d of devices) {
     if (!HELD_CATEGORIES.has(d.category)) continue;
     const centerY = centerYFor(d, scenario, eyeY);
-    if (!best || centerY < best.centerY) best = { d, centerY };
+    if (
+      !best ||
+      centerY < best.centerY ||
+      (centerY === best.centerY && d.distanceCm < best.d.distanceCm)
+    ) {
+      best = { d, centerY };
+    }
   }
   if (!best) return null;
   const { d, centerY } = best;

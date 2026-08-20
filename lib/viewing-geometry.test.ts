@@ -225,6 +225,22 @@ describe("heldGripFor", () => {
     expect(heldGripFor([tiny], "desk", 120)!.halfGripCm).toBe(6);
   });
 
+  test("two handhelds at the same height: the nearer one is held", () => {
+    // Untouched devices share a stance's default offset, so an exact tie
+    // is ordinary, not a corner case. Deck at 36cm, Switch at 40cm.
+    const grip = heldGripFor([switch2, deck], "desk", 120)!;
+    expect(grip.distanceCm).toBe(36);
+    // Order of the list must not decide it.
+    expect(heldGripFor([deck, switch2], "desk", 120)!.distanceCm).toBe(36);
+  });
+
+  test("height still beats nearness", () => {
+    // The Switch sits lower, even though the Deck is closer.
+    const lowSwitch = { ...switch2, heightOffsetCm: { desk: -20 } };
+    const grip = heldGripFor([deck, lowSwitch], "desk", 120)!;
+    expect(grip.distanceCm).toBe(40);
+  });
+
   test("the wrist hangs below the screen centre, by chassis height", () => {
     // Deck chassis is 11.7cm tall: 15% of that, plus the wrist's own
     // 3cm below the palm. A wrist level with the centre read as holding
