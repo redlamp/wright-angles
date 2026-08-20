@@ -25,7 +25,11 @@ import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
 import { deviceFitCrop } from "@/lib/fit";
-import { centerYFor, resolvedTiltDeg } from "@/lib/viewing-geometry";
+import {
+  centerYFor,
+  heldGripFor,
+  resolvedTiltDeg,
+} from "@/lib/viewing-geometry";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
@@ -476,6 +480,7 @@ export default function SceneView({
     [thisDevice, devices],
   );
 
+
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
   const objectUrls = useMediaStore((s) => s.objectUrls);
@@ -580,6 +585,14 @@ export default function SceneView({
   };
 
   const eyeH = eyeHeightCm(scenario, heightCm);
+
+  // Where the figure's hands go in the handheld pose. Memoized because
+  // it feeds a pose the figure tweens toward — a fresh object every
+  // render would restart the tween on every frame.
+  const heldGrip = useMemo(
+    () => heldGripFor(visible, scenario, eyeH),
+    [visible, scenario, eyeH],
+  );
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
   const displayMode = useSettingsStore((s) => s.displayMode);
@@ -786,6 +799,7 @@ export default function SceneView({
           inputType={inputType}
           heightCm={heightCm}
           palette={palette}
+          held={heldGrip}
         />
         <ScenarioProps
           scenario={scenario}
