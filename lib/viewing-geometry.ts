@@ -9,6 +9,8 @@
  */
 
 import type { Device, DeviceCategory } from "./types";
+import { physicalSizeCm } from "./display-math";
+import { HANDHELD_BODIES } from "./presets";
 // Type-only, so it erases at compile time and this module keeps no
 // runtime dependency on the store — importing the alias rather than
 // re-declaring the three stance keys is what stops the two drifting.
@@ -124,6 +126,70 @@ export function resolvedTiltDeg(
 }
 
 export const degToRad = (deg: number): number => (deg * Math.PI) / 180;
+
+/** Categories a person holds in both hands rather than sits in front of. */
+const HELD_CATEGORIES = new Set<DeviceCategory>(["handheld", "phone", "tablet"]);
+
+/** Assumed bezel each side when a device has no chassis in HANDHELD_BODIES. */
+const BEZEL_CM = 1.5;
+/** How far inboard of the outer edge a hand actually wraps. */
+const GRIP_INSET_CM = 2;
+/** Hands never close nearer than this, however small the device. */
+const MIN_HALF_GRIP_CM = 6;
+
+/** Where the figure's hands should be to hold a device, in world cm. */
+export interface HeldGrip {
+  /** Distance from the eye — the panel's own z. */
+  distanceCm: number;
+  /** Screen-centre height; grips sit level with it on a handheld. */
+  centerY: number;
+  /** Half the hand span: the CHASSIS's edge, not the screen's. */
+  halfGripCm: number;
+}
+
+/**
+ * The device the viewer is holding, of everything currently visible.
+ *
+ * Picks the LOWEST one (Taylor 2026-08-20): with two handhelds in the
+ * scene the arms have to commit to one, and reaching for the higher one
+ * put the hands straight through the lower. Lowest is also the safer
+ * read — hands passing over a screen are less wrong than through it.
+ *
+ * The span comes from the device's BODY where we know it, because you
+ * grip a Switch by its rails, not by the glass; the screen plus a bezel
+ * is the fallback. Returns null when nothing hand-held is visible, and
+ * the caller keeps its authored pose.
+ */
+export function heldGripFor(
+  devices: Pick<
+    Device,
+    | "category"
+    | "deviceName"
+    | "diagonalIn"
+    | "aspect"
+    | "distanceCm"
+    | "heightOffsetCm"
+  >[],
+  scenario: Scenario,
+  eyeY: number,
+): HeldGrip | null {
+  let best: { d: (typeof devices)[number]; centerY: number } | null = null;
+  for (const d of devices) {
+    if (!HELD_CATEGORIES.has(d.category)) continue;
+    const centerY = centerYFor(d, scenario, eyeY);
+    if (!best || centerY < best.centerY) best = { d, centerY };
+  }
+  if (!best) return null;
+  const { d, centerY } = best;
+  const body = d.deviceName ? HANDHELD_BODIES[d.deviceName] : undefined;
+  const spanCm =
+    body?.bodyWCm ?? physicalSizeCm(d.diagonalIn, d.aspect).widthCm + BEZEL_CM * 2;
+  return {
+    distanceCm: d.distanceCm,
+    centerY,
+    halfGripCm: Math.max(MIN_HALF_GRIP_CM, spanCm / 2 - GRIP_INSET_CM),
+  };
+}
 
 /**
  * Eye height for a stance, in cm from the floor. Mirrors

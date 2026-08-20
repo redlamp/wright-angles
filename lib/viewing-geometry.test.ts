@@ -6,9 +6,11 @@ import {
   centerYFor,
   degToRad,
   eyeLevelForScenario,
+  heldGripFor,
   resolvedTiltDeg,
   storedTiltDeg,
 } from "./viewing-geometry";
+import { physicalSizeCm } from "./display-math";
 import type { Device, DeviceCategory } from "./types";
 
 const dev = (over: Partial<Device> = {}): Device => ({
@@ -162,6 +164,72 @@ describe("eyeLevelForScenario", () => {
     expect(eyeLevelForScenario("desk", h)).toBeGreaterThan(
       eyeLevelForScenario("couch", h),
     );
+  });
+});
+
+describe("heldGripFor", () => {
+  const deck = dev({
+    id: "deck",
+    category: "handheld",
+    deviceName: "Valve Steam Deck",
+    diagonalIn: 7.4,
+    aspect: { w: 16, h: 10 },
+    distanceCm: 36,
+  });
+  const switch2 = dev({
+    id: "sw",
+    category: "handheld",
+    deviceName: "Nintendo Switch 2",
+    diagonalIn: 7.9,
+    distanceCm: 40,
+  });
+  const monitor = dev({ id: "mon", category: "monitor" });
+
+  test("nothing hand-held visible leaves the pose alone", () => {
+    expect(heldGripFor([monitor], "desk", 120)).toBeNull();
+    expect(heldGripFor([], "desk", 120)).toBeNull();
+  });
+
+  test("ignores monitors, TVs and projectors", () => {
+    const grip = heldGripFor([monitor, deck], "desk", 120);
+    expect(grip?.distanceCm).toBe(36);
+  });
+
+  test("picks the LOWEST handheld when several are visible", () => {
+    // Deck 20cm below the eye line, Switch level with it.
+    const low = { ...deck, heightOffsetCm: { desk: -20 } };
+    const grip = heldGripFor([switch2, low], "desk", 120);
+    expect(grip?.distanceCm).toBe(36);
+    expect(grip?.centerY).toBe(100);
+  });
+
+  test("grips the CHASSIS, not the screen", () => {
+    // Steam Deck body is 29.8cm wide; half of that, less the inset the
+    // hand wraps by. The 7.4in 16:10 screen is far narrower.
+    const grip = heldGripFor([deck], "desk", 120)!;
+    expect(grip.halfGripCm).toBeCloseTo(29.8 / 2 - 2, 5);
+    const screenHalf =
+      physicalSizeCm(deck.diagonalIn, deck.aspect).widthCm / 2;
+    expect(grip.halfGripCm).toBeGreaterThan(screenHalf);
+  });
+
+  test("falls back to screen plus bezel for an unknown chassis", () => {
+    const generic = dev({ category: "tablet", diagonalIn: 11, deviceName: undefined });
+    const grip = heldGripFor([generic], "desk", 120)!;
+    const w = physicalSizeCm(11, { w: 16, h: 9 }).widthCm;
+    expect(grip.halfGripCm).toBeCloseTo((w + 3) / 2 - 2, 5);
+  });
+
+  test("never closes the hands tighter than the minimum", () => {
+    const tiny = dev({ category: "phone", diagonalIn: 1, deviceName: undefined });
+    expect(heldGripFor([tiny], "desk", 120)!.halfGripCm).toBe(6);
+  });
+
+  test("the grip follows the eye line through a stance change", () => {
+    const g1 = heldGripFor([deck], "desk", 120)!;
+    const g2 = heldGripFor([deck], "couch", 90)!;
+    expect(g1.centerY).toBe(120);
+    expect(g2.centerY).toBe(90);
   });
 });
 
