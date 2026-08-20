@@ -41,3 +41,22 @@ conflict before coding.
 - `main` is the GitHub Pages deploy source; promote dev → main only on
   Taylor's explicit go-ahead.
 - Commit by concept, not by prompt. Author email: `taylor@redlamp.org`.
+- **Never start work from `main`.** `dev` is the base for everything.
+  `origin/HEAD` here is `origin/main`, and isolated agent worktrees are
+  cut from `origin/HEAD` — NOT from the branch that is checked out. So a
+  worktree agent silently starts on `main` and drags main's release
+  merges into `dev` when its branch is merged back. Any agent working in
+  a worktree must, as its first action:
+
+  ```sh
+  git fetch origin && git reset --hard origin/dev   # confirm the base
+  git log --oneline -1                              # verify before editing
+  ```
+
+  Whoever merges the branch back checks `git merge-base --is-ancestor
+  origin/main HEAD` first: if that succeeds, the branch is main-based and
+  needs rebasing onto `dev` before it lands.
+- **Refactors run in a worktree, never in this tree.** Taylor keeps
+  `bun run dev` pointed at the working tree; a multi-file refactor is
+  inconsistent between its first edit and its last, so hot reload serves
+  him a broken app. Additive or single-file work in place is fine.
