@@ -57,13 +57,19 @@ export interface Device {
   color: string;
   visible: boolean;
   /**
-   * Screen-center height from the floor in cm, per viewing scenario (3D
-   * view). A missing entry means "aligned to the viewer's eye height" —
-   * the angular math assumes a centered gaze either way; elevation is a
-   * scene-realism control. (A standing-desk monitor sits differently
-   * than the same monitor seen from a couch.)
+   * Screen-centre offset from the viewer's LINE OF VISION, in cm, per
+   * viewing scenario. Positive is above the gaze, negative below; a
+   * missing entry means dead level with the eye.
+   *
+   * Measured from the eye line rather than the floor (Taylor
+   * 2026-08-20) because that is the relationship a person actually
+   * holds in mind — "the TV sits a bit above my eyeline" — and it
+   * survives a change of body height or stance, which an absolute
+   * floor height does not. Stored in cm and converted at the UI edge
+   * like every other distance. Superseded `elevation`; see the
+   * device-store migration.
    */
-  elevation?: { standing?: number; desk?: number; couch?: number };
+  heightOffsetCm?: { standing?: number; desk?: number; couch?: number };
   /**
    * Screen pitch in DEGREES per viewing scenario, positive tipping the
    * face upward (top edge away from the viewer) — a desk monitor angled
@@ -74,11 +80,14 @@ export interface Device {
    */
   tilt?: { standing?: number; desk?: number; couch?: number };
   /**
-   * Pitch the screen to face the viewer's eye directly, instead of
-   * using `tilt`. Absent follows the category — held things (handheld,
-   * phone, tablet) track your gaze, furniture doesn't.
+   * Pitch the screen to face the viewer's eye directly instead of using
+   * `tilt`, PER SCENARIO — the same switch shape as a height offset's
+   * "eye level", because a tablet propped on a desk and the same tablet
+   * held on a couch don't answer the question the same way. A missing
+   * entry follows the category: held things (handheld, phone, tablet)
+   * track your gaze, furniture doesn't.
    */
-  autoOrient?: boolean;
+  autoOrient?: { standing?: boolean; desk?: boolean; couch?: boolean };
   /**
    * Curvature radius in mm using the industry convention (1000R = 1m
    * radius; smaller = curvier). Undefined/0 = flat panel.

@@ -18,6 +18,7 @@ export function NumberStepper({
   max = Infinity,
   decimals = 0,
   suffix,
+  signed = false,
   className,
   ariaLabel,
 }: {
@@ -29,10 +30,17 @@ export function NumberStepper({
   max?: number;
   decimals?: number;
   suffix?: string;
+  /** Show a leading + on positives — for values where the SIGN is the
+   *  point (an offset above or below a line), not just the magnitude. */
+  signed?: boolean;
   className?: string;
   ariaLabel: string;
 }) {
-  const shown = value.toFixed(decimals);
+  // The bare number while editing (so it parses back), decorated while
+  // at rest. `suffix` used to be accepted and then dropped on the floor
+  // — both branches of the old ternary rendered the same string.
+  const shown = `${signed && value > 0 ? "+" : ""}${value.toFixed(decimals)}`;
+  const atRest = suffix ? `${shown}${suffix}` : shown;
   const [draft, setDraft] = useState(shown);
   const [editing, setEditing] = useState(false);
   // Derived-state reconciliation during render (not an effect): keep the
@@ -72,7 +80,7 @@ export function NumberStepper({
       <Input
         aria-label={ariaLabel}
         className="h-full w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-center font-mono text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
-        value={editing ? draft : suffix ? `${shown}` : shown}
+        value={editing ? draft : atRest}
         onFocus={(e) => {
           setEditing(true);
           e.target.select();
