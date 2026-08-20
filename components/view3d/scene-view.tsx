@@ -282,13 +282,23 @@ function computeLabelPlacements(
     out.set(i.id, { nameX: 0, nameLift: 0, distX: 0, distLift: 0 });
 
   // Name labels: anchors near each other in the (y, z) plane collide.
+  // They separate by STACKING, not by sliding sideways. Parking a name
+  // on its own rect edge (±halfW) scaled the offset with panel width, so
+  // a 32:9 ultrawide threw its label ~60cm out — twice as far as a 16:9
+  // neighbour and visibly detached from the screen it names. Height is
+  // also the only stable axis here: every rect is centred on x=0, and
+  // the horizontal offset was modulated by camera side, so it collapsed
+  // to zero near edge-on and let the labels collide anyway. A lift is
+  // applied statically, so the ladder holds through a full orbit.
   let cluster: Info[] = [];
   const flushNames = () => {
     if (cluster.length > 1) {
       cluster.forEach((m, idx) => {
         const p = out.get(m.id)!;
-        p.nameX = (idx % 2 === 0 ? -1 : 1) * m.halfW;
-        p.nameLift = Math.floor(idx / 2) * (m.nameSize + 2);
+        p.nameX = 0;
+        // Cluster is depth-sorted, so the ladder climbs away from the
+        // viewer and each name stays centred over the rect it belongs to.
+        p.nameLift = idx * (m.nameSize + 2);
       });
     }
     cluster = [];
