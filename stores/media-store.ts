@@ -127,18 +127,6 @@ interface MediaState {
   /** Set or clear (undefined) the item's crop window. */
   setCrop: (id: string, crop: MediaCrop | undefined) => void;
   /**
-   * Set or clear (undefined) one device's crop override on the item.
-   * Overrides are full-image normalized like the media crop; clearing
-   * the last one drops the deviceCrops key entirely.
-   */
-  setDeviceCrop: (
-    id: string,
-    deviceId: string,
-    crop: MediaCrop | undefined,
-  ) => void;
-  /** Drop a deleted device's crop overrides from every item. */
-  pruneDeviceCrops: (deviceId: string) => void;
-  /**
    * Nuke every detection artifact on the item: ALL measure boxes
    * (including hand-drawn — stale unlabeled scan boxes are
    * indistinguishable) and every scan keyframe.
@@ -523,39 +511,6 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       }),
     }));
     persistMeta(get, id);
-  },
-
-  setDeviceCrop: (id, deviceId, crop) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        const next = { ...(i.deviceCrops ?? {}) };
-        if (crop) next[deviceId] = crop;
-        else delete next[deviceId];
-        const rest = { ...i };
-        if (Object.keys(next).length > 0) rest.deviceCrops = next;
-        else delete rest.deviceCrops;
-        return rest;
-      }),
-    }));
-    persistMeta(get, id);
-  },
-
-  pruneDeviceCrops: (deviceId) => {
-    const touched: string[] = [];
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (!i.deviceCrops?.[deviceId]) return i;
-        touched.push(i.id);
-        const next = { ...i.deviceCrops };
-        delete next[deviceId];
-        const rest = { ...i };
-        if (Object.keys(next).length > 0) rest.deviceCrops = next;
-        else delete rest.deviceCrops;
-        return rest;
-      }),
-    }));
-    for (const id of touched) persistMeta(get, id);
   },
 
   reorderItem: (id, toIndex) => {

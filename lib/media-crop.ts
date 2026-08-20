@@ -2,42 +2,22 @@
  * Per-media crop helpers. A crop is a normalized window (0–1, y-down)
  * against the intrinsic image — see MediaCrop in types.ts. Pure module:
  * components and the 3D layer consume it; nothing here touches the DOM.
+ *
+ * This is the SOURCE crop only: one window per item, applied everywhere
+ * ("this screenshot has browser chrome in it"). How a panel of a
+ * different shape presents that content is the device's `fit` mode —
+ * lib/fit.ts, which derives a second crop in these same coordinates so
+ * everything below composes unchanged.
  */
 
 import type { HighlightBox, MediaCrop, MediaItem } from "./types";
 
 type Cropped = Pick<MediaItem, "width" | "height" | "crop">;
-type DeviceCropped = Pick<MediaItem, "crop" | "deviceCrops">;
 
 export const FULL_CROP: MediaCrop = { x: 0, y: 0, w: 1, h: 1 };
 
 export function cropOf(item: Pick<MediaItem, "crop">): MediaCrop {
   return item.crop ?? FULL_CROP;
-}
-
-/** The raw per-device override, if this device has one. */
-export function deviceCropOf(
-  item: DeviceCropped,
-  deviceId: string | null | undefined,
-): MediaCrop | undefined {
-  return deviceId ? item.deviceCrops?.[deviceId] : undefined;
-}
-
-/**
- * The crop a given device actually renders: its override when present,
- * else the plain media crop. Both layers are full-image normalized, so
- * everything downstream (boxes, scans, textures) composes identically.
- */
-export function effectiveCropFor(
-  item: DeviceCropped,
-  deviceId: string | null | undefined,
-): MediaCrop {
-  return deviceCropOf(item, deviceId) ?? cropOf(item);
-}
-
-/** True when any device carries its own crop override. */
-export function hasDeviceCrops(item: DeviceCropped): boolean {
-  return !!item.deviceCrops && Object.keys(item.deviceCrops).length > 0;
 }
 
 /** Pixel dims (rounded) of an arbitrary crop window over the item. */

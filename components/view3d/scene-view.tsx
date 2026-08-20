@@ -23,7 +23,8 @@ import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
-import { boxInCrop, cropDims, effectiveCropFor } from "@/lib/media-crop";
+import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
+import { deviceFitCrop } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
@@ -82,10 +83,10 @@ function useScreenTexture(tex: Texture, crop?: MediaCrop) {
 
 /**
  * Per-device screen textures. The base texture wears the plain media
- * crop; each DISTINCT device-crop override gets ONE clone (clones share
- * the pixel upload via texture.source — only repeat/offset differ per
- * Texture object), so N devices on two crops cost two textures, not N.
- * Devices without an override resolve to the base.
+ * (source) crop; each DISTINCT fit-derived crop gets ONE clone (clones
+ * share the pixel upload via texture.source — only repeat/offset differ
+ * per Texture object), so N devices on two crops cost two textures, not
+ * N. Devices whose fit is a no-op resolve to the base.
  */
 interface ScreenTextures {
   forDevice: (deviceId: string) => Texture;
@@ -96,15 +97,15 @@ interface ScreenTextures {
 function useCropTextures(
   base: Texture,
   mediaCrop: MediaCrop | undefined,
-  deviceCrops: Record<string, MediaCrop> | undefined,
+  fitCrops: Record<string, MediaCrop> | undefined,
 ): ScreenTextures {
   useScreenTexture(base, mediaCrop);
   const clones = useMemo(() => {
     const byDevice = new Map<string, Texture>();
     const made: Texture[] = [];
-    if (deviceCrops) {
+    if (fitCrops) {
       const byKey = new Map<string, Texture>();
-      for (const [devId, crop] of Object.entries(deviceCrops)) {
+      for (const [devId, crop] of Object.entries(fitCrops)) {
         const key = `${crop.x},${crop.y},${crop.w},${crop.h}`;
         let t = byKey.get(key);
         if (!t) {
@@ -117,7 +118,7 @@ function useCropTextures(
       }
     }
     return { byDevice, made };
-  }, [base, deviceCrops]);
+  }, [base, fitCrops]);
   useEffect(
     () => () => {
       for (const t of clones.made) t.dispose();

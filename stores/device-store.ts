@@ -4,7 +4,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Device, DevicePreset } from "@/lib/types";
 import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
-import { useMediaStore } from "@/stores/media-store";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -92,11 +91,10 @@ export const useDeviceStore = create<DeviceState>()(
         set((s) => ({
           devices: s.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)),
         })),
-      removeDevice: (id) => {
-        set((s) => ({ devices: s.devices.filter((d) => d.id !== id) }));
-        // A deleted device's per-media crop overrides go with it.
-        useMediaStore.getState().pruneDeviceCrops(id);
-      },
+      // Nothing to clean up elsewhere: fit lives ON the device, so it
+      // leaves with it (no per-media override matrix to prune).
+      removeDevice: (id) =>
+        set((s) => ({ devices: s.devices.filter((d) => d.id !== id) })),
       moveDevice: (id, toIndex) =>
         set((s) => {
           const from = s.devices.findIndex((d) => d.id === id);
