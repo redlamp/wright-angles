@@ -339,7 +339,7 @@ function boxLoopPoints(
  * UI text. Shared with `computeLabelPlacements`, which sizes the
  * de-collision stack from it.
  */
-export const NAME_FONT_CM = 8;
+export const NAME_FONT_CM = 7;
 
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */

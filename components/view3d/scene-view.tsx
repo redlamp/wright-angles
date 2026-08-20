@@ -297,15 +297,26 @@ function computeLabelPlacements(
   // to zero near edge-on and let the labels collide anyway. A lift is
   // applied statically, so the ladder holds through a full orbit.
   let cluster: Info[] = [];
+  const GAP = 2;
   const flushNames = () => {
     if (cluster.length > 1) {
-      cluster.forEach((m, idx) => {
+      // Need-based, like the floor-label ramp below: each name rises only
+      // far enough to clear the one under it, then stops. A fixed
+      // idx * step ladder compounded instead — a monitor whose rect
+      // already sits well above the handhelds still inherited two rungs
+      // of someone else's stack and floated away from its own screen.
+      // Cluster is depth-sorted, so the ladder climbs away from the
+      // viewer and each name stays centred over the rect it belongs to.
+      let prevTop = -Infinity;
+      for (const m of cluster) {
         const p = out.get(m.id)!;
         p.nameX = 0;
-        // Cluster is depth-sorted, so the ladder climbs away from the
-        // viewer and each name stays centred over the rect it belongs to.
-        p.nameLift = idx * (m.nameSize + 2);
-      });
+        // Labels anchor at their BOTTOM on topY, so one occupies
+        // [topY + lift, topY + lift + nameSize].
+        const lift = Math.max(0, prevTop + GAP - m.topY);
+        p.nameLift = lift;
+        prevTop = m.topY + lift + m.nameSize;
+      }
     }
     cluster = [];
   };
