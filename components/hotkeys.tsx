@@ -45,11 +45,25 @@ const isTyping = (t: EventTarget | null) =>
 // "menuitem"), and a modal Dialog, where focus is trapped on its own
 // buttons. All three render their popup body with a shadcn-style
 // `data-slot="…-content"` wrapper (select-content, dropdown-menu-content,
-// dropdown-menu-sub-content, dialog-content) — closest() on that suffix
-// catches "focus is inside an open overlay" without hardcoding every
-// component's internals.
+// dropdown-menu-sub-content, dialog-content), so closest() on those
+// catches "focus is inside an open overlay".
+//
+// Named one by one rather than matched on a `-content` suffix: shadcn
+// hands that slot to plenty of INLINE bodies too (card-content,
+// tabs-content, accordion-content). None are in the tree today, but a
+// suffix match would silently kill every hotkey inside the first one
+// anybody adds.
+const OVERLAY_SLOTS = [
+  "select-content",
+  "dropdown-menu-content",
+  "dropdown-menu-sub-content",
+  "dialog-content",
+]
+  .map((slot) => `[data-slot="${slot}"]`)
+  .join(",");
+
 const isInOverlay = (t: EventTarget | null) =>
-  t instanceof Element && t.closest('[data-slot$="-content"]') !== null;
+  t instanceof Element && t.closest(OVERLAY_SLOTS) !== null;
 
 /** Rows for the cheat-sheet overlay; `soon` = mapped but not built yet. */
 const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
