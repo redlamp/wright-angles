@@ -1,8 +1,11 @@
 ---
-tags: [domain/product, status/open]
+tags: [domain/product, status/superseded]
 ---
 
 # Test Plan v6 — Device Fit + Label Pass (2026-08-20)
+
+**Superseded by [[test-plan-2026-08-21-first-run]]** — its section 8
+backlog carried forward whole, minus what shipped.
 
 Supersedes [[test-plan-2026-08-19-morning-review]] and
 [[test-plan-2026-08-19-per-device-crop]] (that one's sections 2–4 are

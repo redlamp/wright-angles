@@ -10,10 +10,12 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
 ## Active
 
 - v0.7.0 live (2026-08-20); dev ahead by fit modes, offsets/tilt, the
-  handheld grip pose and the label pass — promotion on Taylor's word.
+  handheld grip work, calibration, arrow navigation and auto-OCR —
+  promotion on Taylor's word.
 - Work is tracked in GitHub issues from 2026-08-20 onward; the wiki keeps
   decisions, research and test plans.
-- [[test-plan-2026-08-20-device-fit]] — current test pass
+- [[test-plan-2026-08-21-first-run]] — current test pass
+- [[test-plan-2026-08-20-device-fit]] — superseded
 - [[plan-display-setup-wizard]] — draft, awaiting review
 - [[screen-auto-detection]] — why no browser API gives physical size
 - [[plan-content-adaptation-nine-slice]] — parked, long-term
