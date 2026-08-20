@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  ChevronRightIcon,
   CopyIcon,
   CornerDownRightIcon,
   EyeIcon,
@@ -43,7 +44,6 @@ import {
   TILT_LIMIT_DEG,
   autoOrientDefaultFor,
   autoOrientOf,
-  eyeLevelForScenario,
 } from "@/lib/viewing-geometry";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,122 @@ function DistanceStepper({
       decimals={shown >= 100 ? 0 : 1}
       className="h-7"
     />
+  );
+}
+
+/**
+ * Fold-away section, closed on mount. Local state, deliberately not
+ * persisted — but React keeps the instance alive as you move between
+ * devices, so an open section stays open while you compare them, and
+ * only a fresh editor starts folded. That is the behaviour you want
+ * here: nobody opens Offsets to look at exactly one device.
+ */
+function Collapsible({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRightIcon
+          className={cn(
+            "size-3.5 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        <Microlabel>{label}</Microlabel>
+      </button>
+      {open ? <div className="space-y-3 pl-4.5">{children}</div> : null}
+    </div>
+  );
+}
+
+/** One labelled row inside Offsets; children fill slider/value/switch. */
+function StanceRow({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_5.5rem_2.25rem] items-center gap-2">
+      <span
+        className={cn(
+          "truncate text-sm",
+          active ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A signed offset from the eye line, shown in the viewing-distance
+ * unit. Zero is dead level, so the slider is centred and the stored
+ * value is dropped entirely at 0 — "level with the gaze" is the absence
+ * of an offset, not an offset of nothing.
+ */
+const OFFSET_LIMIT_CM = 150;
+function OffsetControls({
+  label,
+  offsetCm,
+  onChange,
+}: {
+  label: string;
+  offsetCm: number | undefined;
+  onChange: (cm: number | undefined) => void;
+}) {
+  const unit = useSettingsStore((s) => s.unit);
+  const inches = unit === "in";
+  const cm = offsetCm ?? 0;
+  const shown = inches ? cm / CM_PER_IN : cm;
+  const limit = inches ? OFFSET_LIMIT_CM / CM_PER_IN : OFFSET_LIMIT_CM;
+  const set = (v: number) => onChange(v === 0 ? undefined : v);
+  return (
+    <>
+      {/* Not disabled at zero: dragging IS the intent to set an offset,
+          so it takes effect rather than making you flip the switch. */}
+      <Slider
+        min={-OFFSET_LIMIT_CM}
+        max={OFFSET_LIMIT_CM}
+        step={1}
+        value={cm}
+        aria-label={`${label} screen height offset`}
+        onValueChange={(v) => set(Math.round(Array.isArray(v) ? v[0] : v))}
+      />
+      <NumberStepper
+        ariaLabel={`${label} screen height offset from eye line`}
+        value={shown}
+        onChange={(v) => set(Math.round(inches ? v * CM_PER_IN : v))}
+        step={inches ? 0.5 : 1}
+        bigStep={inches ? 5 : 10}
+        min={-limit}
+        max={limit}
+        decimals={inches ? 1 : 0}
+        signed
+        className="h-7"
+      />
+      <Switch
+        checked={offsetCm === undefined}
+        aria-label={`${label} level with the eye line`}
+        onCheckedChange={(on) => onChange(on ? undefined : cm || 1)}
+      />
+    </>
   );
 }
 
@@ -223,7 +339,6 @@ export function DeviceEditor({
     : portraitMatch
       ? portraitMatch.label.split(":").reverse().join(":")
       : `${ratio.toFixed(2)}:1`;
-  const autoOrient = autoOrientOf(device);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _hc = heightCm; // keeps the editor reactive to height changes
   const sizeShown = sizeInches
@@ -358,28 +473,36 @@ export function DeviceEditor({
               ))}
             </SelectContent>
           </Select>
-          <Input
-            className="min-w-0 flex-1 text-right font-mono"
-            type="number"
-            aria-label="Width px"
+          {/* Steppers rather than bare fields (Taylor 2026-08-20), the
+              same − [value] + control the viewing distance uses. Panel
+              resolutions are nudged far more often than they are typed
+              from scratch, and the plain number inputs also committed
+              mid-keystroke — deleting a digit off 2560 briefly patched
+              the device to 256. bigStep is a round hundred. */}
+          <NumberStepper
+            ariaLabel="Width px"
             value={device.resolution.w}
-            onChange={(e) => {
-              const w = Number(e.target.value);
-              if (!Number.isInteger(w) || w <= 0) return;
-              onPatch({ resolution: { ...device.resolution, w } });
-            }}
+            onChange={(w) =>
+              onPatch({ resolution: { ...device.resolution, w } })
+            }
+            step={1}
+            bigStep={100}
+            min={1}
+            max={16384}
+            className="h-7 min-w-0 flex-1"
           />
           <span className="text-base text-muted-foreground">×</span>
-          <Input
-            className="min-w-0 flex-1 text-right font-mono"
-            type="number"
-            aria-label="Height px"
+          <NumberStepper
+            ariaLabel="Height px"
             value={device.resolution.h}
-            onChange={(e) => {
-              const h = Number(e.target.value);
-              if (!Number.isInteger(h) || h <= 0) return;
-              onPatch({ resolution: { ...device.resolution, h } });
-            }}
+            onChange={(h) =>
+              onPatch({ resolution: { ...device.resolution, h } })
+            }
+            step={1}
+            bigStep={100}
+            min={1}
+            max={16384}
+            className="h-7 min-w-0 flex-1"
           />
           <Button
             variant="ghost"
@@ -481,150 +604,103 @@ export function DeviceEditor({
         ) : null}
       </div>
 
-      {/* Height AND pitch for every stance at once (Taylor 2026-08-20).
-          The same monitor is met at a different height and angle from a
-          desk chair than from a couch, and being able to compare the
-          three is worth more than the vertical space one-at-a-time
-          saved. The active stance is the only one in full contrast. */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Microlabel>Screen height · cm</Microlabel>
-          <span className="text-sm text-muted-foreground">Eye level</span>
-        </div>
-        {SCENARIOS.map((s) => {
-          const stored = device.elevation?.[s.id];
-          const atEyeLevel = stored === undefined;
-          const eyeFor = Math.round(eyeLevelForScenario(s.id, heightCm));
-          const shown = stored ?? eyeFor;
-          const patchHeight = (v: number | undefined) =>
-            onPatch({ elevation: { ...device.elevation, [s.id]: v } });
-          return (
-            <div
-              key={s.id}
-              className="grid grid-cols-[4.25rem_minmax(0,1fr)_5rem_2.25rem] items-center gap-2"
-            >
-              <span
-                className={cn(
-                  "truncate text-sm",
-                  s.id === scenario
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
-                {s.label}
-              </span>
-              {/* Not disabled while at eye level: dragging IS the
-                  intent to set a height, so it takes the override
-                  rather than making you flip the switch first. */}
-              <Slider
-                min={0}
-                max={250}
-                step={1}
-                value={shown}
-                aria-label={`${s.label} screen height`}
-                onValueChange={(v) =>
-                  patchHeight(Array.isArray(v) ? v[0] : v)
+      {/* Height and pitch are scene-dressing next to size and distance,
+          so they fold away by default (Taylor 2026-08-20). Both are
+          shown for every stance at once: the same monitor is met at a
+          different height and angle from a desk chair than from a
+          couch, and comparing the three is the point. The active stance
+          is the only one in full contrast. */}
+      <Collapsible label="Offsets">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Microlabel>Screen height · from eye line</Microlabel>
+              <DistanceUnitFlip />
+            </span>
+            <span className="text-sm text-muted-foreground">Eye level</span>
+          </div>
+          {SCENARIOS.map((s) => (
+            <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
+              <OffsetControls
+                label={s.label}
+                offsetCm={device.heightOffsetCm?.[s.id]}
+                onChange={(v) =>
+                  onPatch({
+                    heightOffsetCm: { ...device.heightOffsetCm, [s.id]: v },
+                  })
                 }
               />
-              <NumberStepper
-                ariaLabel={`${s.label} screen height from floor`}
-                value={shown}
-                onChange={patchHeight}
-                step={1}
-                bigStep={10}
-                min={0}
-                max={300}
-                className="h-7"
-              />
-              {/* On = follow the viewer's eye (store nothing). Off seeds
-                  the override at THIS stance's eye height, not the
-                  active one's. */}
-              <Switch
-                checked={atEyeLevel}
-                aria-label={`${s.label} at eye level`}
-                onCheckedChange={(on) => patchHeight(on ? undefined : eyeFor)}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Pitch. Auto-orient aims the face at the eye — what a handheld
-          does by virtue of being held; a monitor on a stand does not.
-          Persisted as undefined whenever it matches the category
-          default, so untouched devices serialize byte-identically. */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Microlabel>Tilt</Microlabel>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Auto-orient
-            <Switch
-              checked={autoOrient}
-              aria-label="Pitch the screen to face the viewer"
-              onCheckedChange={(on) =>
-                onPatch({
-                  autoOrient:
-                    on === autoOrientDefaultFor(device.category)
-                      ? undefined
-                      : on,
-                })
-              }
-            />
-          </label>
+            </StanceRow>
+          ))}
         </div>
-        {autoOrient ? (
-          <p className="text-sm text-muted-foreground">
-            Facing the viewer — the screen turns to meet the eye, the way
-            something held in your hands does.
-          </p>
-        ) : (
-          SCENARIOS.map((s) => {
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Microlabel>Tilt</Microlabel>
+            <span className="text-sm text-muted-foreground">Auto-orient</span>
+          </div>
+          {SCENARIOS.map((s) => {
+            const auto = autoOrientOf(device, s.id);
             const deg = device.tilt?.[s.id] ?? 0;
-            const patchTilt = (v: number) =>
-              onPatch({
-                tilt: { ...device.tilt, [s.id]: v === 0 ? undefined : v },
-              });
+            const patchTilt = (v: number | undefined) =>
+              onPatch({ tilt: { ...device.tilt, [s.id]: v } });
             return (
-              <div
-                key={s.id}
-                className="grid grid-cols-[4.25rem_minmax(0,1fr)_5rem_2.25rem] items-center gap-2"
-              >
-                <span
-                  className={cn(
-                    "truncate text-sm",
-                    s.id === scenario
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {s.label}
-                </span>
-                <Slider
-                  min={-TILT_LIMIT_DEG}
-                  max={TILT_LIMIT_DEG}
-                  step={1}
-                  value={deg}
-                  aria-label={`${s.label} screen tilt`}
-                  onValueChange={(v) =>
-                    patchTilt(Array.isArray(v) ? v[0] : v)
+              <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
+                {auto ? (
+                  <>
+                    <span className="col-span-2 truncate text-sm text-muted-foreground">
+                      facing the viewer
+                    </span>
+                    <span />
+                  </>
+                ) : (
+                  <>
+                    <Slider
+                      min={-TILT_LIMIT_DEG}
+                      max={TILT_LIMIT_DEG}
+                      step={1}
+                      value={deg}
+                      aria-label={`${s.label} screen tilt`}
+                      onValueChange={(v) =>
+                        patchTilt(Array.isArray(v) ? v[0] : v)
+                      }
+                    />
+                    <NumberStepper
+                      ariaLabel={`${s.label} screen tilt in degrees`}
+                      value={deg}
+                      onChange={patchTilt}
+                      step={1}
+                      bigStep={5}
+                      min={-TILT_LIMIT_DEG}
+                      max={TILT_LIMIT_DEG}
+                      suffix="°"
+                      className="h-7"
+                    />
+                  </>
+                )}
+                {/* Per stance, the same shape as eye level above. Stored
+                    only when it disagrees with the category, so
+                    untouched devices serialize byte-identically. */}
+                <Switch
+                  checked={auto}
+                  aria-label={`${s.label} auto-orient`}
+                  onCheckedChange={(on) =>
+                    onPatch({
+                      autoOrient: {
+                        ...device.autoOrient,
+                        [s.id]:
+                          on === autoOrientDefaultFor(device.category)
+                            ? undefined
+                            : on,
+                      },
+                    })
                   }
                 />
-                <NumberStepper
-                  ariaLabel={`${s.label} screen tilt in degrees`}
-                  value={deg}
-                  onChange={patchTilt}
-                  step={1}
-                  bigStep={5}
-                  min={-TILT_LIMIT_DEG}
-                  max={TILT_LIMIT_DEG}
-                  className="h-7"
-                />
-                <span className="text-sm text-muted-foreground">°</span>
-              </div>
+              </StanceRow>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      </Collapsible>
 
       {FEATURE_3D_DEVICE_BODY &&
       device.deviceName &&

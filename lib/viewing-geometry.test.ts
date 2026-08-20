@@ -3,6 +3,7 @@ import {
   TILT_LIMIT_DEG,
   autoOrientOf,
   autoTiltDeg,
+  centerYFor,
   degToRad,
   eyeLevelForScenario,
   resolvedTiltDeg,
@@ -26,17 +27,52 @@ const dev = (over: Partial<Device> = {}): Device => ({
 describe("auto-orient defaults by category", () => {
   test("held things track the gaze", () => {
     for (const c of ["handheld", "phone", "tablet"] as DeviceCategory[])
-      expect(autoOrientOf(dev({ category: c }))).toBe(true);
+      expect(autoOrientOf(dev({ category: c }), "desk")).toBe(true);
   });
 
   test("furniture does not", () => {
     for (const c of ["monitor", "tv", "projector", "custom"] as DeviceCategory[])
-      expect(autoOrientOf(dev({ category: c }))).toBe(false);
+      expect(autoOrientOf(dev({ category: c }), "desk")).toBe(false);
   });
 
   test("an explicit choice overrides the category either way", () => {
-    expect(autoOrientOf(dev({ category: "handheld", autoOrient: false }))).toBe(false);
-    expect(autoOrientOf(dev({ category: "tv", autoOrient: true }))).toBe(true);
+    expect(
+      autoOrientOf(dev({ category: "handheld", autoOrient: { desk: false } }), "desk"),
+    ).toBe(false);
+    expect(
+      autoOrientOf(dev({ category: "tv", autoOrient: { desk: true } }), "desk"),
+    ).toBe(true);
+  });
+
+  test("the choice is per stance — other stances keep the category default", () => {
+    const d = dev({ category: "handheld", autoOrient: { couch: false } });
+    expect(autoOrientOf(d, "couch")).toBe(false);
+    expect(autoOrientOf(d, "desk")).toBe(true);
+    expect(autoOrientOf(d, "standing")).toBe(true);
+  });
+});
+
+describe("centerYFor", () => {
+  test("no offset sits dead on the eye line", () => {
+    expect(centerYFor(dev(), "desk", 120)).toBe(120);
+  });
+
+  test("positive is above the gaze, negative below", () => {
+    const d = dev({ heightOffsetCm: { desk: 25, couch: -40 } });
+    expect(centerYFor(d, "desk", 120)).toBe(145);
+    expect(centerYFor(d, "couch", 117)).toBe(77);
+  });
+
+  test("an offset follows the eye when the body height changes", () => {
+    // The point of storing an offset rather than a floor height.
+    const d = dev({ heightOffsetCm: { desk: 30 } });
+    expect(centerYFor(d, "desk", 120) - 120).toBe(30);
+    expect(centerYFor(d, "desk", 140) - 140).toBe(30);
+  });
+
+  test("a stance with no offset is level even when others are set", () => {
+    const d = dev({ heightOffsetCm: { desk: 30 } });
+    expect(centerYFor(d, "standing", 160)).toBe(160);
   });
 });
 

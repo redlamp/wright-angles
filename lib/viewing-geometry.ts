@@ -49,9 +49,26 @@ export function autoOrientDefaultFor(category: DeviceCategory): boolean {
   return AUTO_ORIENT_BY_CATEGORY[category] ?? false;
 }
 
-/** Absent `autoOrient` falls back to the category's habit. */
-export function autoOrientOf(device: Pick<Device, "category" | "autoOrient">): boolean {
-  return device.autoOrient ?? AUTO_ORIENT_BY_CATEGORY[device.category] ?? false;
+/** Absent `autoOrient` for this stance falls back to the category's habit. */
+export function autoOrientOf(
+  device: Pick<Device, "category" | "autoOrient">,
+  scenario: Scenario,
+): boolean {
+  return device.autoOrient?.[scenario] ?? autoOrientDefaultFor(device.category);
+}
+
+/**
+ * Where this panel's centre sits in the room: the viewer's eye height
+ * plus the stance's offset from the line of vision. The offset is the
+ * stored quantity, so moving the body or changing stance carries the
+ * screen with the gaze instead of stranding it at a fixed floor height.
+ */
+export function centerYFor(
+  device: Pick<Device, "heightOffsetCm">,
+  scenario: Scenario,
+  eyeY: number,
+): number {
+  return eyeY + (device.heightOffsetCm?.[scenario] ?? 0);
 }
 
 /**
@@ -100,7 +117,8 @@ export function resolvedTiltDeg(
   eyeY: number,
   distanceCm: number,
 ): number {
-  if (autoOrientOf(device)) return autoTiltDeg(centerY, eyeY, distanceCm);
+  if (autoOrientOf(device, scenario))
+    return autoTiltDeg(centerY, eyeY, distanceCm);
   const deg = storedTiltDeg(device, scenario) ?? 0;
   return Math.max(-TILT_LIMIT_DEG, Math.min(TILT_LIMIT_DEG, deg));
 }

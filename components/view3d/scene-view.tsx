@@ -25,7 +25,7 @@ import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
 import { deviceFitCrop } from "@/lib/fit";
-import { resolvedTiltDeg } from "@/lib/viewing-geometry";
+import { centerYFor, resolvedTiltDeg } from "@/lib/viewing-geometry";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
@@ -269,7 +269,7 @@ function computeLabelPlacements(
   const infos: Info[] = visible
     .map((d) => {
       const { widthCm, heightCm } = physicalSizeCm(d.diagonalIn, d.aspect);
-      const centerY = d.elevation?.[scenario] ?? eyeH;
+      const centerY = centerYFor(d, scenario, eyeH);
       return {
         id: d.id,
         z: d.distanceCm,
@@ -689,11 +689,11 @@ export default function SceneView({
           key={d.id}
           device={d}
           zBias={i * 0.04}
-          centerY={d.elevation?.[scenario] ?? eyeH}
+          centerY={centerYFor(d, scenario, eyeH)}
           tiltDeg={resolvedTiltDeg(
             d,
             scenario,
-            d.elevation?.[scenario] ?? eyeH,
+            centerYFor(d, scenario, eyeH),
             eyeH,
             d.distanceCm,
           )}
