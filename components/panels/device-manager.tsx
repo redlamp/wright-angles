@@ -12,6 +12,7 @@ import {
   RotateCwSquareIcon,
   RulerDimensionLineIcon,
   Trash2Icon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -19,7 +20,7 @@ import {
   FEATURE_PINNED_DEVICES,
 } from "@/lib/flags";
 import type { Device, FitMode } from "@/lib/types";
-import { FIT_MODES, fitLabel, fitModeOf } from "@/lib/fit";
+import { FIT_MODES, fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import {
   COMMON_ASPECTS,
   COMMON_RESOLUTIONS,
@@ -34,6 +35,7 @@ import {
   sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
+import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
@@ -191,6 +193,12 @@ export function DeviceEditor({
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
   const sizeInches = sizeUnit === "in";
+  // How far the active media is distorted on this panel — null unless
+  // the fit is `stretch` and the shapes actually disagree.
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const activeItem = items.find((i) => i.id === activeId) ?? null;
+  const stretchNote = activeItem ? fitStretchNote(activeItem, device) : null;
   // Show the conventional name for the ratio (within tolerance — phone
   // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
   // itself, never raw pixel pairs. A 90°-pivoted panel reads as the
@@ -459,6 +467,14 @@ export function DeviceEditor({
             ))}
           </SelectContent>
         </Select>
+        {/* Stretch is the one mode with non-square pixels — say by how
+            much, and that the reported arc minutes are the height. */}
+        {stretchNote ? (
+          <span className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]">
+            <TriangleAlertIcon className="size-3 shrink-0" />
+            {stretchNote}
+          </span>
+        ) : null}
       </div>
 
       <div className="space-y-1.5">

@@ -276,9 +276,15 @@ export function contentPxToArcmin(
  * would contradict what is drawn — this is the one place the math cares
  * about fit (decision-media-crop-vs-device-fit).
  *
+ * A `stretch` panel has no single scale; `fitScale` hands back its
+ * VERTICAL one, which is the figure this function wants anyway — `nh`
+ * is a normalized HEIGHT and the whole px→mm→arcmin chain is height-
+ * based. The arc minutes are therefore true for the text's height, and
+ * the UI flags stretched devices so nobody reads them as width.
+ *
  * `media` may be the source-cropped OR the fit-cropped dims: a fill
- * mode never touches the axis its own scale depends on, so the answer
- * is the same either way.
+ * mode never touches the axis its own scale depends on (and stretch
+ * crops nothing at all), so the answer is the same either way.
  */
 export function boxMetricsOnDevice(
   nh: number,

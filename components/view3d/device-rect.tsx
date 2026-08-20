@@ -20,7 +20,7 @@ import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
-import { containFit } from "@/lib/fit";
+import { fitBox, fitModeOf } from "@/lib/fit";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import { groupColor } from "@/lib/text-groups";
@@ -448,8 +448,11 @@ export default function DeviceRect({
   const R = device.curvatureR ? device.curvatureR / 10 : 0;
   const curved = R > 0;
 
+  // Where the content quad sits on this panel, in cm. Under `stretch`
+  // it IS the panel (widthCm × heightCm) — the content boxes and the
+  // projection rays below are all measured off this, so they follow.
   const fit = media
-    ? containFit(media.width, media.height, widthCm, heightCm)
+    ? fitBox(fitModeOf(device), media.width, media.height, widthCm, heightCm)
     : null;
 
   // Projection endpoints in local space: the IMAGE bounds when media is

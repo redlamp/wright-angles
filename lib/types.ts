@@ -22,10 +22,13 @@ export interface Aspect {
  * What happens when the device's aspect and the media's aspect disagree
  * (see wiki/notes/decision-media-crop-vs-device-fit.md). This is a
  * property of the DEVICE — a TV set to fill, fills — not of the image.
- * Never stretches: anamorphic scaling would make every arc-minute
- * reading a lie.
+ *
+ * `stretch` is the one anamorphic mode: it scales the axes
+ * independently, so pixels are no longer square and only the vertical
+ * arc-minute figure stays true. It exists because users ask for it;
+ * everywhere its numbers are reported the UI flags the distortion.
  */
-export type FitMode = "contain" | "fill-width" | "fill-height";
+export type FitMode = "contain" | "fill-width" | "fill-height" | "stretch";
 
 export type DeviceCategory =
   | "handheld"

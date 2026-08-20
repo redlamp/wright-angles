@@ -34,7 +34,7 @@ import {
   formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
-import { containFit, deviceFitCrop } from "@/lib/fit";
+import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
@@ -46,7 +46,13 @@ import {
   isFullFrame,
   viewBoxOf,
 } from "@/lib/media-crop";
-import type { Device, HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
+import type {
+  Device,
+  FitMode,
+  HighlightBox,
+  MediaCrop,
+  MediaItem,
+} from "@/lib/types";
 
 /**
  * Where the window's client area sits on the physical screen, in CSS px.
@@ -133,6 +139,7 @@ export function useScreenViewport() {
 function CropFrame({
   item,
   crop,
+  mode,
   w,
   h,
   children,
@@ -140,12 +147,14 @@ function CropFrame({
   item: MediaItem;
   /** The crop to show — the owning device's EFFECTIVE crop. */
   crop: MediaCrop;
+  /** The owning device's fit mode — stretch fills the whole rect. */
+  mode: FitMode;
   w: number;
   h: number;
   children: React.ReactNode;
 }) {
   const eff = cropDims(item, crop);
-  const area = containFit(eff.width, eff.height, w, h);
+  const area = fitBox(mode, eff.width, eff.height, w, h);
   return (
     <div
       className="absolute overflow-hidden"
@@ -316,7 +325,15 @@ function PixelLoupe({
   }, [containerRef]);
 
   const eff = cropDims(item, crop);
-  const area = containFit(eff.width, eff.height, hostW, hostH);
+  // The loupe rides This Device's rect, so it samples through This
+  // Device's fit — a stretched host draws content edge to edge.
+  const area = fitBox(
+    fitModeOf(thisDevice),
+    eff.width,
+    eff.height,
+    hostW,
+    hostH,
+  );
   let sx = -1;
   let sy = -1;
   if (pt && area.w) {
@@ -420,8 +437,9 @@ const boxBandColor = (worstArcmin: number) =>
 
 /**
  * Highlight boxes over one device rect. Coordinates are normalized to
- * the media's content area (object-contain within the rect), so the
- * same box lands on the same pixels of the image on every device.
+ * the media's content area — wherever this device's fit mode puts it in
+ * the rect (`fitBox`) — so the same box lands on the same pixels of the
+ * image on every device, stretched panels included.
  */
 function BoxLayer({
   rectW,
@@ -433,6 +451,7 @@ function BoxLayer({
   isHost,
   deviceId,
   crop,
+  mode,
 }: {
   rectW: number;
   rectH: number;
@@ -447,12 +466,14 @@ function BoxLayer({
   deviceId: string;
   /** The owning device's rendered crop (source crop, fit-reframed). */
   crop: MediaCrop;
+  /** The owning device's fit mode — boxes must land where IT draws. */
+  mode: FitMode;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const eff = cropDims(media, crop);
-  const area = containFit(eff.width, eff.height, rectW, rectH);
+  const area = fitBox(mode, eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
   return (
     <>
@@ -834,19 +855,19 @@ export function DisplayArea() {
         const c = activeItem ? deviceFitCrop(activeItem, d) : FULL_CROP;
         const sw = c.w * img.naturalWidth;
         const sh = c.h * img.naturalHeight;
-        const s = Math.min(w / sw, h / sh);
-        const iw = sw * s;
-        const ih = sh * s;
+        // Same fitBox the on-screen rect uses, so the export is the
+        // screenshot it claims to be — a stretched device fills its rect.
+        const a = fitBox(fitModeOf(d), sw, sh, w, h);
         g.drawImage(
           img,
           c.x * img.naturalWidth,
           c.y * img.naturalHeight,
           sw,
           sh,
-          x + (w - iw) / 2,
-          y + (h - ih) / 2,
-          iw,
-          ih,
+          x + a.x,
+          y + a.y,
+          a.w,
+          a.h,
         );
       } else {
         g.fillStyle =
@@ -975,6 +996,12 @@ export function DisplayArea() {
         // by this device's fit mode. Everything drawn inside maps
         // through it.
         const dCrop = activeItem ? deviceFitCrop(activeItem, device) : null;
+        // This rect's fit mode drives both the CSS object-fit of the
+        // media element and the geometry every overlay inside measures
+        // against — they have to be the same answer.
+        const dMode = fitModeOf(device);
+        const objectFit =
+          dMode === "stretch" ? "object-fill" : "object-contain";
         return (
         <div
           key={device.id}
@@ -1020,17 +1047,23 @@ export function DisplayArea() {
               <VideoMirror
                 item={activeItem}
                 crop={dCrop ?? undefined}
-                className="size-full object-contain select-none"
+                className={cn("size-full select-none", objectFit)}
               />
             ) : activeItem?.type === "image/gif" && activeUrl ? (
               dCrop && !isFullFrame(dCrop) ? (
-                <CropFrame item={activeItem} crop={dCrop} w={w} h={h}>
+                <CropFrame
+                  item={activeItem}
+                  crop={dCrop}
+                  mode={dMode}
+                  w={w}
+                  h={h}
+                >
                   <GifView url={activeUrl} className="size-full select-none" />
                 </CropFrame>
               ) : (
                 <GifView
                   url={activeUrl}
-                  className="size-full object-contain select-none"
+                  className={cn("size-full select-none", objectFit)}
                 />
               )
             ) : activeUrl ? (
@@ -1040,7 +1073,7 @@ export function DisplayArea() {
                 alt=""
                 draggable={false}
                 style={viewBoxOf(dCrop ?? undefined)}
-                className="size-full object-contain select-none"
+                className={cn("size-full select-none", objectFit)}
               />
             ) : null}
             {/* Boxes live INSIDE each rect so a nested device naturally
@@ -1057,6 +1090,7 @@ export function DisplayArea() {
                 isHost={!!device.isThis && !drawMode}
                 deviceId={device.id}
                 crop={dCrop}
+                mode={dMode}
               />
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
@@ -1085,7 +1119,16 @@ export function DisplayArea() {
       {(() => {
         const hostRect = rects.find((r) => r.device.isThis);
         if (!activeItem || !eff || !crop || !hostRect) return null;
-        const area = containFit(eff.width, eff.height, hostRect.w, hostRect.h);
+        // The layer overlays This Device's rect, so it maps through
+        // This Device's fit — same geometry its BoxLayer uses.
+        const hostMode = fitModeOf(thisDevice);
+        const area = fitBox(
+          hostMode,
+          eff.width,
+          eff.height,
+          hostRect.w,
+          hostRect.h,
+        );
         // Draft is kept in full-image coords like persisted boxes; render
         // it through the crop window like BoxLayer does.
         const draftCb = draft ? boxInCrop(draft, crop) : null;
@@ -1118,7 +1161,13 @@ export function DisplayArea() {
                 className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
                 onPointerDown={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(eff.width, eff.height, r.width, r.height);
+                  const a = fitBox(
+                    hostMode,
+                    eff.width,
+                    eff.height,
+                    r.width,
+                    r.height,
+                  );
                   if (!a.w) return;
                   // Screen → crop space → full-image coords (boxes are
                   // stored against the full intrinsic image).
@@ -1131,7 +1180,13 @@ export function DisplayArea() {
                 onPointerMove={(e) => {
                   if (!dragStart.current) return;
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(eff.width, eff.height, r.width, r.height);
+                  const a = fitBox(
+                    hostMode,
+                    eff.width,
+                    eff.height,
+                    r.width,
+                    r.height,
+                  );
                   if (!a.w) return;
                   const clamp = (v: number) => Math.min(1, Math.max(0, v));
                   const nx =

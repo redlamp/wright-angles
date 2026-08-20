@@ -25,7 +25,12 @@ import {
   detectTextForItem,
 } from "@/lib/scan-actions";
 import { boxInCrop } from "@/lib/media-crop";
-import { deviceFitCrop, fitLabel, fitModeOf } from "@/lib/fit";
+import {
+  deviceFitCrop,
+  fitLabel,
+  fitModeOf,
+  fitStretchNote,
+} from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -80,9 +85,31 @@ function ratioNote(r: number): string {
   return "a near-1:1 reference for this setup.";
 }
 
+/**
+ * The "this reading is vertical only" chip. `stretch` is the one fit
+ * mode whose pixels aren't square, so every arc-minute figure quoted
+ * for such a device is the height figure and needs saying so.
+ */
+function StretchChip({ item, d }: { item: MediaItem | null; d: Device }) {
+  const note = item ? fitStretchNote(item, d) : null;
+  if (!note) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]"
+      title={`"${fitLabel(fitModeOf(d))}" scales width and height independently on ${d.label}: the image is distorted, and the arc-minute figures here measure its HEIGHT.`}
+    >
+      <TriangleAlertIcon className="size-3 shrink-0" />
+      {note}
+    </span>
+  );
+}
+
 /** Full spec lines, shown inside the selected column-1 entry. */
 function SpecLines({ d }: { d: Device }) {
   const unit = useSettingsStore((s) => s.unit);
+  const activeId = useMediaStore((s) => s.activeId);
+  const items = useMediaStore((s) => s.items);
+  const activeItem = items.find((i) => i.id === activeId) ?? null;
   const size = physicalSizeCm(d.diagonalIn, d.aspect);
   const a = deviceAngles(d);
   return (
@@ -99,6 +126,7 @@ function SpecLines({ d }: { d: Device }) {
         {a.horizontalDeg.toFixed(0)}° × {a.verticalDeg.toFixed(0)}° ·{" "}
         {a.ppd.toFixed(0)} PPD
       </div>
+      <StretchChip item={activeItem} d={d} />
     </div>
   );
 }
@@ -499,11 +527,16 @@ export function PerceptionReportContent() {
                         );
                       }
                       const m = boxMetricsOnDevice(e.h, activeItem!, d);
+                      // A stretched panel distorts: the figure is the
+                      // HEIGHT one, and the chip says so on hover.
+                      const stretch = activeItem
+                        ? fitStretchNote(activeItem, d)
+                        : null;
                       return (
                         <span
                           key={d.id}
                           className="flex items-center gap-1.5 font-mono text-sm"
-                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px`}
+                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px${stretch ? ` — ${stretch}` : ""}`}
                         >
                           <span
                             className="inline-block size-2 rounded-full"
