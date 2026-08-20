@@ -903,7 +903,11 @@ export function DisplayArea() {
     URL.revokeObjectURL(url);
   }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
-  /** Topmost device rect (highest z = last in draw order) under a point. */
+  /**
+   * Topmost device rect (highest z = last in draw order, EXCEPT the
+   * focused device, which the render below raises above the whole
+   * stack) under a point.
+   */
   const deviceAt = (clientX: number, clientY: number) => {
     const el = ref.current;
     if (!el) return null;
@@ -911,12 +915,15 @@ export function DisplayArea() {
     const px = clientX - r.left;
     const py = clientY - r.top;
     let hit: string | null = null;
+    let hitFocused = false;
     for (const { device, w, h } of rects) {
+      if (hitFocused) break; // nothing draws above the focused rect
       if (
         Math.abs(px - center.x) <= w / 2 &&
         Math.abs(py - center.y) <= h / 2
       ) {
         hit = device.id; // later entries draw on top; keep the last hit
+        hitFocused = device.id === selectedDeviceId;
       }
     }
     return hit;
@@ -943,14 +950,6 @@ export function DisplayArea() {
       null
     );
   };
-
-  // Focus emphasis (Up/Down device cycling, and click-select share the
-  // same selectedDeviceId — see hotkeys.tsx): the rest of the devices
-  // recede rather than vanish, since Taylor hasn't decided whether focus
-  // should fully solo a device. Kept as one boolean gate on rect opacity
-  // below so a future true-solo mode is a one-line swap to `display:
-  // none` instead of a re-plumb.
-  const focused = selectedDeviceId !== null;
 
   return (
     <div
@@ -1013,19 +1012,20 @@ export function DisplayArea() {
         return (
         <div
           key={device.id}
-          className={cn(
-            "absolute -translate-x-1/2 -translate-y-1/2 transition-opacity duration-150",
-            // Dims everything but the focused device — label included,
-            // since it lives inside this same wrapper. Same de-emphasis
-            // weight as a hidden device's row in the comparison table.
-            focused && device.id !== selectedDeviceId && "opacity-45",
-          )}
+          className="absolute -translate-x-1/2 -translate-y-1/2"
           style={{
             left: center.x,
             top: center.y,
             width: w,
             height: h,
-            zIndex: i + 1,
+            // Stacking is otherwise `rects`' own area-descending sort
+            // (biggest device bottom, so a smaller nested one is legible
+            // on top by default). Focus overrides that for exactly one
+            // rect — raised above the whole stack — without touching
+            // anyone else's position in it: rects.length + 1 always
+            // clears every i + 1 below it, and nothing else's zIndex
+            // changes just because focus moved off it.
+            zIndex: device.id === selectedDeviceId ? rects.length + 1 : i + 1,
           }}
           // Same inspector-feeding hover as the 3D rects. enter/leave
           // (not over/out): descendants — boxes — must not re-fire it.
