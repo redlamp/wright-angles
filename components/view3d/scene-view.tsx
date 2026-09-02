@@ -927,6 +927,11 @@ export default function SceneView({
             target={orbitPose.target}
             maxPolarAngle={Math.PI / 2 - 0.05}
             maxDistance={farZ * 6}
+            // Wheel zoom homes in on the point under the cursor instead of
+            // the fixed target — reads the pointer via the same raycaster
+            // OrbitControls already uses for dollying, so it composes with
+            // minDistance/maxDistance/enableDamping with no extra wiring.
+            zoomToCursor
           />
         ) : null}
       </Canvas>
