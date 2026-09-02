@@ -1,14 +1,15 @@
 {
   "name": "wright-angles",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack -p 7841",
     "build": "next build",
     "start": "next start -p 7841",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "bun test",
+    "check-version": "node scripts/check-version.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -41,7 +42,7 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "packageManager": "bun@1.3.11",
+  "packageManager": "bun@1.4.0",
   "ignoreScripts": [
     "sharp",
     "unrs-resolver"
