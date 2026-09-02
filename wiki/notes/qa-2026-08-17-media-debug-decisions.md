@@ -1,9 +1,5 @@
 ---
-tags:
-  - domain/legibility
-  - domain/product
-  - status/adopted
-  - origin/taylor
+tags: [domain/legibility, domain/product, status/adopted, origin/taylor]
 ---
 
 # Q&A Decisions — Media Debug Track (2026-08-17)

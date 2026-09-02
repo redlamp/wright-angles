@@ -1,8 +1,5 @@
 ---
-tags:
-  - domain/3d-scene
-  - status/superseded
-  - origin/taylor
+tags: [domain/3d-scene, status/superseded, origin/taylor]
 ---
 
 # Prototype: Figure Rig Replacement
