@@ -35,6 +35,7 @@ import {
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
@@ -428,12 +429,18 @@ function PixelLoupe({
 const setDeviceHover = (h: DeviceHover | null) =>
   useAnnotationStore.getState().setDeviceHover(h);
 
-const boxBandColor = (worstArcmin: number) =>
-  worstArcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : worstArcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
+/** Muted neutral for a box no visible device actually shows (fit-cropped
+ * away everywhere) — there is no verdict to color it by. */
+const NO_VERDICT_COLOR = "#71717a59";
+
+const boxBandColor = (worstArcmin: number | null) =>
+  worstArcmin === null
+    ? NO_VERDICT_COLOR
+    : worstArcmin >= ACUITY.comfortableTextArcmin
+      ? "#46a758"
+      : worstArcmin >= ACUITY.minCriticalTextArcmin
+        ? "#f5a524"
+        : "#e5484d";
 
 /**
  * Highlight boxes over one device rect. Coordinates are normalized to
@@ -458,7 +465,8 @@ function BoxLayer({
   media: MediaItem;
   /** Measure boxes + active-keyframe lines, full-image normalized. */
   boxes: HighlightBox[];
-  worstByBox: Map<string, number>;
+  /** null = no visible device's fit shows this box; render it muted. */
+  worstByBox: Map<string, number | null>;
   /** Text-block ids for the global Groups color mode. */
   groupById: Map<string, number>;
   isHost: boolean;
@@ -486,7 +494,7 @@ function BoxLayer({
         const color =
           colorMode === "group" && gid !== undefined
             ? groupColor(gid)
-            : boxBandColor(worstByBox.get(b.id) ?? 99);
+            : boxBandColor(worstByBox.get(b.id) ?? null);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -664,7 +672,7 @@ export function DisplayArea() {
   // Keyframe lines measure with their group-corrected size when it
   // exists (descender-aware).
   const worstByBox = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, number | null>();
     if (!activeItem) return map;
     const devs = [
       ...(thisDevice.visible ? [thisDevice] : []),
@@ -676,20 +684,18 @@ export function DisplayArea() {
         if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
     for (const b of overlayBoxes) {
       const hNorm = kfSize.get(b.id) ?? b.h;
-      let worst = Infinity;
+      // Each device measures through ITS rendered crop (source crop
+      // reframed by the device's fit mode): that region is what lands
+      // on the panel, so the box height re-normalizes against it. A
+      // device whose fit crops the box away doesn't show it, so it
+      // can't drag the worst-case verdict either — and when EVERY
+      // visible device crops it away, the box has no verdict at all
+      // (null), not an infinitely-good one.
+      let worst: number | null = null;
       for (const d of devs) {
-        // Each device measures through ITS rendered crop (source crop
-        // reframed by the device's fit mode): that region is what lands
-        // on the panel, so the box height re-normalizes against it
-        // (h/c.h of the crop's height = the box's unchanged source-pixel
-        // height). A device whose fit crops the box away doesn't show
-        // it, so it can't drag the worst-case verdict either.
-        const c = deviceFitCrop(activeItem, d);
-        if (!boxInCrop(b, c)) continue;
-        worst = Math.min(
-          worst,
-          boxMetricsOnDevice(hNorm / c.h, cropDims(activeItem, c), d).arcmin,
-        );
+        const m = boxMetricsInCrop(b, hNorm, activeItem, d);
+        if (!m) continue;
+        worst = worst === null ? m.arcmin : Math.min(worst, m.arcmin);
       }
       map.set(b.id, worst);
     }

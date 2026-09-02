@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import {
   ACUITY,
   apparentWidthRatio,
-  boxMetricsOnDevice,
   contentPxToArcmin,
   deviceAngles,
   formatDistance,
@@ -24,13 +23,8 @@ import {
   clearCurrentKeyframeScan,
   detectTextForItem,
 } from "@/lib/scan-actions";
-import { boxInCrop } from "@/lib/media-crop";
-import {
-  deviceFitCrop,
-  fitLabel,
-  fitModeOf,
-  fitStretchNote,
-} from "@/lib/fit";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -507,11 +501,14 @@ export function PerceptionReportContent() {
                     {verdictDevices.map((d) => {
                       // Fit modes crop: a box the device's fit trims
                       // away isn't on that screen at all — show a muted
-                      // dash instead of a verdict.
-                      if (
-                        activeItem &&
-                        !boxInCrop(e.box, deviceFitCrop(activeItem, d))
-                      ) {
+                      // dash instead of a verdict. Measuring through the
+                      // device's actual rendered crop (not the intrinsic
+                      // image) also means a cropped-in box reads its
+                      // true, bigger size on that screen.
+                      const m = activeItem
+                        ? boxMetricsInCrop(e.box, e.h, activeItem, d)
+                        : null;
+                      if (!m) {
                         return (
                           <span
                             key={d.id}
@@ -526,7 +523,6 @@ export function PerceptionReportContent() {
                           </span>
                         );
                       }
-                      const m = boxMetricsOnDevice(e.h, activeItem!, d);
                       // A stretched panel distorts: the figure is the
                       // HEIGHT one, and the chip says so on hover.
                       const stretch = activeItem

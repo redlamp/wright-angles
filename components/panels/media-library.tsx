@@ -26,15 +26,14 @@ import type { Device, MediaCrop, MediaItem } from "@/lib/types";
 import {
   ACUITY,
   aspectFromResolution,
-  boxMetricsOnDevice,
   strokesSubAcuity,
 } from "@/lib/display-math";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
 import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
 import {
   ASPECT_PRESETS,
   aspectCrop,
-  boxInCrop,
   cropOf,
   cropsEqual,
   dragCrop,
@@ -788,12 +787,17 @@ interface ScanLine {
 }
 
 
-const scanBandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
+/** No visible-device verdict (this device's fit crops the line away). */
+const NO_VERDICT_COLOR = "#71717a59";
+
+const scanBandColor = (arcmin: number | null) =>
+  arcmin === null
+    ? NO_VERDICT_COLOR
+    : arcmin >= ACUITY.comfortableTextArcmin
+      ? "#46a758"
+      : arcmin >= ACUITY.minCriticalTextArcmin
+        ? "#f5a524"
+        : "#e5484d";
 
 /**
  * The useful data behind an OCR run: the image with each detected line
@@ -807,14 +811,9 @@ const scanLineColor = (
   thisDevice: Device,
 ): string => {
   if (mode === "group") return groupColor(line.groupId);
-  const crop = cropOf(item);
   const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-  const arcmin = boxMetricsOnDevice(
-    hNorm / crop.h,
-    effectiveDims(item),
-    thisDevice,
-  ).arcmin;
-  return scanBandColor(arcmin);
+  const m = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
+  return scanBandColor(m ? m.arcmin : null);
 };
 
 /**
@@ -923,8 +922,6 @@ function ScanResults({
     lines,
     showContrast && item.kind === "image",
   );
-  const crop = cropOf(item);
-  const eff = effectiveDims(item);
   // User-adjustable list height (session-local).
   const [listH, setListH] = useState(160);
   const resize = useRef<{ startY: number; base: number } | null>(null);
@@ -941,15 +938,19 @@ function ScanResults({
 
   const rows = lines
     .map((line, i) => {
-      const inCrop = boxInCrop(line.box, crop);
       // Group-corrected height when available (descender-aware, plan
-      // 7.2), else the raw ink box.
+      // 7.2), else the raw ink box. Measured through This Device's
+      // actual rendered crop (source crop, then its fit mode) — a fill
+      // mode's crop can exclude a line the source crop alone wouldn't.
       const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-      const arcmin = boxMetricsOnDevice(hNorm / crop.h, eff, thisDevice).arcmin;
+      const metrics = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
       const shownPx = Math.round(line.sizePx ?? line.box.h * item.height);
-      return { line, i, inCrop, arcmin, shownPx };
+      return { line, i, metrics, shownPx };
     })
-    .filter((r) => r.inCrop !== null);
+    .filter(
+      (r): r is typeof r & { metrics: NonNullable<typeof r.metrics> } =>
+        r.metrics !== null,
+    );
 
   return (
     <div className="space-y-1">
@@ -958,7 +959,7 @@ function ScanResults({
         className="space-y-0.5 overflow-y-auto"
         style={{ height: listH }}
       >
-        {rows.map(({ line, i, arcmin, shownPx }) => (
+        {rows.map(({ line, i, metrics, shownPx }) => (
           <button
             key={line.id}
             data-box-id={line.id}
@@ -988,7 +989,7 @@ function ScanResults({
                 background:
                   colorMode === "group"
                     ? groupColor(line.groupId)
-                    : scanBandColor(arcmin),
+                    : scanBandColor(metrics.arcmin),
               }}
             />
             <span className="w-5 shrink-0 font-mono text-sm text-muted-foreground">
@@ -1015,12 +1016,12 @@ function ScanResults({
             ) : null}
             <span
               className="shrink-0 font-mono text-sm"
-              style={{ color: scanBandColor(arcmin) }}
+              style={{ color: scanBandColor(metrics.arcmin) }}
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
-              {arcmin.toFixed(0)}′
+              {metrics.arcmin.toFixed(0)}′
             </span>
-            {strokesSubAcuity(arcmin) ? (
+            {strokesSubAcuity(metrics.arcmin) ? (
               <span
                 className="shrink-0"
                 title="Strokes render below 1′ on This Device — letterforms lose their detail at this distance"
