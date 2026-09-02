@@ -62,13 +62,21 @@ import type {
  * estimated from the outer/inner delta (borders split left/right, the
  * rest is the title/tab bar). Polled — there is no window-move event.
  */
+type ScreenViewport = {
+  clientX: number;
+  clientY: number;
+  screenW: number;
+  screenH: number;
+} | null;
+
 export function useScreenViewport() {
-  const [vp, setVp] = useState<{
-    clientX: number;
-    clientY: number;
-    screenW: number;
-    screenH: number;
-  } | null>(null);
+  const [vp, setVp] = useState<ScreenViewport>(null);
+  // Mirrors the last value OUTSIDE React state so "did it move" can be
+  // computed synchronously, in plain code — not by reading a variable an
+  // updater function assigns as a side effect, which only works when
+  // React happens to run that updater eagerly (it isn't a guaranteed
+  // contract of setState).
+  const vpRef = useRef<ScreenViewport>(null);
 
   useEffect(() => {
     // Adaptive cadence: idle at 2Hz, but the moment the window moves,
@@ -100,21 +108,19 @@ export function useScreenViewport() {
         screenW: s.width,
         screenH: s.height,
       };
-      let moved = false;
-      setVp((prev) => {
-        if (
-          prev &&
-          prev.clientX === next.clientX &&
-          prev.clientY === next.clientY &&
-          prev.screenW === next.screenW &&
-          prev.screenH === next.screenH
-        ) {
-          return prev;
-        }
-        moved = prev !== null;
-        return next;
-      });
-      if (moved) lastMoveAt = performance.now();
+      const prev = vpRef.current;
+      const unchanged =
+        prev &&
+        prev.clientX === next.clientX &&
+        prev.clientY === next.clientY &&
+        prev.screenW === next.screenW &&
+        prev.screenH === next.screenH;
+      if (!unchanged) {
+        const moved = prev !== null;
+        vpRef.current = next;
+        setVp(next);
+        if (moved) lastMoveAt = performance.now();
+      }
       const fast = performance.now() - lastMoveAt < SETTLE_MS;
       timer = window.setTimeout(read, fast ? FAST_MS : IDLE_MS);
     };
