@@ -57,7 +57,9 @@ export function downloadSetup() {
   a.href = url;
   a.download = `wright-angles-setup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
-  URL.revokeObjectURL(url);
+  // Deferred: revoking synchronously after click() can beat Firefox/
+  // Safari to actually starting the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** A finite, positive {w,h} pair — a resolution or aspect ratio. */

@@ -686,7 +686,9 @@ export default function SceneView({
       a.href = url;
       a.download = `wright-angles-3d-${new Date().toISOString().slice(0, 10)}.png`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Deferred: revoking synchronously after click() can beat Firefox/
+      // Safari to actually starting the download.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }, "image/png");
   };
 

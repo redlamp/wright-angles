@@ -939,7 +939,9 @@ export function DisplayArea() {
     a.href = url;
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Deferred: revoking synchronously after click() can beat Firefox/
+    // Safari to actually starting the download.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
   /**
