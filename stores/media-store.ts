@@ -12,6 +12,7 @@ import {
   idbClearMedia,
   idbDeleteMedia,
   idbGetAllMedia,
+  idbGetMedia,
   idbPutMedia,
 } from "@/lib/idb";
 import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
@@ -22,14 +23,18 @@ const newId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
+/** Re-write one item's metadata beside its stored blob(s), by id — a
+ * single-record read/write, not a scan of the whole library. */
+function persistItemMeta(item: MediaItem) {
+  void idbGetMedia(item.id).then((rec) => {
+    if (rec) void idbPutMedia(item.id, { ...rec, meta: item });
+  });
+}
+
 /** Re-write an item's metadata beside its stored blob(s). */
 function persistMeta(get: () => { items: MediaItem[] }, id: string) {
   const item = get().items.find((i) => i.id === id);
-  if (!item) return;
-  void idbGetAllMedia().then((records) => {
-    const rec = records.find((r) => r.meta.id === id);
-    if (rec) void idbPutMedia(id, { ...rec, meta: item });
-  });
+  if (item) persistItemMeta(item);
 }
 
 /** Intrinsic pixel size of an image blob. */
@@ -547,6 +552,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   reorderItem: (id, toIndex) => {
+    // Captured from the set() updater so the persist pass below reuses
+    // the freshly-reordered items directly — one pass over the array
+    // it already computed, not an O(n) re-lookup (and idbGetAllMedia
+    // whole-library read) per item.
+    let reordered: MediaItem[] = [];
     set((s) => {
       const from = s.items.findIndex((i) => i.id === id);
       if (from < 0) return s;
@@ -554,9 +564,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       const [moved] = items.splice(from, 1);
       items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
       // The array order becomes the persisted manual order.
-      return { items: items.map((i, idx) => ({ ...i, sortIndex: idx })) };
+      reordered = items.map((i, idx) => ({ ...i, sortIndex: idx }));
+      return { items: reordered };
     });
-    for (const i of get().items) persistMeta(get, i.id);
+    for (const item of reordered) persistItemMeta(item);
   },
 
   clearDetection: (id) => {
