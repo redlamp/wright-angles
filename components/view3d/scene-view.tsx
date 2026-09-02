@@ -153,6 +153,18 @@ function ImageScreens({
 }) {
   const tex = useLoader(TextureLoader, url);
   const texs = useCropTextures(tex, crop, fitCrops);
+  // useCropTextures already disposes its own clones; the BASE texture
+  // (r3f's cache, keyed by url) is this component's to dispose — on
+  // unmount, and again whenever url changes (the old texture's own
+  // cleanup, since `tex` and `url` change together). Clearing the r3f
+  // loader cache alongside the dispose stops a later re-visit to the
+  // same url handing back an already-disposed texture.
+  useEffect(() => {
+    return () => {
+      tex.dispose();
+      useLoader.clear(TextureLoader, url);
+    };
+  }, [tex, url]);
   return <>{children(texs)}</>;
 }
 
@@ -223,21 +235,48 @@ function EngineGifScreens({
 }
 
 /**
+ * Live window inner size. The head-on FOV/pose below read
+ * window.innerWidth/innerHeight directly (outside any event this
+ * component otherwise subscribes to), so without this they'd go stale
+ * the moment the window is resized with nothing else triggering a
+ * re-render — subscribing to `resize` is all this hook is for.
+ */
+function useWindowSize() {
+  const [size, setSize] = useState(() =>
+    typeof window === "undefined"
+      ? { w: 0, h: 0 }
+      : { w: window.innerWidth, h: window.innerHeight },
+  );
+  useEffect(() => {
+    const onResize = () =>
+      setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
+
+/**
  * Vertical fov that makes the head-on camera see exactly what the 2D view
  * shows in this window: the window height mapped through the 2D scale into
  * device pixels, then through the panel's pixel pitch into physical size,
  * subtended from the viewing distance. This is what makes the 2D↔3D swap
  * land without a visual jump.
  */
-function headOnFovDeg(thisDevice: Device, displayMode: DisplayMode): number {
-  if (typeof window === "undefined") return 40;
+function headOnFovDeg(
+  thisDevice: Device,
+  displayMode: DisplayMode,
+  winW: number,
+  winH: number,
+): number {
+  if (typeof window === "undefined" || winW <= 0 || winH <= 0) return 40;
   const res = thisDevice.resolution;
   const k =
     displayMode === "viewport"
       ? window.screen.width / res.w
-      : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+      : Math.min(winW / res.w, winH / res.h);
   if (!k) return 40;
-  const visibleDevicePx = window.innerHeight / k;
+  const visibleDevicePx = winH / k;
   const { heightCm } = physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect);
   const physH = (visibleDevicePx / res.h) * heightCm;
   const fov =
@@ -614,10 +653,13 @@ export default function SceneView({
     fov: 40,
   }));
   // Head-on pose tracks the live eye height and the 2D view's actual
-  // visible angle so both ends of the transition line up with 2D.
+  // visible angle so both ends of the transition line up with 2D —
+  // winSize keeps it (and headOnX/Y below) in sync across a resize
+  // instead of going stale until something else re-renders this.
+  const winSize = useWindowSize();
   const fov = useMemo(
-    () => headOnFovDeg(thisDevice, displayMode),
-    [thisDevice, displayMode],
+    () => headOnFovDeg(thisDevice, displayMode, winSize.w, winSize.h),
+    [thisDevice, displayMode, winSize],
   );
   // The flight lands on WHATEVER 2D's framing is (Taylor 2026-08-17):
   // replicate the 2D content-center offset from the window center —
@@ -630,19 +672,19 @@ export default function SceneView({
   const vp = useScreenViewport();
   let headOnX = 0;
   let headOnY = 0;
-  if (typeof window !== "undefined") {
+  if (winSize.w > 0 && winSize.h > 0) {
     const res = thisDevice.resolution;
     const viewportActive = displayMode === "viewport" && vp !== null;
     let dxPx = panOffset.x;
     let dyPx = panOffset.y;
     if (viewportActive && vp && displayCenter === "screen") {
-      dxPx += vp.screenW / 2 - vp.clientX - window.innerWidth / 2;
-      dyPx += vp.screenH / 2 - vp.clientY - window.innerHeight / 2;
+      dxPx += vp.screenW / 2 - vp.clientX - winSize.w / 2;
+      dyPx += vp.screenH / 2 - vp.clientY - winSize.h / 2;
     }
     const k =
       viewportActive && vp
         ? vp.screenW / res.w
-        : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+        : Math.min(winSize.w / res.w, winSize.h / res.h);
     if (k > 0) {
       const cmPerCss =
         physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect).heightCm /

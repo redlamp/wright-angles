@@ -530,6 +530,13 @@ export default function DeviceRect({
     prevPoseKey.current = poseKey;
   }, [centerY, poseKey]);
 
+  // setBodyCursor writes to document.body, outside this component's own
+  // DOM — if it unmounts (device removed, media changes the tree) mid
+  // hover/drag, nothing else clears that cursor back to normal.
+  useEffect(() => {
+    return () => setBodyCursor("");
+  }, []);
+
   useFrame((state) => {
     const a = anim.current;
     if (a) {

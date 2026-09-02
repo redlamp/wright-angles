@@ -1327,18 +1327,33 @@ function DetailCard({ item }: { item: MediaItem }) {
     useMediaStore.getState().items.find((i) => i.id === item.id)
       ?.scanKeyframes ?? [];
 
+  // DetailCard is keyed by item.id (MediaLibraryContent), so switching
+  // the active item unmounts this instance outright while a detect()/
+  // scanAll() may still be mid-await — guard every setState after an
+  // await so a finishing scan for an item the user has since left
+  // doesn't write into a component that's gone. The scan itself (it
+  // persists straight to the store, keyed by item.id) still runs to
+  // completion either way.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const detect = async () => {
     if (scanRunning) return;
     setScanRunning(true);
     setScanFailed(false);
     try {
       await detectTextForItem(item.id);
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setScanRunning(false);
+      if (aliveRef.current) setScanRunning(false);
     }
   };
 
@@ -1349,16 +1364,20 @@ function DetailCard({ item }: { item: MediaItem }) {
     try {
       const pending = freshKeyframes().filter((k) => !k.lines);
       for (let i = 0; i < pending.length; i++) {
-        setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        if (aliveRef.current) {
+          setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        }
         await scanKeyframeAt(item.id, pending[i].timeSec);
       }
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Batch text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setBatchNote(null);
-      setScanRunning(false);
+      if (aliveRef.current) {
+        setBatchNote(null);
+        setScanRunning(false);
+      }
     }
   };
 
