@@ -10,7 +10,7 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
 
 ## Active
 
-- v0.7.0 live (2026-08-20); dev ahead by fit modes, offsets/tilt, the
+- v0.8.0 live (2026-09-02); dev at 0.9.0 — promotion on Taylor's word.
   handheld grip work, calibration, arrow navigation and auto-OCR —
   promotion on Taylor's word.
 - Work is tracked in GitHub issues from 2026-08-20 onward; the wiki keeps
