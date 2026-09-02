@@ -63,6 +63,27 @@ const PITCH_SUBSTEP = Math.PI / 256;
 
 const inRange = (phi: number, min: number, max: number) => phi >= min && phi <= max;
 
+const FORWARD = new Vector3(0, 0, -1);
+
+/**
+ * Polar angle of the VIEW DIRECTION — what OrbitControls will measure
+ * once the drag hands off, because the handoff target sits on the
+ * forward axis (offset = −forward·d, so offset.y/len = −forward.y).
+ * The pivot is off that axis, so clamping the camera's position around
+ * the pivot alone is not enough: a click on the floor near the bottom
+ * of the screen, dragged up, could leave the camera level with the
+ * pivot yet looking above the horizon — and OrbitControls would snap
+ * it back on release. Both angles have to stay in range.
+ */
+export function viewPolarAngle(quaternion: Quaternion): number {
+  const f = FORWARD.clone().applyQuaternion(quaternion);
+  return Math.acos(Math.min(1, Math.max(-1, -f.y)));
+}
+
+const poseInRange = (pose: RigidPose, pivot: Vector3, min: number, max: number) =>
+  inRange(polarAngleFromY(pose.position.clone().sub(pivot)), min, max) &&
+  inRange(viewPolarAngle(pose.quaternion), min, max);
+
 /**
  * One drag-move step: yaw the camera around `pivot` about world +Y, then
  * pitch it about the post-yaw local right axis, clamping so the resulting
@@ -103,8 +124,7 @@ export function stepPivotOrbit(params: {
   let appliedPitch = 0;
   for (let i = 0; i < steps; i++) {
     const candidate = rotateRigidAroundPivot(pose, pivot, right, microAngle);
-    const phi = polarAngleFromY(candidate.position.clone().sub(pivot));
-    if (inRange(phi, minPolarAngle, maxPolarAngle)) {
+    if (poseInRange(candidate, pivot, minPolarAngle, maxPolarAngle)) {
       pose = candidate;
       appliedPitch += microAngle;
       continue;
@@ -116,10 +136,8 @@ export function stepPivotOrbit(params: {
     let hi = microAngle;
     for (let k = 0; k < 20; k++) {
       const mid = (lo + hi) / 2;
-      const midPhi = polarAngleFromY(
-        rotateRigidAroundPivot(pose, pivot, right, mid).position.clone().sub(pivot),
-      );
-      if (inRange(midPhi, minPolarAngle, maxPolarAngle)) lo = mid;
+      const midPose = rotateRigidAroundPivot(pose, pivot, right, mid);
+      if (poseInRange(midPose, pivot, minPolarAngle, maxPolarAngle)) lo = mid;
       else hi = mid;
     }
     pose = rotateRigidAroundPivot(pose, pivot, right, lo);

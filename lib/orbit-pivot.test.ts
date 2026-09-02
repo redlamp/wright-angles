@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { Quaternion, Vector3 } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 import {
   computeHandoffTarget,
   polarAngleFromY,
   rotateRigidAroundPivot,
   stepPivotOrbit,
+  viewPolarAngle,
 } from "./orbit-pivot";
 
 const HALF_PI = Math.PI / 2;
@@ -150,5 +151,46 @@ describe("computeHandoffTarget", () => {
     const pivot = new Vector3(0, 0, 5); // behind the camera relative to forward
     const target = computeHandoffTarget(cameraPosition, forward, pivot, 0.5);
     expect(target.distanceTo(cameraPosition)).toBeCloseTo(0.5, 5);
+  });
+});
+
+describe("stepPivotOrbit with an off-axis pivot", () => {
+  // Camera above and behind the origin, looking slightly DOWN at a
+  // point on its axis; the pivot (a click on the floor) sits below
+  // that axis. This is the "click the floor near the bottom of the
+  // screen and drag" case.
+  const position = new Vector3(0, 5, 10);
+  const quaternion = new Quaternion().setFromRotationMatrix(
+    new Matrix4().lookAt(position, new Vector3(0, 3, 0), new Vector3(0, 1, 0)),
+  );
+  const pivot = new Vector3(0, 0, 0);
+  const min = 0.05;
+  const max = HALF_PI - 0.05;
+
+  test("the view direction stays inside OrbitControls' polar range in both pitch directions", () => {
+    for (const pitch of [1.2, -1.2]) {
+      const r = stepPivotOrbit({
+        position, quaternion, pivot, yaw: 0, pitch,
+        minPolarAngle: min, maxPolarAngle: max,
+      });
+      const view = viewPolarAngle(r.quaternion);
+      expect(view).toBeGreaterThanOrEqual(min - 1e-6);
+      expect(view).toBeLessThanOrEqual(max + 1e-6);
+      const about = polarAngleFromY(r.position.clone().sub(pivot));
+      expect(about).toBeGreaterThanOrEqual(min - 1e-6);
+      expect(about).toBeLessThanOrEqual(max + 1e-6);
+    }
+  });
+
+  test("the handoff target then reproduces the same polar angle for OrbitControls", () => {
+    const r = stepPivotOrbit({
+      position, quaternion, pivot, yaw: 0.3, pitch: -1.2,
+      minPolarAngle: min, maxPolarAngle: max,
+    });
+    const forward = new Vector3(0, 0, -1).applyQuaternion(r.quaternion);
+    const target = computeHandoffTarget(r.position, forward, pivot);
+    const orbitPolar = polarAngleFromY(r.position.clone().sub(target));
+    expect(orbitPolar).toBeCloseTo(viewPolarAngle(r.quaternion), 6);
+    expect(orbitPolar).toBeLessThanOrEqual(max + 1e-6);
   });
 });
