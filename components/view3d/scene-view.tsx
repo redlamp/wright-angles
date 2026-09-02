@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, VideoTexture, type Group, type Texture, Raycaster, Ray, type Object3D } from "three";
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, VideoTexture, type Group, type Texture, Raycaster, Ray, type Camera, type Object3D } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
@@ -56,11 +56,13 @@ function markTextureDirty(tex: Texture) {
 }
 
 /** True when `target` is the first visible mesh along `ray` in its scene. */
-function isNearestHit(target: Object3D, ray: Ray): boolean {
+function isNearestHit(target: Object3D, ray: Ray, camera: Camera): boolean {
   let root: Object3D = target;
   while (root.parent) root = root.parent;
   const rc = new Raycaster();
   rc.ray.copy(ray);
+  // drei's <Line> (LineSegments2) refuses to raycast without a camera.
+  rc.camera = camera;
   const hit = rc
     .intersectObjects(root.children, true)
     .find((h) => (h.object as { isMesh?: boolean }).isMesh && isShown(h.object));
@@ -863,7 +865,7 @@ export default function SceneView({
             // the ray and lists only those in e.intersections, so a couch
             // or the figure (no handlers) would not block it; raycast the
             // whole scene instead and insist the ground is the nearest.
-            if (!controlsOn || !isNearestHit(e.object, e.ray)) return;
+            if (!controlsOn || !isNearestHit(e.object, e.ray, e.camera)) return;
             e.stopPropagation();
             setRecenter((n) => n + 1);
           }}
