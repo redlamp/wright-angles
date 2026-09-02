@@ -1008,6 +1008,20 @@ export function DisplayArea() {
           selectDevice(hit === selectedDeviceId ? null : hit);
         }
       }}
+      onPointerCancel={() => {
+        // The gesture was interrupted (browser gesture takeover, a
+        // window losing focus mid-drag, …) — just clear the drag, never
+        // treat it as a click-select.
+        panDrag.current = null;
+        setPanning(false);
+      }}
+      onLostPointerCapture={() => {
+        // Capture can be lost without either pointerup or pointercancel
+        // firing (e.g. another element steals it) — same treatment:
+        // clear the drag, no click-select.
+        panDrag.current = null;
+        setPanning(false);
+      }}
       onDoubleClick={(e) => {
         if (drawMode || onInteractive(e.target)) return;
         setPanOffset({ x: 0, y: 0 });
