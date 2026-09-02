@@ -6,6 +6,7 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
 
 - [[decisions]] — architectural and product decisions
 - [[research]] — external references and prior art
+- [[plans]] — plans, reports, reviews, and prototypes
 
 ## Active
 
