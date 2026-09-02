@@ -15,7 +15,8 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
   promotion on Taylor's word.
 - Work is tracked in GitHub issues from 2026-08-20 onward; the wiki keeps
   decisions, research and test plans.
-- [[test-plan-2026-08-21-first-run]] — current test pass
+- [[test-plan-2026-09-02-review-fixes]] — current test pass
+- [[test-plan-2026-08-21-first-run]] — still current; never QA'd
 - [[test-plan-2026-08-20-device-fit]] — superseded
 - [[plan-display-setup-wizard]] — draft, awaiting review
 - [[screen-auto-detection]] — why no browser API gives physical size
