@@ -402,7 +402,9 @@ export default function ViewerFigure({
   });
 
   return (
-    <group ref={rootRef}>
+    // Ctrl+drag orbit pivots on the figure at its feet, not the clicked
+    // limb (see pivot-orbit.tsx).
+    <group ref={rootRef} userData={{ orbitPivot: "base" }}>
       <mesh material={FIGURE_MAT} position={[0, 2, 0]} rotation={[0, 0, Math.PI / 2]}>
         <capsuleGeometry args={[9, 8, 4, 12]} />
       </mesh>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DoubleSide, Group, Raycaster, Vector2, Vector3, type Object3D } from "three";
+import { Box3, DoubleSide, Group, Raycaster, Vector2, Vector3, type Object3D } from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { computeHandoffTarget, stepPivotOrbit } from "@/lib/orbit-pivot";
 
@@ -12,14 +12,23 @@ interface ControlsLike {
 }
 
 /**
- * Hand-rolled left-drag orbit: pressing the left mouse button pivots the
- * camera around the 3D point that was under the cursor at press time,
- * instead of OrbitControls' fixed `target` — setting `target` to the hit
- * point would make OrbitControls re-aim the camera at it immediately, a
- * visible jump. OrbitControls (`enableRotate={false}`) keeps wheel zoom and
- * right/middle-button pan; this component owns rotation only, and only
- * while `active` (the orbit pose has settled — no camera-rig fly-in/out in
- * progress).
+ * Ctrl+left-drag orbit: pivots the camera around the 3D point that was
+ * under the cursor at press time, instead of OrbitControls' fixed
+ * `target` — setting `target` to the hit point would make OrbitControls
+ * re-aim the camera at it immediately, a visible jump. A plain drag is
+ * still drei's own orbit (Taylor 2026-09-02: "default orbit is drei,
+ * Ctrl+drag pins the clicked location"). Active only while `active` (the
+ * orbit pose has settled — no camera-rig fly-in/out in progress).
+ *
+ * The pivot is the hit point on a device rect, but on the furniture and
+ * the viewer figure it snaps to the model's BOTTOM-CENTRE — the base of
+ * the couch, the figure's feet — found via an ancestor tagged
+ * `userData.orbitPivot === "base"`. Orbiting a cushion corner reads as
+ * arbitrary; orbiting the couch reads as intended.
+ *
+ * The pointerdown listener runs in the CAPTURE phase and stops
+ * propagation, because OrbitControls treats Ctrl+left as a pan and
+ * listens on the same element.
  *
  * On release, hands the camera back to OrbitControls with no jump: its
  * `target` is set to the point on the camera's current view axis at the
@@ -108,7 +117,7 @@ export default function PivotOrbit({
     const onPointerDown = (e: PointerEvent) => {
       if (!activeRef.current) return;
       if (e.button !== 0) return;
-      if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
 
       const controls = get().controls as unknown as ControlsLike | null;
       if (!controls) return;
@@ -135,10 +144,16 @@ export default function PivotOrbit({
 
       const sceneHits = raycaster.current.intersectObjects(scene.children, true);
       const meshHit = sceneHits.find(
-        (h) => (h.object as { isMesh?: boolean }).isMesh && h.object.visible,
+        (h) => (h.object as { isMesh?: boolean }).isMesh && isShown(h.object),
       );
       if (meshHit) {
-        pivot.current.copy(meshHit.point);
+        const base = baseAncestor(meshHit.object);
+        if (base) {
+          const box = new Box3().setFromObject(base);
+          pivot.current.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+        } else {
+          pivot.current.copy(meshHit.point);
+        }
       } else {
         // Empty-sky drag: pivot on the pointer ray at the same distance
         // controls.target currently sits at, so it behaves like today.
@@ -148,6 +163,9 @@ export default function PivotOrbit({
           .addScaledVector(raycaster.current.ray.direction, dist);
       }
 
+      // Ours, not OrbitControls' pan.
+      e.stopImmediatePropagation();
+      e.preventDefault();
       dragging.current = true;
       // Hand the camera to this component outright for the drag; see
       // endDrag for why OrbitControls must not run update() meanwhile.
@@ -187,13 +205,13 @@ export default function PivotOrbit({
       endDrag();
     };
 
-    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointerdown", onPointerDown, { capture: true });
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("pointercancel", onPointerUp);
     el.addEventListener("lostpointercapture", onLostPointerCapture);
     return () => {
-      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointerdown", onPointerDown, { capture: true });
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("pointercancel", onPointerUp);
@@ -202,6 +220,21 @@ export default function PivotOrbit({
   }, [gl, camera, scene, get, invalidate, minPolarAngle, maxPolarAngle, rotateSpeed]);
 
   return shownPivot ? <PivotMarker position={shownPivot} /> : null;
+}
+
+/** Visible, and every ancestor visible (a hidden furniture group still
+ * has visible meshes inside it). */
+function isShown(o: Object3D): boolean {
+  for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+
+/** Nearest ancestor (self included) tagged to pivot at its base. */
+function baseAncestor(o: Object3D): Object3D | null {
+  for (let p: Object3D | null = o; p; p = p.parent) {
+    if (p.userData?.orbitPivot === "base") return p;
+  }
+  return null;
 }
 
 /** Fraction of the camera distance the marker spans: constant on screen. */

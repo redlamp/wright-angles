@@ -201,6 +201,12 @@ function Couch({ mats }: { mats: MatSet }) {
  * while the outgoing one sinks and fades out, driven imperatively in
  * useFrame — no setState, groups hidden entirely once fully out.
  */
+/**
+ * Ctrl+drag orbit pivots on a piece of furniture at its BOTTOM-CENTRE,
+ * not the clicked spot on a cushion (see pivot-orbit.tsx).
+ */
+const ORBIT_BASE = { orbitPivot: "base" } as const;
+
 export default function ScenarioProps({
   scenario,
   inputType,
@@ -248,14 +254,14 @@ export default function ScenarioProps({
     // Visibility/scale/opacity are owned by applyFurniture; the first
     // useFrame runs before the first paint, so nothing flashes on mount.
     <>
-      <group ref={deskRef}>
+      <group ref={deskRef} userData={ORBIT_BASE}>
         <DeskChair mats={DESK_MATS} />
         <Desk mats={DESK_MATS} />
       </group>
-      <group ref={couchRef}>
+      <group ref={couchRef} userData={ORBIT_BASE}>
         <Couch mats={COUCH_MATS} />
       </group>
-      <group ref={standRef}>
+      <group ref={standRef} userData={ORBIT_BASE}>
         <StandingDesk mats={STAND_MATS} />
       </group>
     </>

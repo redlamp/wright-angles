@@ -65,8 +65,8 @@ function markTextureDirty(tex: Texture) {
 
 /**
  * Orbit polar-angle bounds (radians from world +Y), shared by OrbitControls
- * (pan/zoom/touch-rotate) and PivotOrbit (left-drag rotate) so the two
- * gestures clamp identically. maxPolarAngle keeps the camera from diving
+ * (plain drag rotate, pan, zoom) and PivotOrbit (Ctrl+drag rotate about
+ * the clicked point) so the two gestures clamp identically. maxPolarAngle keeps the camera from diving
  * under the floor; minPolarAngle keeps it shy of looking straight down.
  */
 const MIN_POLAR_ANGLE = 0.05;
@@ -944,12 +944,9 @@ export default function SceneView({
               // OrbitControls already uses for dollying, so it composes with
               // minDistance/maxDistance/enableDamping with no extra wiring.
               zoomToCursor
-              // Rotation is PivotOrbit's job (orbits the point under the
-              // cursor at press time, not this fixed target); OrbitControls
-              // keeps wheel zoom and right/middle-button pan. Note this also
-              // disables OrbitControls' one-finger touch rotate — see
-              // pivot-orbit.tsx's doc comment.
-              enableRotate={false}
+              // Plain drag rotates about the target as drei always has;
+              // Ctrl+drag is intercepted by PivotOrbit below (Taylor
+              // 2026-09-02: default orbit is drei, Ctrl pins the click).
             />
             <PivotOrbit
               active={!nodeDragging}
