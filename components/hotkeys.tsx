@@ -73,7 +73,7 @@ const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
   { keys: "1 / 2 / 3", does: "Stance: Standing · On a couch · At a desk" },
   { keys: "Q / W / E", does: "Input: Handheld · Gamepad · Mouse & KB" },
   { keys: "Drag", does: "Pan the 2D composition (click selects)" },
-  { keys: "Double-click", does: "Recenter the 2D composition" },
+  { keys: "Double-click", does: "Recenter 2D · on the ground, reset the 3D camera" },
   { keys: "Esc", does: "Deselect / close this sheet" },
   { keys: "← / →", does: "Previous / next media in the library" },
   { keys: "↑ / ↓", does: "Focus previous / next visible device" },

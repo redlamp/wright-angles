@@ -50,6 +50,7 @@ export default function CameraRig({
   instant,
   onExited,
   onControlsChange,
+  recenter = 0,
 }: {
   orbitPose: CameraPose;
   headOnPose: CameraPose;
@@ -58,6 +59,9 @@ export default function CameraRig({
   instant?: boolean;
   onExited?: () => void;
   onControlsChange: (enabled: boolean) => void;
+  /** Bump to fly back to the orbit pose from wherever the user left the
+   * camera (double-click on the ground). Ignored mid-exit. */
+  recenter?: number;
 }) {
   const camera = useThree((s) => s.camera);
   const get = useThree((s) => s.get);
@@ -139,6 +143,32 @@ export default function CameraRig({
       };
     }
   }, [exiting, camera, get, onControlsChange]);
+
+  // Recenter: same fly as the entry, from wherever OrbitControls left the
+  // camera. Skipped on mount (the prop's initial value is not a request)
+  // and while an exit is in flight — the exit owns the camera then.
+  const lastRecenter = useRef(recenter);
+  useEffect(() => {
+    if (recenter === lastRecenter.current) return;
+    lastRecenter.current = recenter;
+    if (anim.current?.mode === "exit") return;
+    onControlsChange(false);
+    const controls = get().controls as unknown as { target?: Vector3 } | null;
+    const fromTarget = (controls?.target ?? lookTarget.current).clone();
+    lookTarget.current.copy(fromTarget);
+    const o = poses.current.orbitPose;
+    anim.current = {
+      mode: "enter",
+      fromPos: camera.position.clone(),
+      fromTarget,
+      toPos: new Vector3(...o.position),
+      toTarget: new Vector3(...o.target),
+      fromFov: (camera as PerspectiveCamera).fov,
+      toFov: o.fov,
+      start: null,
+      duration: ENTER_S,
+    };
+  }, [recenter, camera, get, onControlsChange]);
 
   useFrame((state) => {
     const a = anim.current;

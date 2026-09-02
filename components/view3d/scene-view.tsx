@@ -8,15 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  CanvasTexture,
-  RepeatWrapping,
-  SRGBColorSpace,
-  TextureLoader,
-  VideoTexture,
-  type Group,
-  type Texture,
-} from "three";
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, VideoTexture, type Group, type Texture, Raycaster, Ray, type Object3D } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
@@ -61,6 +53,23 @@ import { SCENE_PALETTES } from "./scene-palette";
 /** Module-level so the react-compiler lint permits the mutation. */
 function markTextureDirty(tex: Texture) {
   tex.needsUpdate = true;
+}
+
+/** True when `target` is the first visible mesh along `ray` in its scene. */
+function isNearestHit(target: Object3D, ray: Ray): boolean {
+  let root: Object3D = target;
+  while (root.parent) root = root.parent;
+  const rc = new Raycaster();
+  rc.ray.copy(ray);
+  const hit = rc
+    .intersectObjects(root.children, true)
+    .find((h) => (h.object as { isMesh?: boolean }).isMesh && isShown(h.object));
+  return hit?.object === target;
+}
+
+function isShown(o: Object3D): boolean {
+  for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
 }
 
 /**
@@ -715,6 +724,10 @@ export default function SceneView({
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
+  // Double-click on the ground flies the camera back to the orbit pose
+  // (Taylor 2026-09-02) — the 3D counterpart of 2D's double-click
+  // recenter. A counter, so every double-click is a fresh request.
+  const [recenter, setRecenter] = useState(0);
   // App-wide selection (shared with the comparison table and 2D view).
   const selectedId = useUiStore((s) => s.selectedDeviceId);
   const selectDevice = useUiStore((s) => s.selectDevice);
@@ -842,7 +855,19 @@ export default function SceneView({
       >
         <color attach="background" args={[palette.bg]} />
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          onDoubleClick={(e) => {
+            // Only when the ground is what was actually under the cursor.
+            // r3f delivers the event to every handler-bearing object along
+            // the ray and lists only those in e.intersections, so a couch
+            // or the figure (no handlers) would not block it; raycast the
+            // whole scene instead and insist the ground is the nearest.
+            if (!controlsOn || !isNearestHit(e.object, e.ray)) return;
+            e.stopPropagation();
+            setRecenter((n) => n + 1);
+          }}
+        >
           <planeGeometry args={[4000, 4000]} />
           <meshBasicMaterial color={palette.ground} />
         </mesh>
@@ -926,6 +951,7 @@ export default function SceneView({
           instant={instant}
           onExited={onExited}
           onControlsChange={setControlsOn}
+          recenter={recenter}
         />
         {/* Mounted only while the rig is idle so its update loop never
             fights the fly-in/out; on remount it re-syncs from the camera. */}
