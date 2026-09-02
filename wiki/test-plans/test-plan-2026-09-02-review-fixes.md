@@ -273,6 +273,13 @@ pose (fly-in finished).
 11. Right-drag. **Expect:** pan unchanged. [ ]
 12. Ctrl-orbit, then Tab to 2D. **Expect:** the exit fly aims correctly
     and the head-on pose lines up with 2D. [ ]
+13. Orbit and zoom somewhere odd, then double-click the ground.
+    **Expect:** the camera flies back to the default orbit pose (same
+    tween as the 2D→3D entry); controls work again once it lands. [ ]
+14. Double-click a device rect, the couch, and the figure. **Expect:**
+    nothing happens to the camera. [ ]
+15. `?` cheat sheet. **Expect:** the Double-click row mentions the 3D
+    reset. [ ]
 
 ## 3. Also new on dev, no QA needed but be aware
 
