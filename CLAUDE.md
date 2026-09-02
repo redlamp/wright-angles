@@ -23,14 +23,18 @@ conflict before coding.
 - `bun run dev` — dev server on port 7841 (pinned)
 - `bun test` — unit tests (math lib)
 - `bun run typecheck` / `bun run lint` / `bun run build`
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, test and the
+  export build on pushes to `dev` and on PRs.
 
 ## Architectural rules
 
 - **Strictly local media.** Images live in IndexedDB, devices/settings in
   localStorage. No uploads, no analytics, no remote calls. This is a core
   product promise for AAA-studio users (`decision-local-only-media.md`).
-- **Math stays pure.** `lib/` has no React or DOM dependencies; components
-  consume it. devicePixelRatio handling belongs to the view layer.
+- **Geometry stays pure.** The geometry modules in `lib/` (display-math,
+  viewing-geometry, fit, media-crop, calibration) are pure and
+  unit-tested; other `lib/` helpers may touch the DOM, but `lib/` never
+  imports React.
 - **Canonical units:** diagonal inches, distance centimeters. Unit toggles
   convert at the UI edge only.
 - `reactStrictMode` stays off (R3F WebGL context loss in dev).
@@ -53,18 +57,9 @@ conflict before coding.
   git log --oneline -1                              # verify before editing
   ```
 
-  Whoever merges the branch back verifies the base with:
-
-  ```sh
-  git merge-base --is-ancestor origin/dev HEAD   # must SUCCEED
-  git log --oneline origin/dev..<branch>         # must list only its own work
-  ```
-
-  (Testing whether `origin/main` is an ancestor does NOT work: `dev`
-  already contains `main`, so that succeeds for every branch and proves
-  nothing. Ask whether the branch contains `dev`, not whether it
-  contains `main`.) Release merge commits appearing in that log are the
-  tell that a branch is main-based.
+  Whoever merges the branch back verifies with `git log --oneline
+  origin/dev..<branch>`: it must list only that branch's own commits —
+  a release merge commit appearing there is the tell that it's main-based.
 - **Refactors run in a worktree, never in this tree.** Taylor keeps
   `bun run dev` pointed at the working tree; a multi-file refactor is
   inconsistent between its first edit and its last, so hot reload serves
