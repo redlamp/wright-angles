@@ -48,6 +48,7 @@ import DeviceRect, {
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
+import PivotOrbit from "./pivot-orbit";
 import { useScreenViewport } from "@/components/display-area";
 import SceneHud, { FPS_NODE_ID } from "./scene-hud";
 import { SCENE_PALETTES } from "./scene-palette";
@@ -61,6 +62,15 @@ import { SCENE_PALETTES } from "./scene-palette";
 function markTextureDirty(tex: Texture) {
   tex.needsUpdate = true;
 }
+
+/**
+ * Orbit polar-angle bounds (radians from world +Y), shared by OrbitControls
+ * (pan/zoom/touch-rotate) and PivotOrbit (left-drag rotate) so the two
+ * gestures clamp identically. maxPolarAngle keeps the camera from diving
+ * under the floor; minPolarAngle keeps it shy of looking straight down.
+ */
+const MIN_POLAR_ANGLE = 0.05;
+const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
 
 /**
  * The crop composes with the U-mirror via repeat/offset (sampled uv' =
@@ -920,14 +930,33 @@ export default function SceneView({
         {/* Mounted only while the rig is idle so its update loop never
             fights the fly-in/out; on remount it re-syncs from the camera. */}
         {controlsOn ? (
-          <OrbitControls
-            makeDefault
-            enableDamping
-            enabled={!nodeDragging}
-            target={orbitPose.target}
-            maxPolarAngle={Math.PI / 2 - 0.05}
-            maxDistance={farZ * 6}
-          />
+          <>
+            <OrbitControls
+              makeDefault
+              enableDamping
+              enabled={!nodeDragging}
+              target={orbitPose.target}
+              minPolarAngle={MIN_POLAR_ANGLE}
+              maxPolarAngle={MAX_POLAR_ANGLE}
+              maxDistance={farZ * 6}
+              // Wheel zoom homes in on the point under the cursor instead of
+              // the fixed target — reads the pointer via the same raycaster
+              // OrbitControls already uses for dollying, so it composes with
+              // minDistance/maxDistance/enableDamping with no extra wiring.
+              zoomToCursor
+              // Rotation is PivotOrbit's job (orbits the point under the
+              // cursor at press time, not this fixed target); OrbitControls
+              // keeps wheel zoom and right/middle-button pan. Note this also
+              // disables OrbitControls' one-finger touch rotate — see
+              // pivot-orbit.tsx's doc comment.
+              enableRotate={false}
+            />
+            <PivotOrbit
+              active={!nodeDragging}
+              minPolarAngle={MIN_POLAR_ANGLE}
+              maxPolarAngle={MAX_POLAR_ANGLE}
+            />
+          </>
         ) : null}
       </Canvas>
       <SceneHud onExport={exportPng} />
