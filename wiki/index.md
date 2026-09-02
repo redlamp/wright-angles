@@ -19,7 +19,6 @@ Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
 - [[plan-display-setup-wizard]] — draft, awaiting review
 - [[screen-auto-detection]] — why no browser API gives physical size
 - [[plan-content-adaptation-nine-slice]] — parked, long-term
-- [[review-2026-08-15-open-questions]] — license, thresholds, promotion
 - [[prototype-figure-rig]] — resolved: Quaternius body rejected
   (too cartoonish); mannequin kept and given shading
 

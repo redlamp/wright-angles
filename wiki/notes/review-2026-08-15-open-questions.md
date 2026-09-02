@@ -1,5 +1,5 @@
 ---
-tags: [domain/product, status/open]
+tags: [domain/product, status/superseded]
 ---
 
 # Review 2026-08-15 — Open Questions
@@ -41,6 +41,18 @@ Test steps live in [[test-plan-2026-08-15-first-build]].
   aspect differs), like console output — not crop.
 - **Highlight rectangles** (text measuring) are **not built yet** — next
   design pass, per the Miro note that they need one.
+
+## Resolution (2026-09-02)
+
+All three "needs a decision" items are settled:
+
+1. **License.** MIT — the `LICENSE` file is in the repo.
+2. **Dev → main promotion.** Has happened repeatedly since: tags
+   v0.3.1 through v0.7.0 are all promoted releases.
+3. **Legibility thresholds in the UI.** Shipped both ways this note
+   asked about: color bands in the arcmin readouts (Settings →
+   Readouts → `showLegibilityBands`) and as the verdicts in the
+   Perception Report.
 
 ## Known rough edges
 
