@@ -48,6 +48,22 @@ export function Onboarding() {
   // flow without nesting a second Dialog inside the onboarding one.
   const [calibrating, setCalibrating] = useState(false);
 
+  // This component stays mounted all session; Settings re-opens the
+  // dialog later via setOnboarded(false), long after This Device may
+  // have changed. Re-seed the draft from the CURRENT device every time
+  // the dialog opens, not just once at mount — otherwise finishing (or
+  // even skipping) the reopened dialog overwrites This Device with
+  // whatever it was back when onboarding first mounted. Adjusting
+  // state during render (React's "reset state on prop change" pattern)
+  // rather than in an effect: it applies before the stale draft ever
+  // paints, and only on the open transition, so in-progress edits
+  // while the dialog stays open aren't clobbered.
+  const [prevOnboarded, setPrevOnboarded] = useState(onboarded);
+  if (onboarded !== prevOnboarded) {
+    setPrevOnboarded(onboarded);
+    if (!onboarded) setDraft(thisDevice);
+  }
+
   const monitorPresets = useMemo(
     () =>
       DEVICE_PRESETS.filter(
@@ -59,19 +75,22 @@ export function Onboarding() {
   const angles = deviceAngles(draft);
 
   const finish = () => {
-    updateThisDevice({
+    const merged: Device = {
       ...draft,
       id: thisDevice.id,
       visible: thisDevice.visible,
       color: thisDevice.color,
-    });
+    };
+    updateThisDevice(merged);
     setOnboarded(true);
     setStep(0);
+    setDraft(merged);
   };
 
   const skip = () => {
     setOnboarded(true);
     setStep(0);
+    setDraft(thisDevice);
   };
 
   return (
