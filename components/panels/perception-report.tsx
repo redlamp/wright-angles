@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  ACUITY,
   apparentWidthRatio,
   contentPxToArcmin,
   deviceAngles,
@@ -24,6 +23,8 @@ import {
   detectTextForItem,
 } from "@/lib/scan-actions";
 import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
 import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
@@ -52,19 +53,11 @@ import { SplitGrid } from "./split-grid";
  * the probe.
  */
 
-/** ISO 16′/20′ verdict band color for an arcmin value. */
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
-
 function LegibilityDot({ arcmin }: { arcmin: number }) {
   return (
     <span
       className="inline-block size-2 rounded-full"
-      style={{ background: bandColor(arcmin) }}
+      style={{ background: legibilityColor(arcmin) }}
     />
   );
 }
@@ -139,12 +132,6 @@ interface TextEntry {
   /** Full-image box rect, for per-device fit-crop visibility. */
   box: { x: number; y: number; w: number; h: number };
 }
-
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
 
 function buildTextEntries(item: MediaItem): TextEntry[] {
   const entries: TextEntry[] = [];
@@ -475,7 +462,7 @@ export function PerceptionReportContent() {
                       {e.label}
                     </span>
                     <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                      {e.kfTime !== null ? `@ ${fmtKfTime(e.kfTime)} · ` : ""}
+                      {e.kfTime !== null ? `@ ${formatTimecode(e.kfTime)} · ` : ""}
                       {e.srcH} px
                     </span>
                     {e.removable && activeItem ? (
@@ -538,7 +525,7 @@ export function PerceptionReportContent() {
                             className="inline-block size-2 rounded-full"
                             style={{ background: d.color }}
                           />
-                          <span style={{ color: bandColor(m.arcmin) }}>
+                          <span style={{ color: legibilityColor(m.arcmin) }}>
                             {m.arcmin.toFixed(0)}′
                           </span>
                           {strokesSubAcuity(m.arcmin) ? (

@@ -25,6 +25,8 @@ import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
 import { deviceFitCrop } from "@/lib/fit";
+import { deviceViewScale } from "@/lib/view-scale";
+import { easeInOutCubic } from "@/lib/easing";
 import {
   centerYFor,
   heldGripFor,
@@ -37,7 +39,7 @@ import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
-import { useSceneTheme } from "@/lib/use-theme";
+import { useSceneTheme } from "@/components/use-theme";
 import DeviceRect, {
   NAME_FONT_CM,
   type ContentBox,
@@ -271,10 +273,13 @@ function headOnFovDeg(
 ): number {
   if (typeof window === "undefined" || winW <= 0 || winH <= 0) return 40;
   const res = thisDevice.resolution;
-  const k =
-    displayMode === "viewport"
-      ? window.screen.width / res.w
-      : Math.min(winW / res.w, winH / res.h);
+  const k = deviceViewScale(
+    res.w,
+    res.h,
+    winW,
+    winH,
+    displayMode === "viewport" ? window.screen.width : null,
+  );
   if (!k) return 40;
   const visibleDevicePx = winH / k;
   const { heightCm } = physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect);
@@ -408,9 +413,6 @@ function computeLabelPlacements(
 
   return out;
 }
-
-const easeInOutCubic = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /** Module-level so the react-compiler lint permits the mutation. */
 function applySightY(group: Group | null, y: number) {
@@ -681,10 +683,13 @@ export default function SceneView({
       dxPx += vp.screenW / 2 - vp.clientX - winSize.w / 2;
       dyPx += vp.screenH / 2 - vp.clientY - winSize.h / 2;
     }
-    const k =
-      viewportActive && vp
-        ? vp.screenW / res.w
-        : Math.min(winSize.w / res.w, winSize.h / res.h);
+    const k = deviceViewScale(
+      res.w,
+      res.h,
+      winSize.w,
+      winSize.h,
+      viewportActive && vp ? vp.screenW : null,
+    );
     if (k > 0) {
       const cmPerCss =
         physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect).heightCm /

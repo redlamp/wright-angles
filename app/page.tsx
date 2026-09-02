@@ -25,7 +25,7 @@ import { Onboarding } from "@/components/onboarding";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
-import { useResolvedTheme } from "@/lib/use-theme";
+import { useResolvedTheme } from "@/components/use-theme";
 import {
   disposeEngine,
   ensureEngine,

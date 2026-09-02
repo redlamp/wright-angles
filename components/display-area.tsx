@@ -29,13 +29,14 @@ import {
 } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import {
-  ACUITY,
   boxMetricsOnDevice,
   formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
 import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { deviceViewScale } from "@/lib/view-scale";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
@@ -435,18 +436,6 @@ function PixelLoupe({
 const setDeviceHover = (h: DeviceHover | null) =>
   useAnnotationStore.getState().setDeviceHover(h);
 
-/** Muted neutral for a box no visible device actually shows (fit-cropped
- * away everywhere) — there is no verdict to color it by. */
-const NO_VERDICT_COLOR = "#71717a59";
-
-const boxBandColor = (worstArcmin: number | null) =>
-  worstArcmin === null
-    ? NO_VERDICT_COLOR
-    : worstArcmin >= ACUITY.comfortableTextArcmin
-      ? "#46a758"
-      : worstArcmin >= ACUITY.minCriticalTextArcmin
-        ? "#f5a524"
-        : "#e5484d";
 
 /**
  * Highlight boxes over one device rect. Coordinates are normalized to
@@ -500,7 +489,7 @@ function BoxLayer({
         const color =
           colorMode === "group" && gid !== undefined
             ? groupColor(gid)
-            : boxBandColor(worstByBox.get(b.id) ?? null);
+            : legibilityColor(worstByBox.get(b.id) ?? null);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -774,21 +763,24 @@ export function DisplayArea() {
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
   // covers); fit mode shrinks the whole panel into the window.
-  const k = useMemo(() => {
-    if (!area.w || !area.h) return 0;
-    if (viewportActive && vp) return vp.screenW / thisDevice.resolution.w;
-    return Math.min(
-      area.w / thisDevice.resolution.w,
-      area.h / thisDevice.resolution.h,
-    );
-  }, [
-    area.w,
-    area.h,
-    viewportActive,
-    vp,
-    thisDevice.resolution.w,
-    thisDevice.resolution.h,
-  ]);
+  const k = useMemo(
+    () =>
+      deviceViewScale(
+        thisDevice.resolution.w,
+        thisDevice.resolution.h,
+        area.w,
+        area.h,
+        viewportActive && vp ? vp.screenW : null,
+      ),
+    [
+      area.w,
+      area.h,
+      viewportActive,
+      vp,
+      thisDevice.resolution.w,
+      thisDevice.resolution.h,
+    ],
+  );
 
   // Composition center in client coordinates: the physical screen's
   // center ("screen" center mode, viewport only) or the window's center,

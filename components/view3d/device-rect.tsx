@@ -19,9 +19,11 @@ import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
-import { ACUITY, physicalSizeCm } from "@/lib/display-math";
+import { physicalSizeCm } from "@/lib/display-math";
+import { legibilityColor } from "@/lib/legibility";
 import { boxMetricsOnDevice } from "@/lib/box-metrics";
 import { fitBox, fitModeOf } from "@/lib/fit";
+import { easeInOutCubic } from "@/lib/easing";
 import { degToRad } from "@/lib/viewing-geometry";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
@@ -83,8 +85,6 @@ const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/fonts/barlow-latin-
 
 /** Matches the viewer figure's pose tween so stance changes move in sync. */
 const TWEEN_S = 0.5;
-const easeInOutCubic = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /**
  * Module-level mutator (react-compiler lint forbids property assignment on
@@ -279,12 +279,6 @@ export interface ContentBox {
   hFull: number;
 }
 
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
 
 /**
  * Outline loop for a content-space rect on the screen surface. The
@@ -797,7 +791,7 @@ export default function DeviceRect({
             const color =
               boxColorMode === "group" && cb.groupId !== undefined
                 ? groupColor(cb.groupId)
-                : bandColor(arcmin);
+                : legibilityColor(arcmin);
             // Invisible hover catcher over the box (chord plane — close
             // enough on curved panels for pointer purposes): hovering
             // feeds the inspector's live text details (Taylor).

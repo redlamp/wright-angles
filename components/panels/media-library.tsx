@@ -23,12 +23,10 @@ import { cn } from "@/lib/utils";
 import { batchLabel } from "@/lib/ocr-queue";
 import { useOcrQueueStore } from "@/stores/ocr-queue-store";
 import type { Device, MediaCrop, MediaItem } from "@/lib/types";
-import {
-  ACUITY,
-  aspectFromResolution,
-  strokesSubAcuity,
-} from "@/lib/display-math";
+import { aspectFromResolution, strokesSubAcuity } from "@/lib/display-math";
 import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
 import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
 import {
@@ -786,19 +784,6 @@ interface ScanLine {
   sizePx?: number;
 }
 
-
-/** No visible-device verdict (this device's fit crops the line away). */
-const NO_VERDICT_COLOR = "#71717a59";
-
-const scanBandColor = (arcmin: number | null) =>
-  arcmin === null
-    ? NO_VERDICT_COLOR
-    : arcmin >= ACUITY.comfortableTextArcmin
-      ? "#46a758"
-      : arcmin >= ACUITY.minCriticalTextArcmin
-        ? "#f5a524"
-        : "#e5484d";
-
 /**
  * The useful data behind an OCR run: the image with each detected line
  * outlined and numbered, plus a per-line table (text, px height,
@@ -813,7 +798,7 @@ const scanLineColor = (
   if (mode === "group") return groupColor(line.groupId);
   const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
   const m = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
-  return scanBandColor(m ? m.arcmin : null);
+  return legibilityColor(m ? m.arcmin : null);
 };
 
 /**
@@ -989,7 +974,7 @@ function ScanResults({
                 background:
                   colorMode === "group"
                     ? groupColor(line.groupId)
-                    : scanBandColor(metrics.arcmin),
+                    : legibilityColor(metrics.arcmin),
               }}
             />
             <span className="w-5 shrink-0 font-mono text-sm text-muted-foreground">
@@ -1016,7 +1001,7 @@ function ScanResults({
             ) : null}
             <span
               className="shrink-0 font-mono text-sm"
-              style={{ color: scanBandColor(metrics.arcmin) }}
+              style={{ color: legibilityColor(metrics.arcmin) }}
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
               {metrics.arcmin.toFixed(0)}′
@@ -1268,13 +1253,6 @@ function ScanFollowThrough() {
   );
 }
 
-
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
-
 /** Keyed by item id at the callsite so the armed/scan state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
@@ -1390,10 +1368,10 @@ function DetailCard({ item }: { item: MediaItem }) {
         ? "Mark frames on the timeline (bookmark button), then scan them."
         : kf
           ? kf.lines
-            ? `Keyframe ${fmtKfTime(kf.timeSec)} · ${kf.lines.length} line${
+            ? `Keyframe ${formatTimecode(kf.timeSec)} · ${kf.lines.length} line${
                 kf.lines.length === 1 ? "" : "s"
               } · median ${Math.round(kf.medianPx ?? 0)} px — shown until the next marker`
-            : `Keyframe ${fmtKfTime(kf.timeSec)} — not scanned yet`
+            : `Keyframe ${formatTimecode(kf.timeSec)} — not scanned yet`
           : "Playhead is before the first keyframe."
       : null);
 
