@@ -11,9 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  ACUITY,
   apparentWidthRatio,
-  boxMetricsOnDevice,
   contentPxToArcmin,
   deviceAngles,
   formatDistance,
@@ -24,7 +22,10 @@ import {
   clearCurrentKeyframeScan,
   detectTextForItem,
 } from "@/lib/scan-actions";
-import { boxInCrop, effectiveCropFor } from "@/lib/media-crop";
+import { boxMetricsInCrop, type BoxDeviceMetrics } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
+import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -52,19 +53,11 @@ import { SplitGrid } from "./split-grid";
  * the probe.
  */
 
-/** ISO 16′/20′ verdict band color for an arcmin value. */
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
-
 function LegibilityDot({ arcmin }: { arcmin: number }) {
   return (
     <span
       className="inline-block size-2 rounded-full"
-      style={{ background: bandColor(arcmin) }}
+      style={{ background: legibilityColor(arcmin) }}
     />
   );
 }
@@ -79,9 +72,31 @@ function ratioNote(r: number): string {
   return "a near-1:1 reference for this setup.";
 }
 
+/**
+ * The "this reading is vertical only" chip. `stretch` is the one fit
+ * mode whose pixels aren't square, so every arc-minute figure quoted
+ * for such a device is the height figure and needs saying so.
+ */
+function StretchChip({ item, d }: { item: MediaItem | null; d: Device }) {
+  const note = item ? fitStretchNote(item, d) : null;
+  if (!note) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]"
+      title={`"${fitLabel(fitModeOf(d))}" scales width and height independently on ${d.label}: the image is distorted, and the arc-minute figures here measure its HEIGHT.`}
+    >
+      <TriangleAlertIcon className="size-3 shrink-0" />
+      {note}
+    </span>
+  );
+}
+
 /** Full spec lines, shown inside the selected column-1 entry. */
 function SpecLines({ d }: { d: Device }) {
   const unit = useSettingsStore((s) => s.unit);
+  const activeId = useMediaStore((s) => s.activeId);
+  const items = useMediaStore((s) => s.items);
+  const activeItem = items.find((i) => i.id === activeId) ?? null;
   const size = physicalSizeCm(d.diagonalIn, d.aspect);
   const a = deviceAngles(d);
   return (
@@ -98,6 +113,7 @@ function SpecLines({ d }: { d: Device }) {
         {a.horizontalDeg.toFixed(0)}° × {a.verticalDeg.toFixed(0)}° ·{" "}
         {a.ppd.toFixed(0)} PPD
       </div>
+      <StretchChip item={activeItem} d={d} />
     </div>
   );
 }
@@ -113,15 +129,9 @@ interface TextEntry {
   kfTime: number | null;
   /** Removable only for real measure boxes. */
   removable: boolean;
-  /** Full-image box rect, for per-device crop visibility. */
+  /** Full-image box rect, for per-device fit-crop visibility. */
   box: { x: number; y: number; w: number; h: number };
 }
-
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
 
 function buildTextEntries(item: MediaItem): TextEntry[] {
   const entries: TextEntry[] = [];
@@ -185,14 +195,60 @@ export function PerceptionReportContent() {
   );
 
   /** Which devices annotate each text entry's verdict row. */
-  const verdictDevices =
-    mode === "device" && pickedDevice
-      ? [pickedDevice]
-      : mode === "mine"
-        ? [thisDevice]
-        : [thisDevice, ...devices];
+  const verdictDevices = useMemo(
+    () =>
+      mode === "device" && pickedDevice
+        ? [pickedDevice]
+        : mode === "mine"
+          ? [thisDevice]
+          : [thisDevice, ...devices],
+    [mode, pickedDevice, thisDevice, devices],
+  );
 
-  const textEntries = activeItem ? buildTextEntries(activeItem) : [];
+  // Pure function of the item's own content (boxes/scan/keyframes) —
+  // doesn't depend on the playhead, so it shouldn't recompute every
+  // timeSec tick the way running it straight in the render body did.
+  const textEntries = useMemo(
+    () => (activeItem ? buildTextEntries(activeItem) : []),
+    [activeItem],
+  );
+
+  /** One verdict row per (text entry, device) pair — cropped-out, or
+   * shown with its measured metrics. Same shape the render below used
+   * to compute inline on every render (including every playhead tick,
+   * via the timeSec subscription below); moved here so it only
+   * recomputes when the item, its entries, or the device set change. */
+  const entryVerdicts = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<
+        | { kind: "cropped"; device: Device }
+        | {
+            kind: "shown";
+            device: Device;
+            m: BoxDeviceMetrics;
+            stretch: string | null;
+          }
+      >
+    >();
+    if (!activeItem) return map;
+    for (const e of textEntries) {
+      map.set(
+        e.id,
+        verdictDevices.map((d) => {
+          const m = boxMetricsInCrop(e.box, e.h, activeItem, d);
+          if (!m) return { kind: "cropped" as const, device: d };
+          return {
+            kind: "shown" as const,
+            device: d,
+            m,
+            stretch: fitStretchNote(activeItem, d),
+          };
+        }),
+      );
+    }
+    return map;
+  }, [activeItem, textEntries, verdictDevices]);
 
   // Clear-button state mirrors the Media Library's Text Detection row.
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
@@ -452,7 +508,7 @@ export function PerceptionReportContent() {
                       {e.label}
                     </span>
                     <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                      {e.kfTime !== null ? `@ ${fmtKfTime(e.kfTime)} · ` : ""}
+                      {e.kfTime !== null ? `@ ${formatTimecode(e.kfTime)} · ` : ""}
                       {e.srcH} px
                     </span>
                     {e.removable && activeItem ? (
@@ -475,22 +531,20 @@ export function PerceptionReportContent() {
                       arcmin number wears the verdict band, the hover
                       title names the device with mm/px. */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                    {verdictDevices.map((d) => {
-                      // Per-device crops: a box outside this device's
-                      // effective crop isn't on that screen at all —
-                      // show a muted dash instead of a verdict.
-                      if (
-                        activeItem &&
-                        !boxInCrop(
-                          e.box,
-                          effectiveCropFor(activeItem, d.id),
-                        )
-                      ) {
+                    {(entryVerdicts.get(e.id) ?? []).map((row) => {
+                      const d = row.device;
+                      // Fit modes crop: a box the device's fit trims
+                      // away isn't on that screen at all — show a muted
+                      // dash instead of a verdict. Measuring through the
+                      // device's actual rendered crop (not the intrinsic
+                      // image) also means a cropped-in box reads its
+                      // true, bigger size on that screen.
+                      if (row.kind === "cropped") {
                         return (
                           <span
                             key={d.id}
                             className="flex items-center gap-1.5 font-mono text-sm"
-                            title={`${d.label}: outside this device's crop — not shown on this screen`}
+                            title={`${d.label}: cropped out by "${fitLabel(fitModeOf(d))}" — not shown on this screen`}
                           >
                             <span
                               className="inline-block size-2 rounded-full opacity-35"
@@ -500,18 +554,20 @@ export function PerceptionReportContent() {
                           </span>
                         );
                       }
-                      const m = boxMetricsOnDevice(e.h, activeItem!, d);
+                      // A stretched panel distorts: the figure is the
+                      // HEIGHT one, and the chip says so on hover.
+                      const { m, stretch } = row;
                       return (
                         <span
                           key={d.id}
                           className="flex items-center gap-1.5 font-mono text-sm"
-                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px`}
+                          title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px${stretch ? ` — ${stretch}` : ""}`}
                         >
                           <span
                             className="inline-block size-2 rounded-full"
                             style={{ background: d.color }}
                           />
-                          <span style={{ color: bandColor(m.arcmin) }}>
+                          <span style={{ color: legibilityColor(m.arcmin) }}>
                             {m.arcmin.toFixed(0)}′
                           </span>
                           {strokesSubAcuity(m.arcmin) ? (

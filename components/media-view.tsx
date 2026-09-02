@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getEngine } from "@/lib/playback-engine";
 import { cropOf } from "@/lib/media-crop";
+import { formatTimecode } from "@/lib/units";
 import {
   addKeyframe,
   keyframeAt,
@@ -180,12 +181,6 @@ export function VideoMirror({
   return <canvas ref={ref} className={className} />;
 }
 
-const fmtTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
-
 /**
  * Play/pause · playhead (with OCR keyframe markers) · loop, for the
  * active video or animated GIF. Markers are user-placed scan points
@@ -238,8 +233,8 @@ export function TransportControls() {
               <button
                 key={k.timeSec}
                 type="button"
-                aria-label={`OCR keyframe at ${fmtTime(k.timeSec)}`}
-                title={`OCR keyframe · ${fmtTime(k.timeSec)}${k.lines ? ` · ${k.lines.length} lines` : " · not scanned"}`}
+                aria-label={`OCR keyframe at ${formatTimecode(k.timeSec)}`}
+                title={`OCR keyframe · ${formatTimecode(k.timeSec)}${k.lines ? ` · ${k.lines.length} lines` : " · not scanned"}`}
                 className={cn(
                   "absolute top-full size-2 -translate-x-1/2 rotate-45 cursor-pointer border border-[#f5a524] transition-transform hover:scale-150",
                   k.lines ? "bg-[#f5a524]" : "bg-transparent",
@@ -254,8 +249,8 @@ export function TransportControls() {
           : null}
       </div>
       <span className="shrink-0 font-mono text-sm text-muted-foreground">
-        {fmtTime(timeSec)}
-        {durationSec ? ` / ${fmtTime(durationSec)}` : ""}
+        {formatTimecode(timeSec)}
+        {durationSec ? ` / ${formatTimecode(durationSec)}` : ""}
       </span>
       {/* Prev/next OCR keyframe — button versions of the ,/. hotkeys. */}
       {[
@@ -275,7 +270,7 @@ export function TransportControls() {
           type="button"
           aria-label={label}
           title={
-            target !== null ? `${label} · ${fmtTime(target)}` : label
+            target !== null ? `${label} · ${formatTimecode(target)}` : label
           }
           disabled={target === null}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"

@@ -1,8 +1,16 @@
 ---
-tags: [domain/product, status/adopted, origin/taylor]
+tags: [domain/product, status/superseded, origin/taylor]
 ---
 
 # Plan — Per-Device Cropping
+
+> **Superseded 2026-08-20** by [[decision-media-crop-vs-device-fit]].
+> Built and shipped in v0.7.0, then rejected on review: the plan solved
+> a *display* problem with a *source-editing* control. Hand-drawn
+> per-device crops are replaced by named fit modes owned by the device.
+> The render pipeline this plan produced survives and is reused; only
+> the authoring layer described under "UI" below is retired. Kept for
+> the model and the rendering notes, which remain accurate.
 
 Taylor (2026-08-19): "we may need device-by-device cropping options —
 come up with a plan for how that can be done and how it'd work with
@@ -63,7 +71,7 @@ Effective crop for rendering on device D:
 
 - The crop dropdown in the Media Library grows a scope control once a
   device is selected: "All devices" (edits `item.crop`) vs
-  "<Selected device>" (edits `deviceCrops[id]`) — riding the now
+  "`<Selected device>`" (edits `deviceCrops[id]`) — riding the now
   app-wide selection. Editing overlay is unchanged; it just writes to
   a different slot.
 - A device-crop chip/dot on rows or the crop row indicates "this
@@ -102,7 +110,7 @@ defaults — flag for Taylor's review:
   shape" as a one-click preset. Auto felt too surprising for a scope
   switch that should be read-only until the user acts.
 - **Scope control** sits under the crop dropdown ("applies to: All
-  devices | <selected device>") and appears only while a device is
+  devices | `<selected device>`") and appears only while a device is
   selected app-wide. The dot on the device button is hollow until an
   override exists. The preview editor edits whichever scope is active
   and wears the device's key color in device scope.

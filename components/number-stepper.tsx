@@ -18,6 +18,8 @@ export function NumberStepper({
   max = Infinity,
   decimals = 0,
   suffix,
+  signed = false,
+  disabled = false,
   className,
   ariaLabel,
 }: {
@@ -29,10 +31,19 @@ export function NumberStepper({
   max?: number;
   decimals?: number;
   suffix?: string;
+  /** Show a leading + on positives — for values where the SIGN is the
+   *  point (an offset above or below a line), not just the magnitude. */
+  signed?: boolean;
+  /** Inert but still legible — for a value something else is deciding. */
+  disabled?: boolean;
   className?: string;
   ariaLabel: string;
 }) {
-  const shown = value.toFixed(decimals);
+  // The bare number while editing (so it parses back), decorated while
+  // at rest. `suffix` used to be accepted and then dropped on the floor
+  // — both branches of the old ternary rendered the same string.
+  const shown = `${signed && value > 0 ? "+" : ""}${value.toFixed(decimals)}`;
+  const atRest = suffix ? `${shown}${suffix}` : shown;
   const [draft, setDraft] = useState(shown);
   const [editing, setEditing] = useState(false);
   // Derived-state reconciliation during render (not an effect): keep the
@@ -57,6 +68,7 @@ export function NumberStepper({
     <div
       className={cn(
         "flex h-6 items-center overflow-hidden rounded-md border border-input",
+        disabled && "opacity-50",
         className,
       )}
     >
@@ -64,15 +76,17 @@ export function NumberStepper({
         type="button"
         aria-label={`Decrease ${ariaLabel}`}
         tabIndex={-1}
-        className="flex h-full w-5 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        disabled={disabled}
+        className="flex h-full w-5 shrink-0 items-center justify-center text-muted-foreground transition-colors not-disabled:hover:bg-muted not-disabled:hover:text-foreground"
         onClick={(e) => nudge(-1, e.shiftKey)}
       >
         <MinusIcon className="size-3" />
       </button>
       <Input
         aria-label={ariaLabel}
+        readOnly={disabled}
         className="h-full w-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-center font-mono text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
-        value={editing ? draft : suffix ? `${shown}` : shown}
+        value={editing ? draft : atRest}
         onFocus={(e) => {
           setEditing(true);
           e.target.select();
@@ -89,7 +103,8 @@ export function NumberStepper({
         type="button"
         aria-label={`Increase ${ariaLabel}`}
         tabIndex={-1}
-        className="flex h-full w-5 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        disabled={disabled}
+        className="flex h-full w-5 shrink-0 items-center justify-center text-muted-foreground transition-colors not-disabled:hover:bg-muted not-disabled:hover:text-foreground"
         onClick={(e) => nudge(1, e.shiftKey)}
       >
         <PlusIcon className="size-3" />

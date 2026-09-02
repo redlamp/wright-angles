@@ -12,8 +12,10 @@ import {
   idbClearMedia,
   idbDeleteMedia,
   idbGetAllMedia,
+  idbGetMedia,
   idbPutMedia,
 } from "@/lib/idb";
+import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
 import { stripImageMetadata } from "@/lib/strip-metadata";
 
 const newId = () =>
@@ -21,14 +23,18 @@ const newId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
+/** Re-write one item's metadata beside its stored blob(s), by id — a
+ * single-record read/write, not a scan of the whole library. */
+function persistItemMeta(item: MediaItem) {
+  void idbGetMedia(item.id).then((rec) => {
+    if (rec) void idbPutMedia(item.id, { ...rec, meta: item });
+  });
+}
+
 /** Re-write an item's metadata beside its stored blob(s). */
 function persistMeta(get: () => { items: MediaItem[] }, id: string) {
   const item = get().items.find((i) => i.id === id);
-  if (!item) return;
-  void idbGetAllMedia().then((records) => {
-    const rec = records.find((r) => r.meta.id === id);
-    if (rec) void idbPutMedia(id, { ...rec, meta: item });
-  });
+  if (item) persistItemMeta(item);
 }
 
 /** Intrinsic pixel size of an image blob. */
@@ -108,8 +114,18 @@ interface MediaState {
   videoUrls: Record<string, string>;
   activeId: string | null;
   hydrated: boolean;
+  /**
+   * Names of files the most recent addFiles() couldn't import (wrong
+   * type, or failed to decode) — cleared at the start of the next
+   * addFiles() call. UI reads it to show a dismissible note.
+   */
+  lastImportErrors: string[];
+  /** Dismiss the current import-error note. */
+  clearImportErrors: () => void;
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
+  /** Imports every decodable file, then queues the whole batch for
+   * auto-OCR (stores/ocr-queue-store.ts) once it's done. */
   addFiles: (files: FileList | File[]) => Promise<void>;
   /** Create a built-in test image (rendered to canvas, stored like any import). */
   addGenerated: (kind: GeneratedKind) => Promise<void>;
@@ -126,18 +142,6 @@ interface MediaState {
   setReferenceHeight: (id: string, referenceHeight: number) => void;
   /** Set or clear (undefined) the item's crop window. */
   setCrop: (id: string, crop: MediaCrop | undefined) => void;
-  /**
-   * Set or clear (undefined) one device's crop override on the item.
-   * Overrides are full-image normalized like the media crop; clearing
-   * the last one drops the deviceCrops key entirely.
-   */
-  setDeviceCrop: (
-    id: string,
-    deviceId: string,
-    crop: MediaCrop | undefined,
-  ) => void;
-  /** Drop a deleted device's crop overrides from every item. */
-  pruneDeviceCrops: (deviceId: string) => void;
   /**
    * Nuke every detection artifact on the item: ALL measure boxes
    * (including hand-drawn — stale unlabeled scan boxes are
@@ -285,6 +289,9 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   videoUrls: {},
   activeId: null,
   hydrated: false,
+  lastImportErrors: [],
+
+  clearImportErrors: () => set({ lastImportErrors: [] }),
 
   hydrate: async () => {
     if (get().hydrated) return;
@@ -338,7 +345,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   addFiles: async (files) => {
-    const list = Array.from(files).filter(
+    const all = Array.from(files);
+    const list = all.filter(
       (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
     );
     if (list.length > 0 && navigator.storage?.persist) {
@@ -346,6 +354,16 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       // Fire-and-forget: denial just means default (best-effort) durability.
       void navigator.storage.persist();
     }
+    // Names of files that didn't make it in this call — wrong type, or
+    // failed to decode — surfaced via lastImportErrors instead of
+    // disappearing silently.
+    const failedNames = all
+      .filter((f) => !list.includes(f))
+      .map((f) => f.name);
+    // Every id that actually made it into the library this call, so OCR
+    // can be queued once for the whole batch below — not per file, and
+    // not for a file that failed to decode.
+    const addedIds: string[] = [];
     for (const file of list) {
       try {
         if (file.type.startsWith("video/")) {
@@ -374,6 +392,7 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             },
             activeId: s.activeId ?? meta.id,
           }));
+          addedIds.push(meta.id);
         } else {
           // Static images (JPEG/PNG/WebP) are re-encoded to shed
           // EXIF/GPS metadata before they touch IndexedDB; GIFs and
@@ -398,10 +417,23 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
             objectUrls: { ...s.objectUrls, [meta.id]: url },
             activeId: s.activeId ?? meta.id,
           }));
+          addedIds.push(meta.id);
         }
       } catch {
-        // Not decodable as an image/video — skip silently.
+        // Not decodable as an image/video — noted, not silent.
+        failedNames.push(file.name);
       }
+    }
+    set({ lastImportErrors: failedNames });
+    if (addedIds.length > 0) {
+      // Dynamic import: keeps media-store free of a static dependency on
+      // the OCR queue store (which itself imports this module to read
+      // items back out — a static cycle both ways). Auto-scan-on-import,
+      // no debounce (wiki/research/ocr-cost.md): the batch is already
+      // fully imported by the time we get here, and the OCR pipeline's
+      // own single-flight lock serializes the scans regardless.
+      const { useOcrQueueStore } = await import("./ocr-queue-store");
+      useOcrQueueStore.getState().enqueue(addedIds);
     }
   },
 
@@ -422,6 +454,20 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       referenceHeight: canvas.height,
       addedAt: Date.now(),
     };
+    if (kind === "gradient") {
+      // The gradient card's draw is deterministic, so its OCR result is
+      // pinned data rather than a live scan (wiki/research/ocr-cost.md) —
+      // ships identically whether this is the first-run seed or a manual
+      // "Test → Gradient card". `boxes` is derived the same way
+      // detectTextForItem's live path builds it, so the overlay/report
+      // treat a seeded card exactly like a freshly scanned one.
+      meta.scan = GRADIENT_SEED_SCAN;
+      meta.boxes = GRADIENT_SEED_SCAN.lines.map((line) => ({
+        id: line.id,
+        label: line.text,
+        ...line.box,
+      }));
+    }
     await idbPutMedia(meta.id, { meta, blob });
     const url = URL.createObjectURL(blob);
     set((s) => ({
@@ -525,40 +571,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     persistMeta(get, id);
   },
 
-  setDeviceCrop: (id, deviceId, crop) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        const next = { ...(i.deviceCrops ?? {}) };
-        if (crop) next[deviceId] = crop;
-        else delete next[deviceId];
-        const rest = { ...i };
-        if (Object.keys(next).length > 0) rest.deviceCrops = next;
-        else delete rest.deviceCrops;
-        return rest;
-      }),
-    }));
-    persistMeta(get, id);
-  },
-
-  pruneDeviceCrops: (deviceId) => {
-    const touched: string[] = [];
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (!i.deviceCrops?.[deviceId]) return i;
-        touched.push(i.id);
-        const next = { ...i.deviceCrops };
-        delete next[deviceId];
-        const rest = { ...i };
-        if (Object.keys(next).length > 0) rest.deviceCrops = next;
-        else delete rest.deviceCrops;
-        return rest;
-      }),
-    }));
-    for (const id of touched) persistMeta(get, id);
-  },
-
   reorderItem: (id, toIndex) => {
+    // Captured from the set() updater so the persist pass below reuses
+    // the freshly-reordered items directly — one pass over the array
+    // it already computed, not an O(n) re-lookup (and idbGetAllMedia
+    // whole-library read) per item.
+    let reordered: MediaItem[] = [];
     set((s) => {
       const from = s.items.findIndex((i) => i.id === id);
       if (from < 0) return s;
@@ -566,9 +584,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       const [moved] = items.splice(from, 1);
       items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
       // The array order becomes the persisted manual order.
-      return { items: items.map((i, idx) => ({ ...i, sortIndex: idx })) };
+      reordered = items.map((i, idx) => ({ ...i, sortIndex: idx }));
+      return { items: reordered };
     });
-    for (const i of get().items) persistMeta(get, i.id);
+    for (const item of reordered) persistItemMeta(item);
   },
 
   clearDetection: (id) => {

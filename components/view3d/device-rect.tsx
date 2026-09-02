@@ -19,8 +19,12 @@ import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
 import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
-import { ACUITY, boxMetricsOnDevice, physicalSizeCm } from "@/lib/display-math";
-import { containFit } from "@/lib/fit";
+import { physicalSizeCm } from "@/lib/display-math";
+import { legibilityColor } from "@/lib/legibility";
+import { boxMetricsOnDevice } from "@/lib/box-metrics";
+import { fitBox, fitModeOf } from "@/lib/fit";
+import { easeInOutCubic } from "@/lib/easing";
+import { degToRad } from "@/lib/viewing-geometry";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import { groupColor } from "@/lib/text-groups";
@@ -81,8 +85,6 @@ const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/fonts/barlow-latin-
 
 /** Matches the viewer figure's pose tween so stance changes move in sync. */
 const TWEEN_S = 0.5;
-const easeInOutCubic = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /**
  * Module-level mutator (react-compiler lint forbids property assignment on
@@ -277,12 +279,6 @@ export interface ContentBox {
   hFull: number;
 }
 
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
 
 /**
  * Outline loop for a content-space rect on the screen surface. The
@@ -327,6 +323,19 @@ function boxLoopPoints(
   pts.push(at(rect.x, yTop));
   return pts;
 }
+
+/**
+ * Device name labels are one size for every screen, in scene units (1 =
+ * 1cm). They used to scale with the rect (`heightCm * 0.14`, clamped
+ * 4–12) so a handheld wouldn't drown in text, but that made the name a
+ * second, competing readout of how big the panel is — a 120″ projector
+ * shouted while a Switch whispered, and the labels stopped reading as
+ * one set. They are chrome, not scenery (see `raiseNameLabel`: no depth
+ * test, drawn over the room), so they get one type size like any other
+ * UI text. Shared with `computeLabelPlacements`, which sizes the
+ * de-collision stack from it.
+ */
+export const NAME_FONT_CM = 7;
 
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
@@ -377,10 +386,17 @@ export default function DeviceRect({
   selectedBoxId,
   boxColorMode = "rating",
   zBias,
+  tiltDeg,
 }: {
   device: Device;
   /** Target screen-center height (cm); the rendered Y tweens toward it. */
   centerY: number;
+  /**
+   * Panel pitch in degrees, positive tipping the face up (top edge away
+   * from the viewer). Resolved in scene-view, which knows the stance and
+   * eye height; this component stays store-free.
+   */
+  tiltDeg?: number;
   /**
    * Changes when the stance does; a centerY change WITH a poseKey change
    * tweens, one without (the height slider) snaps.
@@ -435,8 +451,11 @@ export default function DeviceRect({
   const R = device.curvatureR ? device.curvatureR / 10 : 0;
   const curved = R > 0;
 
+  // Where the content quad sits on this panel, in cm. Under `stretch`
+  // it IS the panel (widthCm × heightCm) — the content boxes and the
+  // projection rays below are all measured off this, so they follow.
   const fit = media
-    ? containFit(media.width, media.height, widthCm, heightCm)
+    ? fitBox(fitModeOf(device), media.width, media.height, widthCm, heightCm)
     : null;
 
   // Projection endpoints in local space: the IMAGE bounds when media is
@@ -444,8 +463,19 @@ export default function DeviceRect({
   // Curved panels use their actual arc-end corners.
   const projW = fit ? fit.w : widthCm;
   const projH = fit ? fit.h : heightCm;
+  const tiltRad = degToRad(tiltDeg ?? 0);
   const projCorners = useMemo<[number, number, number][]>(() => {
     const hh = projH / 2;
+    // The panel's own group carries the pitch, but the cone does not
+    // live in that group (its rays start at the eye), so the corners
+    // are pitched here instead — same rotation about +X, by hand.
+    const cos = Math.cos(tiltRad);
+    const sin = Math.sin(tiltRad);
+    const pitch = (c: [number, number, number]): [number, number, number] => [
+      c[0],
+      c[1] * cos - c[2] * sin,
+      c[1] * sin + c[2] * cos,
+    ];
     if (!curved) {
       const hw = projW / 2;
       return [
@@ -453,7 +483,7 @@ export default function DeviceRect({
         [hw, -hh, 0],
         [hw, hh, 0],
         [-hw, hh, 0],
-      ];
+      ].map((c) => pitch(c as [number, number, number]));
     }
     // Content sits on a slightly smaller radius than the outline.
     const r = fit ? R - 0.25 : R;
@@ -465,8 +495,8 @@ export default function DeviceRect({
       [x, -hh, z],
       [x, hh, z],
       [-x, hh, z],
-    ];
-  }, [projW, projH, curved, R, fit]);
+    ].map((c) => pitch(c as [number, number, number]));
+  }, [projW, projH, curved, R, fit, tiltRad]);
 
   const rectRef = useRef<Group>(null);
   const dropRef = useRef<Group>(null);
@@ -493,6 +523,13 @@ export default function DeviceRect({
     }
     prevPoseKey.current = poseKey;
   }, [centerY, poseKey]);
+
+  // setBodyCursor writes to document.body, outside this component's own
+  // DOM — if it unmounts (device removed, media changes the tree) mid
+  // hover/drag, nothing else clears that cursor back to normal.
+  useEffect(() => {
+    return () => setBodyCursor("");
+  }, []);
 
   useFrame((state) => {
     const a = anim.current;
@@ -625,8 +662,7 @@ export default function DeviceRect({
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
 
-  // Name label scales with the rect so a phone at 36cm doesn't drown in text.
-  const nameSize = Math.min(12, Math.max(4, heightCm * 0.14));
+  const nameSize = NAME_FONT_CM;
 
   return (
     <group
@@ -655,26 +691,20 @@ export default function DeviceRect({
           : undefined
       }
     >
+      {/* Everything that is PART OF THE PANEL pitches together: outline,
+          chassis, content and the box overlays measured off it. The
+          projection cone, the name, the drop line and the floor readout
+          stay in untilted space — the cone's rays start at the eye (a
+          point in this group's frame, which a rotation would move), and
+          the rest are readouts about the panel rather than parts of it.
+          projCorners is pitched arithmetically instead, so the rays
+          still land on the panel's real corners. */}
+      <group rotation={[tiltRad, 0, 0]}>
       <Line
         points={outline}
         color={device.color}
         lineWidth={selected ? 3 : 2}
       />
-      {showProjection || selected ? (
-        // Overlay treatment like the distance markers/labels: no depth
-        // test plus a late renderOrder, so scene props (the desk) never
-        // occlude the rays — but still below the labels at 15/20.
-        <lineSegments renderOrder={10}>
-          <bufferGeometry ref={projRef} />
-          <lineBasicMaterial
-            color={device.color}
-            transparent
-            opacity={selected ? 0.85 : 0.22}
-            depthWrite={false}
-            depthTest={false}
-          />
-        </lineSegments>
-      ) : null}
 
       {body ? (
         // Full chassis behind the screen so device-vs-screen size reads.
@@ -761,7 +791,7 @@ export default function DeviceRect({
             const color =
               boxColorMode === "group" && cb.groupId !== undefined
                 ? groupColor(cb.groupId)
-                : bandColor(arcmin);
+                : legibilityColor(arcmin);
             // Invisible hover catcher over the box (chord plane — close
             // enough on curved panels for pointer purposes): hovering
             // feeds the inspector's live text details (Taylor).
@@ -853,6 +883,23 @@ export default function DeviceRect({
             );
           })
         : null}
+      </group>
+
+      {showProjection || selected ? (
+        // Overlay treatment like the distance markers/labels: no depth
+        // test plus a late renderOrder, so scene props (the desk) never
+        // occlude the rays — but still below the labels at 15/20.
+        <lineSegments renderOrder={10}>
+          <bufferGeometry ref={projRef} />
+          <lineBasicMaterial
+            color={device.color}
+            transparent
+            opacity={selected ? 0.85 : 0.22}
+            depthWrite={false}
+            depthTest={false}
+          />
+        </lineSegments>
+      ) : null}
 
       {SHOW_LABELS ? (
         <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>

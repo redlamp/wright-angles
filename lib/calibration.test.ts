@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CARD_ASPECT,
+  CARD_DIAGONAL_RATIO,
   CARD_H_MM,
   CARD_W_MM,
+  COMMON_DIAGONALS_IN,
   cardWidthCssPx,
   diagonalFromCardPx,
+  heightFromWidthPx,
+  widthFromDiagonalPx,
+  widthFromHeightPx,
 } from "./calibration";
 
 const aspect169 = { w: 16, h: 9 };
@@ -49,5 +55,46 @@ describe("diagonalFromCardPx", () => {
     // true diagonal; and vice versa.
     expect(diagonalFromCardPx(px * 1.1, 1, res1440)).toBeLessThan(27);
     expect(diagonalFromCardPx(px * 0.9, 1, res1440)).toBeGreaterThan(27);
+  });
+});
+
+describe("heightFromWidthPx / widthFromHeightPx", () => {
+  test("width→height matches the card's real ratio", () => {
+    expect(heightFromWidthPx(CARD_W_MM)).toBeCloseTo(CARD_H_MM, 6);
+  });
+
+  test("round-trip", () => {
+    expect(widthFromHeightPx(heightFromWidthPx(366.62))).toBeCloseTo(
+      366.62,
+      6,
+    );
+  });
+
+  test("CARD_ASPECT is height/width", () => {
+    expect(CARD_ASPECT).toBeCloseTo(CARD_H_MM / CARD_W_MM, 10);
+  });
+});
+
+describe("widthFromDiagonalPx / CARD_DIAGONAL_RATIO", () => {
+  test("a card built at its own diagonal has the right hypotenuse", () => {
+    const width = widthFromDiagonalPx(100);
+    const height = heightFromWidthPx(width);
+    expect(Math.hypot(width, height)).toBeCloseTo(100, 6);
+  });
+
+  test("ratio matches the real card's own diagonal/width", () => {
+    expect(CARD_DIAGONAL_RATIO).toBeCloseTo(
+      Math.hypot(CARD_W_MM, CARD_H_MM) / CARD_W_MM,
+      10,
+    );
+  });
+});
+
+describe("COMMON_DIAGONALS_IN", () => {
+  test("sorted ascending, laptop through TV", () => {
+    const sorted = [...COMMON_DIAGONALS_IN].sort((a, b) => a - b);
+    expect(COMMON_DIAGONALS_IN).toEqual(sorted);
+    expect(COMMON_DIAGONALS_IN[0]).toBeLessThan(20);
+    expect(COMMON_DIAGONALS_IN.at(-1)).toBeGreaterThan(50);
   });
 });

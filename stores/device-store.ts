@@ -4,7 +4,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Device, DevicePreset } from "@/lib/types";
 import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
-import { useMediaStore } from "@/stores/media-store";
+import { eyeLevelForScenario } from "@/lib/viewing-geometry";
+import type { Scenario } from "@/stores/viewer-store";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -92,11 +93,10 @@ export const useDeviceStore = create<DeviceState>()(
         set((s) => ({
           devices: s.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)),
         })),
-      removeDevice: (id) => {
-        set((s) => ({ devices: s.devices.filter((d) => d.id !== id) }));
-        // A deleted device's per-media crop overrides go with it.
-        useMediaStore.getState().pruneDeviceCrops(id);
-      },
+      // Nothing to clean up elsewhere: fit lives ON the device, so it
+      // leaves with it (no per-media override matrix to prune).
+      removeDevice: (id) =>
+        set((s) => ({ devices: s.devices.filter((d) => d.id !== id) })),
       moveDevice: (id, toIndex) =>
         set((s) => {
           const from = s.devices.findIndex((d) => d.id === id);
@@ -121,7 +121,11 @@ export const useDeviceStore = create<DeviceState>()(
             ...src,
             resolution: { ...src.resolution },
             aspect: { ...src.aspect },
-            elevation: src.elevation ? { ...src.elevation } : undefined,
+            heightOffsetCm: src.heightOffsetCm
+              ? { ...src.heightOffsetCm }
+              : undefined,
+            tilt: src.tilt ? { ...src.tilt } : undefined,
+            autoOrient: src.autoOrient ? { ...src.autoOrient } : undefined,
             id: newId(),
             label: `${src.label} (2)`,
             color: DEVICE_COLORS[s.colorCursor % DEVICE_COLORS.length],
@@ -143,6 +147,72 @@ export const useDeviceStore = create<DeviceState>()(
           colorCursor: 0,
         })),
     }),
-    { name: "wright-angles:devices" },
+    {
+      name: "wright-angles:devices",
+      version: 1,
+      migrate: migrateDevices,
+    },
   ),
 );
+
+/**
+ * v0 → v1: `elevation` held an ABSOLUTE screen-centre height from the
+ * floor; `heightOffsetCm` holds the offset from the viewer's eye line.
+ *
+ * Converting needs the eye height the old value was chosen against, so
+ * this reads the persisted body height out of the viewer store's own
+ * key rather than importing it (that store hydrates independently, and
+ * a migration must not depend on the order). A missing or unreadable
+ * value falls back to the same 175cm default a new session starts at,
+ * which is exactly what the old number was measured against anyway.
+ *
+ * Reinterpreting the old numbers in place was the alternative and would
+ * have been silent data loss: a TV at 164cm from the floor would have
+ * become a TV 164cm ABOVE the gaze, out through the ceiling.
+ */
+function migrateDevices(state: unknown, from: number): unknown {
+  if (from >= 1 || !state || typeof state !== "object") return state;
+  const bodyCm = persistedBodyHeightCm();
+  const convert = (d: Device & { elevation?: Record<string, number> }) => {
+    if (!d?.elevation) return d;
+    const offsets: Record<string, number> = {};
+    for (const s of ["standing", "desk", "couch"] as Scenario[]) {
+      const abs = d.elevation[s];
+      if (typeof abs !== "number") continue;
+      const off = Math.round(abs - eyeLevelForScenario(s, bodyCm));
+      // A height that WAS the eye line becomes level, which is the
+      // absence of an offset — storing a literal 0 would leave the
+      // eye-level switch reading as off for a screen that is dead on
+      // the gaze. (Most v0 values are exactly this: the old control
+      // seeded overrides at the current eye height.)
+      if (off !== 0) offsets[s] = off;
+    }
+    const rest = { ...d };
+    delete rest.elevation;
+    return {
+      ...rest,
+      heightOffsetCm: Object.keys(offsets).length ? offsets : undefined,
+    };
+  };
+  const s = state as {
+    devices?: (Device & { elevation?: Record<string, number> })[];
+    thisDevice?: Device & { elevation?: Record<string, number> };
+  };
+  return {
+    ...s,
+    devices: Array.isArray(s.devices) ? s.devices.map(convert) : s.devices,
+    thisDevice: s.thisDevice ? convert(s.thisDevice) : s.thisDevice,
+  };
+}
+
+/** Body height from the viewer store's persisted blob; 175cm default. */
+function persistedBodyHeightCm(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem("wright-angles:viewer");
+    if (!raw) return 175;
+    const h = JSON.parse(raw)?.state?.heightCm;
+    return typeof h === "number" && h > 0 ? h : 175;
+  } catch {
+    return 175;
+  }
+}

@@ -16,3 +16,10 @@ export function formatLength(canonical: number, from: LengthUnit, to: LengthUnit
   const rounded = to === "in" ? Math.round(v * 10) / 10 : Math.round(v);
   return `${rounded} ${to}`;
 }
+
+/** m:ss timecode for a video/keyframe timestamp in seconds. */
+export function formatTimecode(t: number): string {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}

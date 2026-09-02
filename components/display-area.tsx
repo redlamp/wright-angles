@@ -29,24 +29,32 @@ import {
 } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import {
-  ACUITY,
   boxMetricsOnDevice,
   formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
-import { containFit } from "@/lib/fit";
+import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { deviceViewScale } from "@/lib/view-scale";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
 import {
+  FULL_CROP,
   boxInCrop,
   cropDims,
   cropScaleOf,
-  effectiveCropFor,
   isFullFrame,
   viewBoxOf,
 } from "@/lib/media-crop";
-import type { Device, HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
+import type {
+  Device,
+  FitMode,
+  HighlightBox,
+  MediaCrop,
+  MediaItem,
+} from "@/lib/types";
 
 /**
  * Where the window's client area sits on the physical screen, in CSS px.
@@ -55,13 +63,21 @@ import type { Device, HighlightBox, MediaCrop, MediaItem } from "@/lib/types";
  * estimated from the outer/inner delta (borders split left/right, the
  * rest is the title/tab bar). Polled — there is no window-move event.
  */
+type ScreenViewport = {
+  clientX: number;
+  clientY: number;
+  screenW: number;
+  screenH: number;
+} | null;
+
 export function useScreenViewport() {
-  const [vp, setVp] = useState<{
-    clientX: number;
-    clientY: number;
-    screenW: number;
-    screenH: number;
-  } | null>(null);
+  const [vp, setVp] = useState<ScreenViewport>(null);
+  // Mirrors the last value OUTSIDE React state so "did it move" can be
+  // computed synchronously, in plain code — not by reading a variable an
+  // updater function assigns as a side effect, which only works when
+  // React happens to run that updater eagerly (it isn't a guaranteed
+  // contract of setState).
+  const vpRef = useRef<ScreenViewport>(null);
 
   useEffect(() => {
     // Adaptive cadence: idle at 2Hz, but the moment the window moves,
@@ -93,21 +109,19 @@ export function useScreenViewport() {
         screenW: s.width,
         screenH: s.height,
       };
-      let moved = false;
-      setVp((prev) => {
-        if (
-          prev &&
-          prev.clientX === next.clientX &&
-          prev.clientY === next.clientY &&
-          prev.screenW === next.screenW &&
-          prev.screenH === next.screenH
-        ) {
-          return prev;
-        }
-        moved = prev !== null;
-        return next;
-      });
-      if (moved) lastMoveAt = performance.now();
+      const prev = vpRef.current;
+      const unchanged =
+        prev &&
+        prev.clientX === next.clientX &&
+        prev.clientY === next.clientY &&
+        prev.screenW === next.screenW &&
+        prev.screenH === next.screenH;
+      if (!unchanged) {
+        const moved = prev !== null;
+        vpRef.current = next;
+        setVp(next);
+        if (moved) lastMoveAt = performance.now();
+      }
       const fast = performance.now() - lastMoveAt < SETTLE_MS;
       timer = window.setTimeout(read, fast ? FAST_MS : IDLE_MS);
     };
@@ -133,6 +147,7 @@ export function useScreenViewport() {
 function CropFrame({
   item,
   crop,
+  mode,
   w,
   h,
   children,
@@ -140,12 +155,14 @@ function CropFrame({
   item: MediaItem;
   /** The crop to show — the owning device's EFFECTIVE crop. */
   crop: MediaCrop;
+  /** The owning device's fit mode — stretch fills the whole rect. */
+  mode: FitMode;
   w: number;
   h: number;
   children: React.ReactNode;
 }) {
   const eff = cropDims(item, crop);
-  const area = containFit(eff.width, eff.height, w, h);
+  const area = fitBox(mode, eff.width, eff.height, w, h);
   return (
     <div
       className="absolute overflow-hidden"
@@ -316,7 +333,15 @@ function PixelLoupe({
   }, [containerRef]);
 
   const eff = cropDims(item, crop);
-  const area = containFit(eff.width, eff.height, hostW, hostH);
+  // The loupe rides This Device's rect, so it samples through This
+  // Device's fit — a stretched host draws content edge to edge.
+  const area = fitBox(
+    fitModeOf(thisDevice),
+    eff.width,
+    eff.height,
+    hostW,
+    hostH,
+  );
   let sx = -1;
   let sy = -1;
   if (pt && area.w) {
@@ -411,17 +436,12 @@ function PixelLoupe({
 const setDeviceHover = (h: DeviceHover | null) =>
   useAnnotationStore.getState().setDeviceHover(h);
 
-const boxBandColor = (worstArcmin: number) =>
-  worstArcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : worstArcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
 
 /**
  * Highlight boxes over one device rect. Coordinates are normalized to
- * the media's content area (object-contain within the rect), so the
- * same box lands on the same pixels of the image on every device.
+ * the media's content area — wherever this device's fit mode puts it in
+ * the rect (`fitBox`) — so the same box lands on the same pixels of the
+ * image on every device, stretched panels included.
  */
 function BoxLayer({
   rectW,
@@ -433,26 +453,30 @@ function BoxLayer({
   isHost,
   deviceId,
   crop,
+  mode,
 }: {
   rectW: number;
   rectH: number;
   media: MediaItem;
   /** Measure boxes + active-keyframe lines, full-image normalized. */
   boxes: HighlightBox[];
-  worstByBox: Map<string, number>;
+  /** null = no visible device's fit shows this box; render it muted. */
+  worstByBox: Map<string, number | null>;
   /** Text-block ids for the global Groups color mode. */
   groupById: Map<string, number>;
   isHost: boolean;
   /** Owning rect's device — box hovers feed the inspector with it. */
   deviceId: string;
-  /** The owning device's effective crop (overrides included). */
+  /** The owning device's rendered crop (source crop, fit-reframed). */
   crop: MediaCrop;
+  /** The owning device's fit mode — boxes must land where IT draws. */
+  mode: FitMode;
 }) {
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const colorMode = useAnnotationStore((s) => s.scanColorMode);
   const eff = cropDims(media, crop);
-  const area = containFit(eff.width, eff.height, rectW, rectH);
+  const area = fitBox(mode, eff.width, eff.height, rectW, rectH);
   if (!area.w) return null;
   return (
     <>
@@ -465,7 +489,7 @@ function BoxLayer({
         const color =
           colorMode === "group" && gid !== undefined
             ? groupColor(gid)
-            : boxBandColor(worstByBox.get(b.id) ?? 99);
+            : legibilityColor(worstByBox.get(b.id) ?? null);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -528,6 +552,16 @@ function BoxLayer({
   );
 }
 
+// Cycle label corners so tightly nested rects stay readable — shared by
+// the in-stack label and the focused-chrome overlay's copy, so a device's
+// label doesn't jump to a different corner the moment it's focused.
+const LABEL_CORNER_CLASSES = [
+  "top-0 left-0 -translate-y-full pb-0.5",
+  "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
+  "bottom-0 left-0 translate-y-full pt-0.5",
+  "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
+];
+
 /**
  * The 2D overlay: every visible device rendered at equal angular size,
  * mapped through This Device's panel.
@@ -561,12 +595,29 @@ export function DisplayArea() {
       });
     });
     ro.observe(el);
-    setDpr(window.devicePixelRatio || 1);
-    const onResize = () => setDpr(window.devicePixelRatio || 1);
-    window.addEventListener("resize", onResize);
+    const updateDpr = () => setDpr(window.devicePixelRatio || 1);
+    updateDpr();
+    // `resize` alone misses a DPR change with no size change — dragging
+    // the window to a different-DPI monitor, most commonly. A
+    // matchMedia query on the CURRENT ratio fires once that ratio no
+    // longer matches; re-arm it on the new ratio each time so it keeps
+    // tracking indefinitely, not just the first crossing.
+    let mq: MediaQueryList | null = null;
+    const onDprChange = () => {
+      updateDpr();
+      armDprWatch();
+    };
+    const armDprWatch = () => {
+      mq?.removeEventListener("change", onDprChange);
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mq.addEventListener("change", onDprChange);
+    };
+    armDprWatch();
+    window.addEventListener("resize", updateDpr);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", updateDpr);
+      mq?.removeEventListener("change", onDprChange);
     };
   }, []);
 
@@ -574,16 +625,17 @@ export function DisplayArea() {
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
   const activeVideoUrl =
     activeItem?.kind === "video" ? videoUrls[activeItem.id] : null;
-  // All contain-fit math below runs on effective (cropped) dims. The
-  // host pair drives the annotation layer + loupe (This Device's rect);
-  // other rects derive their own effective crop inline. Memoized so the
-  // react-compiler can keep the manual memos below — it can't see into
-  // the helpers to prove they don't mutate activeItem.
+  // All fit math below runs on the rendered (source-cropped, then
+  // fit-reframed) dims. The host pair drives the annotation layer +
+  // loupe (This Device's rect); other rects derive their own fit crop
+  // inline. Memoized so the react-compiler can keep the manual memos
+  // below — it can't see into the helpers to prove they don't mutate
+  // activeItem.
   const { eff, crop } = useMemo(() => {
     if (!activeItem) return { eff: null, crop: null };
-    const c = effectiveCropFor(activeItem, thisDevice.id);
+    const c = deviceFitCrop(activeItem, thisDevice);
     return { eff: cropDims(activeItem, c), crop: c };
-  }, [activeItem, thisDevice.id]);
+  }, [activeItem, thisDevice]);
 
   const drawMode = useAnnotationStore((s) => s.drawMode);
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
@@ -632,7 +684,7 @@ export function DisplayArea() {
   // Keyframe lines measure with their group-corrected size when it
   // exists (descender-aware).
   const worstByBox = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, number | null>();
     if (!activeItem) return map;
     const devs = [
       ...(thisDevice.visible ? [thisDevice] : []),
@@ -644,20 +696,18 @@ export function DisplayArea() {
         if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
     for (const b of overlayBoxes) {
       const hNorm = kfSize.get(b.id) ?? b.h;
-      let worst = Infinity;
+      // Each device measures through ITS rendered crop (source crop
+      // reframed by the device's fit mode): that region is what lands
+      // on the panel, so the box height re-normalizes against it. A
+      // device whose fit crops the box away doesn't show it, so it
+      // can't drag the worst-case verdict either — and when EVERY
+      // visible device crops it away, the box has no verdict at all
+      // (null), not an infinitely-good one.
+      let worst: number | null = null;
       for (const d of devs) {
-        // Each device measures through ITS effective crop: the cropped
-        // region is what contain-fits onto the panel, so the box height
-        // re-normalizes against that crop (h/c.h of the crop's height =
-        // the box's unchanged source-pixel height). A device whose crop
-        // excludes the box doesn't show it, so it can't drag the
-        // worst-case verdict either.
-        const c = effectiveCropFor(activeItem, d.id);
-        if (!boxInCrop(b, c)) continue;
-        worst = Math.min(
-          worst,
-          boxMetricsOnDevice(hNorm / c.h, cropDims(activeItem, c), d).arcmin,
-        );
+        const m = boxMetricsInCrop(b, hNorm, activeItem, d);
+        if (!m) continue;
+        worst = worst === null ? m.arcmin : Math.min(worst, m.arcmin);
       }
       map.set(b.id, worst);
     }
@@ -713,21 +763,24 @@ export function DisplayArea() {
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
   // covers); fit mode shrinks the whole panel into the window.
-  const k = useMemo(() => {
-    if (!area.w || !area.h) return 0;
-    if (viewportActive && vp) return vp.screenW / thisDevice.resolution.w;
-    return Math.min(
-      area.w / thisDevice.resolution.w,
-      area.h / thisDevice.resolution.h,
-    );
-  }, [
-    area.w,
-    area.h,
-    viewportActive,
-    vp,
-    thisDevice.resolution.w,
-    thisDevice.resolution.h,
-  ]);
+  const k = useMemo(
+    () =>
+      deviceViewScale(
+        thisDevice.resolution.w,
+        thisDevice.resolution.h,
+        area.w,
+        area.h,
+        viewportActive && vp ? vp.screenW : null,
+      ),
+    [
+      area.w,
+      area.h,
+      viewportActive,
+      vp,
+      thisDevice.resolution.w,
+      thisDevice.resolution.h,
+    ],
+  );
 
   // Composition center in client coordinates: the physical screen's
   // center ("screen" center mode, viewport only) or the window's center,
@@ -828,26 +881,24 @@ export function DisplayArea() {
       if (img) {
         g.fillStyle = "#000";
         g.fillRect(x, y, w, h);
-        // Draw only this device's effective crop window (per-device
-        // overrides included; full frame when no crop at all).
-        const c = activeItem
-          ? effectiveCropFor(activeItem, d.id)
-          : { x: 0, y: 0, w: 1, h: 1 };
+        // Draw only this device's rendered crop window (source crop
+        // reframed by its fit mode; full frame when neither applies).
+        const c = activeItem ? deviceFitCrop(activeItem, d) : FULL_CROP;
         const sw = c.w * img.naturalWidth;
         const sh = c.h * img.naturalHeight;
-        const s = Math.min(w / sw, h / sh);
-        const iw = sw * s;
-        const ih = sh * s;
+        // Same fitBox the on-screen rect uses, so the export is the
+        // screenshot it claims to be — a stretched device fills its rect.
+        const a = fitBox(fitModeOf(d), sw, sh, w, h);
         g.drawImage(
           img,
           c.x * img.naturalWidth,
           c.y * img.naturalHeight,
           sw,
           sh,
-          x + (w - iw) / 2,
-          y + (h - ih) / 2,
-          iw,
-          ih,
+          x + a.x,
+          y + a.y,
+          a.w,
+          a.h,
         );
       } else {
         g.fillStyle =
@@ -880,10 +931,18 @@ export function DisplayArea() {
     a.href = url;
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Deferred: revoking synchronously after click() can beat Firefox/
+    // Safari to actually starting the download.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
-  /** Topmost device rect (highest z = last in draw order) under a point. */
+  /**
+   * Topmost device rect (highest z = last in draw order) under a point.
+   * Focus doesn't change this: it raises only the focused device's OWN
+   * chrome (outline/ring/label) above the stack, never its fill, so the
+   * fill layers below stay in plain area-sorted order and this stays
+   * accurate without needing to know who's focused.
+   */
   const deviceAt = (clientX: number, clientY: number) => {
     const el = ref.current;
     if (!el) return null;
@@ -966,17 +1025,40 @@ export function DisplayArea() {
           selectDevice(hit === selectedDeviceId ? null : hit);
         }
       }}
+      onPointerCancel={() => {
+        // The gesture was interrupted (browser gesture takeover, a
+        // window losing focus mid-drag, …) — just clear the drag, never
+        // treat it as a click-select.
+        panDrag.current = null;
+        setPanning(false);
+      }}
+      onLostPointerCapture={() => {
+        // Capture can be lost without either pointerup or pointercancel
+        // firing (e.g. another element steals it) — same treatment:
+        // clear the drag, no click-select.
+        panDrag.current = null;
+        setPanning(false);
+      }}
       onDoubleClick={(e) => {
         if (drawMode || onInteractive(e.target)) return;
         setPanOffset({ x: 0, y: 0 });
       }}
     >
       {rects.map(({ device, w, h }, i) => {
-        // This rect's effective crop — its own override, else the
-        // media crop. Everything drawn inside maps through it.
-        const dCrop = activeItem
-          ? effectiveCropFor(activeItem, device.id)
-          : null;
+        // This rect's rendered crop — the media's source crop, reframed
+        // by this device's fit mode. Everything drawn inside maps
+        // through it.
+        const dCrop = activeItem ? deviceFitCrop(activeItem, device) : null;
+        // This rect's fit mode drives both the CSS object-fit of the
+        // media element and the geometry every overlay inside measures
+        // against — they have to be the same answer.
+        const dMode = fitModeOf(device);
+        const objectFit =
+          dMode === "stretch" ? "object-fill" : "object-contain";
+        // The focused device's OWN chrome (outline, ring, label) draws in
+        // the overlay pass below instead of here — see there for why.
+        // Its fill stays exactly here, at its plain sorted position.
+        const isFocused = device.id === selectedDeviceId;
         return (
         <div
           key={device.id}
@@ -986,6 +1068,10 @@ export function DisplayArea() {
             top: center.y,
             width: w,
             height: h,
+            // Plain area-descending sort, unaffected by focus (biggest
+            // device bottom, so a smaller nested one is legible on top
+            // by default) — see the overlay pass below for how focus is
+            // expressed instead.
             zIndex: i + 1,
           }}
           // Same inspector-feeding hover as the 3D rects. enter/leave
@@ -998,14 +1084,13 @@ export function DisplayArea() {
           <div
             className="absolute inset-0 bg-black"
             style={{
-              outline: `2px solid ${device.color}`,
+              // Suppressed on the focused device: its outline moves to
+              // the overlay pass, which draws above the whole stack
+              // instead of wherever the area sort put this fill. Drawing
+              // it here too would double the alpha where the overlay's
+              // copy sits directly on top of it.
+              outline: isFocused ? undefined : `2px solid ${device.color}`,
               outlineOffset: -1,
-              // Selection affordance: a soft ring just outside the rect's
-              // own outline (shared selection with the table and 3D view).
-              boxShadow:
-                device.id === selectedDeviceId
-                  ? `0 0 0 4px ${device.color}59`
-                  : undefined,
               // Fill also backs the letterbox bars when content doesn't
               // cover the panel (16:9 image on a 32:9 display).
               background:
@@ -1017,22 +1102,28 @@ export function DisplayArea() {
             }}
           >
             {activeVideoUrl && activeItem ? (
-              // One master decode; each rect mirrors it (its effective
+              // One master decode; each rect mirrors it (its rendered
               // crop applied at draw time, so no wrapper needed).
               <VideoMirror
                 item={activeItem}
                 crop={dCrop ?? undefined}
-                className="size-full object-contain select-none"
+                className={cn("size-full select-none", objectFit)}
               />
             ) : activeItem?.type === "image/gif" && activeUrl ? (
               dCrop && !isFullFrame(dCrop) ? (
-                <CropFrame item={activeItem} crop={dCrop} w={w} h={h}>
+                <CropFrame
+                  item={activeItem}
+                  crop={dCrop}
+                  mode={dMode}
+                  w={w}
+                  h={h}
+                >
                   <GifView url={activeUrl} className="size-full select-none" />
                 </CropFrame>
               ) : (
                 <GifView
                   url={activeUrl}
-                  className="size-full object-contain select-none"
+                  className={cn("size-full select-none", objectFit)}
                 />
               )
             ) : activeUrl ? (
@@ -1042,7 +1133,7 @@ export function DisplayArea() {
                 alt=""
                 draggable={false}
                 style={viewBoxOf(dCrop ?? undefined)}
-                className="size-full object-contain select-none"
+                className={cn("size-full select-none", objectFit)}
               />
             ) : null}
             {/* Boxes live INSIDE each rect so a nested device naturally
@@ -1059,35 +1150,90 @@ export function DisplayArea() {
                 isHost={!!device.isThis && !drawMode}
                 deviceId={device.id}
                 crop={dCrop}
+                mode={dMode}
               />
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
           </div>
-          {/* Cycle label corners so tightly nested rects stay readable. */}
-          <span
-            className={
-              "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap " +
-              [
-                "top-0 left-0 -translate-y-full pb-0.5",
-                "top-0 right-0 translate-y-0 pt-0.5 pr-1.5 text-right",
-                "bottom-0 left-0 translate-y-full pt-0.5",
-                "bottom-0 right-0 translate-y-0 pb-0.5 pr-1.5 text-right",
-              ][i % 4]
-            }
-            style={{ color: device.color }}
-          >
-            {device.label} · {formatDistance(device.distanceCm, unit)}
-          </span>
+          {/* Suppressed on the focused device — its copy is in the
+              overlay pass below, above the whole stack. */}
+          {isFocused ? null : (
+            <span
+              className={cn(
+                "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap",
+                LABEL_CORNER_CLASSES[i % 4],
+              )}
+              style={{ color: device.color }}
+            >
+              {device.label} · {formatDistance(device.distanceCm, unit)}
+            </span>
+          )}
         </div>
         );
       })}
+
+      {/* Focused-device chrome overlay: raises just the readable parts
+          (outline, ring, label) of the focused rect above the ENTIRE
+          stack, while its fill and media stay at their plain sorted
+          z-position above. Focusing the biggest device must not paint
+          over every smaller one nested inside it (Taylor 2026-08-20) —
+          so unlike deviceAt/hover, which read the real fill stack, this
+          is a second, pointer-events-none pass that never affects what
+          a click or hover actually lands on. */}
+      {(() => {
+        const fi = rects.findIndex((r) => r.device.id === selectedDeviceId);
+        if (fi === -1) return null;
+        const { device, w, h } = rects[fi];
+        return (
+          <div
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: center.x,
+              top: center.y,
+              width: w,
+              height: h,
+              zIndex: rects.length + 1,
+            }}
+          >
+            <div
+              className="absolute inset-0"
+              style={{
+                outline: `2px solid ${device.color}`,
+                outlineOffset: -1,
+                // Selection affordance: a soft ring just outside the
+                // rect's own outline (shared selection with the table
+                // and 3D view).
+                boxShadow: `0 0 0 4px ${device.color}59`,
+              }}
+            />
+            <span
+              className={cn(
+                "absolute px-1 font-mono text-sm leading-4 whitespace-nowrap",
+                LABEL_CORNER_CLASSES[fi % 4],
+              )}
+              style={{ color: device.color }}
+            >
+              {device.label} · {formatDistance(device.distanceCm, unit)}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Host annotation layer sits above every device rect so drawing
           and box selection are never blocked by nested rects. */}
       {(() => {
         const hostRect = rects.find((r) => r.device.isThis);
         if (!activeItem || !eff || !crop || !hostRect) return null;
-        const area = containFit(eff.width, eff.height, hostRect.w, hostRect.h);
+        // The layer overlays This Device's rect, so it maps through
+        // This Device's fit — same geometry its BoxLayer uses.
+        const hostMode = fitModeOf(thisDevice);
+        const area = fitBox(
+          hostMode,
+          eff.width,
+          eff.height,
+          hostRect.w,
+          hostRect.h,
+        );
         // Draft is kept in full-image coords like persisted boxes; render
         // it through the crop window like BoxLayer does.
         const draftCb = draft ? boxInCrop(draft, crop) : null;
@@ -1120,7 +1266,13 @@ export function DisplayArea() {
                 className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
                 onPointerDown={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(eff.width, eff.height, r.width, r.height);
+                  const a = fitBox(
+                    hostMode,
+                    eff.width,
+                    eff.height,
+                    r.width,
+                    r.height,
+                  );
                   if (!a.w) return;
                   // Screen → crop space → full-image coords (boxes are
                   // stored against the full intrinsic image).
@@ -1133,7 +1285,13 @@ export function DisplayArea() {
                 onPointerMove={(e) => {
                   if (!dragStart.current) return;
                   const r = e.currentTarget.getBoundingClientRect();
-                  const a = containFit(eff.width, eff.height, r.width, r.height);
+                  const a = fitBox(
+                    hostMode,
+                    eff.width,
+                    eff.height,
+                    r.width,
+                    r.height,
+                  );
                   if (!a.w) return;
                   const clamp = (v: number) => Math.min(1, Math.max(0, v));
                   const nx =

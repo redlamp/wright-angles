@@ -12,6 +12,7 @@
  * pinned to it.
  */
 
+import { fitModeOf, fitScale } from "./fit";
 import type { Aspect, Device, LengthUnit, Resolution } from "./types";
 
 export const CM_PER_IN = 2.54;
@@ -266,18 +267,37 @@ export function contentPxToArcmin(
 
 /**
  * Angular height of a highlight box (normalized height `nh` of a media
- * item shown fullscreen-contain on `device`), plus its size in the
- * media's own source pixels.
+ * item shown fullscreen on `device`), plus its size in the media's own
+ * source pixels.
+ *
+ * The media→panel scale follows the DEVICE's fit mode (`device.fit`,
+ * absent = contain): a fill-width panel matches the widths, a
+ * fill-height panel the heights. Without this the reported arc minutes
+ * would contradict what is drawn — this is the one place the math cares
+ * about fit (decision-media-crop-vs-device-fit).
+ *
+ * A `stretch` panel has no single scale; `fitScale` hands back its
+ * VERTICAL one, which is the figure this function wants anyway — `nh`
+ * is a normalized HEIGHT and the whole px→mm→arcmin chain is height-
+ * based. The arc minutes are therefore true for the text's height, and
+ * the UI flags stretched devices so nobody reads them as width.
+ *
+ * `media` may be the source-cropped OR the fit-cropped dims: a fill
+ * mode never touches the axis its own scale depends on (and stretch
+ * crops nothing at all), so the answer is the same either way.
  */
 export function boxMetricsOnDevice(
   nh: number,
   media: { width: number; height: number },
   device: Device,
 ) {
-  // Contain-fit the media into the device's pixel grid.
-  const scale = Math.min(
-    device.resolution.w / media.width,
-    device.resolution.h / media.height,
+  // Fit the media into the device's pixel grid the way this panel does.
+  const scale = fitScale(
+    fitModeOf(device),
+    media.width,
+    media.height,
+    device.resolution.w,
+    device.resolution.h,
   );
   const devicePx = nh * media.height * scale;
   return {

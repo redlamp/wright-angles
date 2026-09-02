@@ -24,6 +24,14 @@ The Final Cut on console and handheld.
 - **Strictly local media** — images are stored in your browser
   (IndexedDB), never uploaded anywhere. No backend, no tracking. Safe for
   unannounced work.
+- **Text measurement via on-device OCR** — Tesseract.js, vendored and
+  fully offline, finds text lines and grades their legibility per device.
+- **Bank-card screen calibration** — drag a shape to match a real card
+  held against your screen to measure its true physical size.
+- **Video and GIF support** — with per-keyframe scans, so legibility
+  checks track moving footage, not just stills.
+- **Setup export/import** — save and restore your whole device rig as a
+  JSON file.
 
 ## Development
 

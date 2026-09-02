@@ -9,10 +9,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistance } from "@/lib/display-math";
+import { FIT_MODES, aspectsDisagree, fitLabel, fitModeOf } from "@/lib/fit";
+import type { Device, FitMode } from "@/lib/types";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
+import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { nextZ } from "./floating-panel";
 
 /**
@@ -31,9 +41,12 @@ export function DeviceInspector() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
   const updateThisDevice = useDeviceStore((s) => s.updateThisDevice);
+  const updateDevice = useDeviceStore((s) => s.updateDevice);
   const toggleVisible = useDeviceStore((s) => s.toggleVisible);
   const unit = useSettingsStore((s) => s.unit);
   const deviceHover = useAnnotationStore((s) => s.deviceHover);
+  const mediaItems = useMediaStore((s) => s.items);
+  const activeMediaId = useMediaStore((s) => s.activeId);
 
   // Session-only position: right-anchored until the first drag.
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -57,6 +70,16 @@ export function DeviceInspector() {
   const device = byId(selectedId) ?? hoverDevice;
   if (!device) return null;
   const isThis = device.id === thisDevice.id;
+
+  // Quick fit access (decision-media-crop-vs-device-fit): shown ONLY
+  // when this panel's shape and the active media's actually disagree —
+  // with matching aspects all four modes render identically (stretch
+  // included: it only distorts when the shapes differ), so the control
+  // would be pure noise.
+  const activeItem = mediaItems.find((i) => i.id === activeMediaId) ?? null;
+  const showFit = !!activeItem && aspectsDisagree(activeItem, device);
+  const patchDevice = (p: Partial<Device>) =>
+    isThis ? updateThisDevice(p) : updateDevice(device.id, p);
 
   return (
     <div
@@ -153,6 +176,30 @@ export function DeviceInspector() {
           </div>
           <div>viewed at {formatDistance(device.distanceCm, unit)}</div>
         </div>
+        {showFit ? (
+          <Select
+            value={fitModeOf(device)}
+            onValueChange={(v) =>
+              patchDevice({ fit: v === "contain" ? undefined : (v as FitMode) })
+            }
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-full"
+              aria-label="Content fit"
+              title="This media's shape differs from this panel's — choose what gives"
+            >
+              <SelectValue>{fitLabel(fitModeOf(device))}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {FIT_MODES.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <button
           type="button"
           className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline"

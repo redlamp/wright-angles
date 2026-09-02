@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, MeshStandardMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { InputType, Scenario } from "@/stores/viewer-store";
+import type { HeldGrip } from "@/lib/viewing-geometry";
 import type { ScenePalette } from "./scene-palette";
 
 /** Height the figure is authored at; the whole body scales by heightCm/175. */
@@ -110,6 +111,7 @@ function makePose(
   scenario: Scenario,
   input: InputType,
   heightCm: number,
+  held: HeldGrip | null,
 ): Pose {
   const s = heightCm / AUTHORED_CM;
   const standing = scenario === "standing";
@@ -138,11 +140,38 @@ function makePose(
       };
 
   if (input === "handheld") {
-    // Raised two-hand hold: hands at the device grips ~13cm below the
-    // eye line and ~32cm out, forearms raking up toward the screen —
-    // the natural Switch/Deck angle. The device rect itself stays
-    // upright on the sight line: tilting it would contradict the
-    // face-on angular math the readouts are built on.
+    // Hold the device that is actually in the scene rather than a
+    // guessed spot in mid-air (Taylor 2026-08-20): the authored pose
+    // put the hands ~32cm out at a fixed height, which ran them
+    // straight through a Steam Deck sitting somewhere else. The root is
+    // at world (0, rootY, 0) and pose units are root-local authored cm,
+    // so a world target divides through by the figure's scale.
+    //
+    // Out-of-reach devices are fine: the IK clamps the reach and keeps
+    // the direction, so the arms point ALONG the line to the screen
+    // instead of snapping to it.
+    if (held) {
+      return {
+        ...body,
+        wrist: {
+          // Hands on the chassis edges, not the glass — a wide grip is
+          // what actually reads as holding the thing.
+          x: held.halfGripCm / s,
+          // Below the screen centre, not level with it: the hand mesh is
+          // a palm-base slab, so a wrist at centre height hung the whole
+          // hand above the device (Taylor 2026-08-20). heldGripFor does
+          // the anatomy; this just divides through by the figure's scale.
+          y: (held.wristY - rootY) / s,
+          z: held.distanceCm / s,
+        },
+        // Elbows tucked toward the ribs rather than winged out, which is
+        // how anyone actually holds a handheld for more than a minute.
+        pole: { x: 0.3, y: -1, z: -0.45 },
+      };
+    }
+    // Nothing hand-held on screen: the original raised two-hand hold,
+    // ~13cm below the eye line and ~32cm out at the natural Switch/Deck
+    // angle.
     return {
       ...body,
       wrist: { x: 5.5, y: 56, z: 2 + 32 / s },
@@ -296,19 +325,22 @@ export default function ViewerFigure({
   inputType,
   heightCm,
   palette,
+  held = null,
 }: {
   scenario: Scenario;
   inputType: InputType;
   heightCm: number;
   palette: ScenePalette;
+  /** Device the hands should grip; null keeps the authored pose. */
+  held?: HeldGrip | null;
 }) {
   useEffect(() => {
     FIGURE_MAT.color.set(palette.figure);
   }, [palette]);
 
   const target = useMemo(
-    () => makePose(scenario, inputType, heightCm),
-    [scenario, inputType, heightCm],
+    () => makePose(scenario, inputType, heightCm, held),
+    [scenario, inputType, heightCm, held],
   );
 
   const rootRef = useRef<Group>(null);
@@ -370,7 +402,9 @@ export default function ViewerFigure({
   });
 
   return (
-    <group ref={rootRef}>
+    // Ctrl+drag orbit pivots on the figure at its feet, not the clicked
+    // limb (see pivot-orbit.tsx).
+    <group ref={rootRef} userData={{ orbitPivot: "base" }}>
       <mesh material={FIGURE_MAT} position={[0, 2, 0]} rotation={[0, 0, Math.PI / 2]}>
         <capsuleGeometry args={[9, 8, 4, 12]} />
       </mesh>

@@ -1,22 +1,36 @@
+---
+tags: [domain/product, status/superseded]
+---
+
 # Test Plan — 2026-08-19 — Per-Device Crop + Mirrored-Side Hover
+
+> **Closed 2026-08-20** → [[test-plan-2026-08-20-device-fit]]. Section 1
+> (mirrored-side hover, shipped in v0.6.0) passed and stands. Sections
+> 2–4 are void: the feature they test was rejected on review and
+> replaced by device fit modes.
 
 Built overnight on dev (v0.6.0 already promoted to main before this).
 Tick what passes; annotate anything that feels off.
 
 ## 1. Mirrored-side text hover (shipped in v0.6.0)
 
-- [ ] 1.1 In 3D, orbit BEHIND a screen showing scanned media (mirrored
+- [x] 1.1 In 3D, orbit BEHIND a screen showing scanned media (mirrored
       text). Hovering a text line pops the hover card, right-reading,
       placed off the screen space — same as from the front.
-- [ ] 1.2 From the front, box hover behaves exactly as before.
+- [x] 1.2 From the front, box hover behaves exactly as before.
 
 ## 2. Per-device crop — basics
+
+> **Sections 2–4 are void (2026-08-20).** Taylor rejected the approach
+> on review; see [[decision-media-crop-vs-device-fit]]. Don't tick
+> these — the device-scope crop UI is being replaced by device fit
+> modes. Section 1 still stands.
 
 Select a device (row, 2D, or 3D — selection is shared), then Media
 Library → Crop.
 
 - [ ] 2.1 With a device selected, an "applies to" control appears
-      under the crop dropdown: All devices · <device> (hollow dot =
+      under the crop dropdown: All devices · `<device>` (hollow dot =
       no override yet).
 - [ ] 2.2 In device scope, the dropdown offers: Inherit · Full frame
       on this device · Match W:H (the device's shape) · standard

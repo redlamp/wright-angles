@@ -8,22 +8,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  CanvasTexture,
-  RepeatWrapping,
-  SRGBColorSpace,
-  TextureLoader,
-  VideoTexture,
-  type Group,
-  type Texture,
-} from "three";
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, VideoTexture, type Group, type Texture, Raycaster, Ray, type Camera, type Object3D } from "three";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
 import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
-import { boxInCrop, cropDims, effectiveCropFor } from "@/lib/media-crop";
+import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
+import { deviceFitCrop } from "@/lib/fit";
+import { deviceViewScale } from "@/lib/view-scale";
+import { easeInOutCubic } from "@/lib/easing";
+import {
+  centerYFor,
+  heldGripFor,
+  resolvedTiltDeg,
+} from "@/lib/viewing-geometry";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
@@ -31,14 +31,16 @@ import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
-import { useSceneTheme } from "@/lib/use-theme";
+import { useSceneTheme } from "@/components/use-theme";
 import DeviceRect, {
+  NAME_FONT_CM,
   type ContentBox,
   type LabelPlacement,
 } from "./device-rect";
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
+import PivotOrbit from "./pivot-orbit";
 import { useScreenViewport } from "@/components/display-area";
 import SceneHud, { FPS_NODE_ID } from "./scene-hud";
 import { SCENE_PALETTES } from "./scene-palette";
@@ -52,6 +54,34 @@ import { SCENE_PALETTES } from "./scene-palette";
 function markTextureDirty(tex: Texture) {
   tex.needsUpdate = true;
 }
+
+/** True when `target` is the first visible mesh along `ray` in its scene. */
+function isNearestHit(target: Object3D, ray: Ray, camera: Camera): boolean {
+  let root: Object3D = target;
+  while (root.parent) root = root.parent;
+  const rc = new Raycaster();
+  rc.ray.copy(ray);
+  // drei's <Line> (LineSegments2) refuses to raycast without a camera.
+  rc.camera = camera;
+  const hit = rc
+    .intersectObjects(root.children, true)
+    .find((h) => (h.object as { isMesh?: boolean }).isMesh && isShown(h.object));
+  return hit?.object === target;
+}
+
+function isShown(o: Object3D): boolean {
+  for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+
+/**
+ * Orbit polar-angle bounds (radians from world +Y), shared by OrbitControls
+ * (plain drag rotate, pan, zoom) and PivotOrbit (Ctrl+drag rotate about
+ * the clicked point) so the two gestures clamp identically. maxPolarAngle keeps the camera from diving
+ * under the floor; minPolarAngle keeps it shy of looking straight down.
+ */
+const MIN_POLAR_ANGLE = 0.05;
+const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
 
 /**
  * The crop composes with the U-mirror via repeat/offset (sampled uv' =
@@ -82,10 +112,10 @@ function useScreenTexture(tex: Texture, crop?: MediaCrop) {
 
 /**
  * Per-device screen textures. The base texture wears the plain media
- * crop; each DISTINCT device-crop override gets ONE clone (clones share
- * the pixel upload via texture.source — only repeat/offset differ per
- * Texture object), so N devices on two crops cost two textures, not N.
- * Devices without an override resolve to the base.
+ * (source) crop; each DISTINCT fit-derived crop gets ONE clone (clones
+ * share the pixel upload via texture.source — only repeat/offset differ
+ * per Texture object), so N devices on two crops cost two textures, not
+ * N. Devices whose fit is a no-op resolve to the base.
  */
 interface ScreenTextures {
   forDevice: (deviceId: string) => Texture;
@@ -96,15 +126,15 @@ interface ScreenTextures {
 function useCropTextures(
   base: Texture,
   mediaCrop: MediaCrop | undefined,
-  deviceCrops: Record<string, MediaCrop> | undefined,
+  fitCrops: Record<string, MediaCrop> | undefined,
 ): ScreenTextures {
   useScreenTexture(base, mediaCrop);
   const clones = useMemo(() => {
     const byDevice = new Map<string, Texture>();
     const made: Texture[] = [];
-    if (deviceCrops) {
+    if (fitCrops) {
       const byKey = new Map<string, Texture>();
-      for (const [devId, crop] of Object.entries(deviceCrops)) {
+      for (const [devId, crop] of Object.entries(fitCrops)) {
         const key = `${crop.x},${crop.y},${crop.w},${crop.h}`;
         let t = byKey.get(key);
         if (!t) {
@@ -117,7 +147,7 @@ function useCropTextures(
       }
     }
     return { byDevice, made };
-  }, [base, deviceCrops]);
+  }, [base, fitCrops]);
   useEffect(
     () => () => {
       for (const t of clones.made) t.dispose();
@@ -136,16 +166,28 @@ function useCropTextures(
 function ImageScreens({
   url,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   url: string;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useLoader(TextureLoader, url);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
+  // useCropTextures already disposes its own clones; the BASE texture
+  // (r3f's cache, keyed by url) is this component's to dispose — on
+  // unmount, and again whenever url changes (the old texture's own
+  // cleanup, since `tex` and `url` change together). Clearing the r3f
+  // loader cache alongside the dispose stops a later re-visit to the
+  // same url handing back an already-disposed texture.
+  useEffect(() => {
+    return () => {
+      tex.dispose();
+      useLoader.clear(TextureLoader, url);
+    };
+  }, [tex, url]);
   return <>{children(texs)}</>;
 }
 
@@ -153,16 +195,16 @@ function ImageScreens({
 function EngineVideoScreens({
   video,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   video: HTMLVideoElement;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new VideoTexture(video), [video]);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
   useEffect(() => () => tex.dispose(), [tex]);
   // Demand frameloop: request a render per decoded video frame — no
   // frames while paused, native cadence while playing. (VideoTexture
@@ -190,16 +232,16 @@ function EngineVideoScreens({
 function EngineGifScreens({
   engine,
   crop,
-  deviceCrops,
+  fitCrops,
   children,
 }: {
   engine: GifEngine;
   crop?: MediaCrop;
-  deviceCrops?: Record<string, MediaCrop>;
+  fitCrops?: Record<string, MediaCrop>;
   children: (texs: ScreenTextures) => ReactNode;
 }) {
   const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  const texs = useCropTextures(tex, crop, deviceCrops);
+  const texs = useCropTextures(tex, crop, fitCrops);
   useEffect(() => () => tex.dispose(), [tex]);
   // Demand frameloop: each decoded GIF frame marks every screen texture
   // (base + per-device clones) dirty and requests exactly one render.
@@ -216,21 +258,51 @@ function EngineGifScreens({
 }
 
 /**
+ * Live window inner size. The head-on FOV/pose below read
+ * window.innerWidth/innerHeight directly (outside any event this
+ * component otherwise subscribes to), so without this they'd go stale
+ * the moment the window is resized with nothing else triggering a
+ * re-render — subscribing to `resize` is all this hook is for.
+ */
+function useWindowSize() {
+  const [size, setSize] = useState(() =>
+    typeof window === "undefined"
+      ? { w: 0, h: 0 }
+      : { w: window.innerWidth, h: window.innerHeight },
+  );
+  useEffect(() => {
+    const onResize = () =>
+      setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
+
+/**
  * Vertical fov that makes the head-on camera see exactly what the 2D view
  * shows in this window: the window height mapped through the 2D scale into
  * device pixels, then through the panel's pixel pitch into physical size,
  * subtended from the viewing distance. This is what makes the 2D↔3D swap
  * land without a visual jump.
  */
-function headOnFovDeg(thisDevice: Device, displayMode: DisplayMode): number {
-  if (typeof window === "undefined") return 40;
+function headOnFovDeg(
+  thisDevice: Device,
+  displayMode: DisplayMode,
+  winW: number,
+  winH: number,
+): number {
+  if (typeof window === "undefined" || winW <= 0 || winH <= 0) return 40;
   const res = thisDevice.resolution;
-  const k =
-    displayMode === "viewport"
-      ? window.screen.width / res.w
-      : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+  const k = deviceViewScale(
+    res.w,
+    res.h,
+    winW,
+    winH,
+    displayMode === "viewport" ? window.screen.width : null,
+  );
   if (!k) return 40;
-  const visibleDevicePx = window.innerHeight / k;
+  const visibleDevicePx = winH / k;
   const { heightCm } = physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect);
   const physH = (visibleDevicePx / res.h) * heightCm;
   const fov =
@@ -260,19 +332,23 @@ function computeLabelPlacements(
     topY: number;
     halfW: number;
     nameSize: number;
+    /** Rough rendered width of the name, in scene cm. */
+    nameW: number;
   }
   const infos: Info[] = visible
     .map((d) => {
       const { widthCm, heightCm } = physicalSizeCm(d.diagonalIn, d.aspect);
-      const centerY = d.elevation?.[scenario] ?? eyeH;
+      const centerY = centerYFor(d, scenario, eyeH);
       return {
         id: d.id,
         z: d.distanceCm,
         // Name-label anchor height (rect top + 3), at the tween's target.
         topY: centerY + heightCm / 2 + 3,
         halfW: widthCm / 2,
-        // Mirrors DeviceRect's name font sizing.
-        nameSize: Math.min(12, Math.max(4, heightCm * 0.14)),
+        nameSize: NAME_FONT_CM,
+        // Average glyph advance for this face is ~0.55em; close enough to
+        // decide overlap without measuring troika's laid-out geometry.
+        nameW: d.label.length * NAME_FONT_CM * 0.55,
       };
     })
     .sort((a, b) => a.z - b.z);
@@ -282,23 +358,49 @@ function computeLabelPlacements(
     out.set(i.id, { nameX: 0, nameLift: 0, distX: 0, distLift: 0 });
 
   // Name labels: anchors near each other in the (y, z) plane collide.
+  // They separate by STACKING, not by sliding sideways. Parking a name
+  // on its own rect edge (±halfW) scaled the offset with panel width, so
+  // a 32:9 ultrawide threw its label ~60cm out — twice as far as a 16:9
+  // neighbour and visibly detached from the screen it names. Height is
+  // also the only stable axis here: every rect is centred on x=0, and
+  // the horizontal offset was modulated by camera side, so it collapsed
+  // to zero near edge-on and let the labels collide anyway. A lift is
+  // applied statically, so the ladder holds through a full orbit.
   let cluster: Info[] = [];
+  const GAP = 2;
   const flushNames = () => {
     if (cluster.length > 1) {
-      cluster.forEach((m, idx) => {
+      // Need-based, like the floor-label ramp below: each name rises only
+      // far enough to clear the one under it, then stops. A fixed
+      // idx * step ladder compounded instead — a monitor whose rect
+      // already sits well above the handhelds still inherited two rungs
+      // of someone else's stack and floated away from its own screen.
+      // Cluster is depth-sorted, so the ladder climbs away from the
+      // viewer and each name stays centred over the rect it belongs to.
+      let prevTop = -Infinity;
+      for (const m of cluster) {
         const p = out.get(m.id)!;
-        p.nameX = (idx % 2 === 0 ? -1 : 1) * m.halfW;
-        p.nameLift = Math.floor(idx / 2) * (m.nameSize + 2);
-      });
+        p.nameX = 0;
+        // Labels anchor at their BOTTOM on topY, so one occupies
+        // [topY + lift, topY + lift + nameSize].
+        const lift = Math.max(0, prevTop + GAP - m.topY);
+        p.nameLift = lift;
+        prevTop = m.topY + lift + m.nameSize;
+      }
     }
     cluster = [];
   };
   for (const info of infos) {
     const prev = cluster[cluster.length - 1];
+    // Two names clash when their anchors are closer than the names are
+    // WIDE — a multiple of font size missed that, so "Steam Deck OLED"
+    // and "27″ 1440p Monitor" sat 28cm apart in z and still overlapped
+    // by half their length. Every rect is centred on x=0, so the anchor
+    // gap is all that keeps them apart.
     if (
       prev &&
       Math.hypot(info.z - prev.z, info.topY - prev.topY) >
-        1.5 * Math.max(prev.nameSize, info.nameSize)
+        (prev.nameW + info.nameW) / 2
     ) {
       flushNames();
     }
@@ -332,9 +434,6 @@ function computeLabelPlacements(
 
   return out;
 }
-
-const easeInOutCubic = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 /** Module-level so the react-compiler lint permits the mutation. */
 function applySightY(group: Group | null, y: number) {
@@ -436,7 +535,13 @@ export default function SceneView({
   const inputType = useViewerStore((s) => s.inputType);
   const heightCm = useViewerStore((s) => s.heightCm);
   const palette = SCENE_PALETTES[useSceneTheme()];
-  const visible = [thisDevice, ...devices].filter((d) => d.visible);
+  // Memoized: the fit-crop and label memos below key off this list, and
+  // a fresh array each render would re-clone every screen texture.
+  const visible = useMemo(
+    () => [thisDevice, ...devices].filter((d) => d.visible),
+    [thisDevice, devices],
+  );
+
 
   const items = useMediaStore((s) => s.items);
   const activeId = useMediaStore((s) => s.activeId);
@@ -449,11 +554,22 @@ export default function SceneView({
   // For videos the objectUrl is the poster frame — a fallback if the
   // playable URL is somehow missing.
   const imageUrl = activeItem ? objectUrls[activeItem.id] : undefined;
-  // Crop: rects letterbox against their EFFECTIVE (cropped) dims —
-  // per-device overrides included; the crop window itself rides each
-  // screen texture's repeat/offset (per-device clones when needed).
+  // Crop: rects letterbox against their RENDERED dims — the media's
+  // source crop, reframed by each device's fit mode; the window itself
+  // rides each screen texture's repeat/offset (clones when needed).
   const mediaCrop = activeItem?.crop;
-  const deviceCrops = activeItem?.deviceCrops;
+  // Only devices whose fit actually reframes get an entry, so a scene
+  // of contain panels (the default) still shares one base texture.
+  const fitCrops = useMemo(() => {
+    if (!activeItem) return undefined;
+    const src = cropOf(activeItem);
+    const out: Record<string, MediaCrop> = {};
+    for (const d of visible) {
+      const c = deviceFitCrop(activeItem, d);
+      if (!cropsEqual(c, src)) out[d.id] = c;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }, [activeItem, visible]);
 
   // Measure boxes + the active keyframe's detected lines, mapped into
   // crop space once and drawn on every screen (per-device colors happen
@@ -473,7 +589,7 @@ export default function SceneView({
   // the demand frameloop only renders on real changes anyway — and the
   // react-compiler can memoize it itself where profitable.
   // Entries stay full-image normalized here; each rect maps them
-  // through ITS effective crop below (per-device overrides differ).
+  // through ITS rendered crop below (fit modes differ per device).
   const groupById = new Map<string, number>();
   const boxEntries: {
     id: string;
@@ -510,9 +626,9 @@ export default function SceneView({
       }),
     );
   }
-  const boxesFor = (deviceId: string): ContentBox[] => {
+  const boxesFor = (device: Device): ContentBox[] => {
     if (!activeItem || boxEntries.length === 0) return [];
-    const crop = effectiveCropFor(activeItem, deviceId);
+    const crop = deviceFitCrop(activeItem, device);
     const out: ContentBox[] = [];
     for (const e of boxEntries) {
       const rect = boxInCrop(e, crop);
@@ -531,6 +647,14 @@ export default function SceneView({
   };
 
   const eyeH = eyeHeightCm(scenario, heightCm);
+
+  // Where the figure's hands go in the handheld pose. Memoized because
+  // it feeds a pose the figure tweens toward — a fresh object every
+  // render would restart the tween on every frame.
+  const heldGrip = useMemo(
+    () => heldGripFor(visible, scenario, eyeH),
+    [visible, scenario, eyeH],
+  );
   const farZ = Math.max(100, ...visible.map((d) => d.distanceCm));
 
   const displayMode = useSettingsStore((s) => s.displayMode);
@@ -552,10 +676,13 @@ export default function SceneView({
     fov: 40,
   }));
   // Head-on pose tracks the live eye height and the 2D view's actual
-  // visible angle so both ends of the transition line up with 2D.
+  // visible angle so both ends of the transition line up with 2D —
+  // winSize keeps it (and headOnX/Y below) in sync across a resize
+  // instead of going stale until something else re-renders this.
+  const winSize = useWindowSize();
   const fov = useMemo(
-    () => headOnFovDeg(thisDevice, displayMode),
-    [thisDevice, displayMode],
+    () => headOnFovDeg(thisDevice, displayMode, winSize.w, winSize.h),
+    [thisDevice, displayMode, winSize],
   );
   // The flight lands on WHATEVER 2D's framing is (Taylor 2026-08-17):
   // replicate the 2D content-center offset from the window center —
@@ -568,19 +695,22 @@ export default function SceneView({
   const vp = useScreenViewport();
   let headOnX = 0;
   let headOnY = 0;
-  if (typeof window !== "undefined") {
+  if (winSize.w > 0 && winSize.h > 0) {
     const res = thisDevice.resolution;
     const viewportActive = displayMode === "viewport" && vp !== null;
     let dxPx = panOffset.x;
     let dyPx = panOffset.y;
     if (viewportActive && vp && displayCenter === "screen") {
-      dxPx += vp.screenW / 2 - vp.clientX - window.innerWidth / 2;
-      dyPx += vp.screenH / 2 - vp.clientY - window.innerHeight / 2;
+      dxPx += vp.screenW / 2 - vp.clientX - winSize.w / 2;
+      dyPx += vp.screenH / 2 - vp.clientY - winSize.h / 2;
     }
-    const k =
-      viewportActive && vp
-        ? vp.screenW / res.w
-        : Math.min(window.innerWidth / res.w, window.innerHeight / res.h);
+    const k = deviceViewScale(
+      res.w,
+      res.h,
+      winSize.w,
+      winSize.h,
+      viewportActive && vp ? vp.screenW : null,
+    );
     if (k > 0) {
       const cmPerCss =
         physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect).heightCm /
@@ -596,6 +726,10 @@ export default function SceneView({
     fov,
   };
   const [controlsOn, setControlsOn] = useState(false);
+  // Double-click on the ground flies the camera back to the orbit pose
+  // (Taylor 2026-09-02) — the 3D counterpart of 2D's double-click
+  // recenter. A counter, so every double-click is a fresh request.
+  const [recenter, setRecenter] = useState(0);
   // App-wide selection (shared with the comparison table and 2D view).
   const selectedId = useUiStore((s) => s.selectedDeviceId);
   const selectDevice = useUiStore((s) => s.selectDevice);
@@ -624,23 +758,32 @@ export default function SceneView({
       a.href = url;
       a.download = `wright-angles-3d-${new Date().toISOString().slice(0, 10)}.png`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Deferred: revoking synchronously after click() can beat Firefox/
+      // Safari to actually starting the download.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }, "image/png");
   };
 
-  // The media texture is loaded ONCE here; rects share it (or a
-  // per-device clone when the device has its own crop override).
+  // The media texture is loaded ONCE here; rects share it (or a clone
+  // when the device's fit mode derives a different crop).
   const rects = (texs: ScreenTextures | null) =>
     visible.map((d, i) => {
       const dims = activeItem
-        ? cropDims(activeItem, effectiveCropFor(activeItem, d.id))
+        ? cropDims(activeItem, deviceFitCrop(activeItem, d))
         : null;
       return (
         <DeviceRect
           key={d.id}
           device={d}
           zBias={i * 0.04}
-          centerY={d.elevation?.[scenario] ?? eyeH}
+          centerY={centerYFor(d, scenario, eyeH)}
+          tiltDeg={resolvedTiltDeg(
+            d,
+            scenario,
+            centerYFor(d, scenario, eyeH),
+            eyeH,
+            d.distanceCm,
+          )}
           poseKey={scenario}
           distLabel={formatDistance(d.distanceCm, unit)}
           palette={palette}
@@ -657,7 +800,7 @@ export default function SceneView({
               : updateDevice(d.id, { distanceCm })
           }
           onDragState={setNodeDragging}
-          contentBoxes={boxesFor(d.id)}
+          contentBoxes={boxesFor(d)}
           selectedBoxId={selectedBoxId}
           boxColorMode={scanColorMode}
           media={
@@ -714,7 +857,19 @@ export default function SceneView({
       >
         <color attach="background" args={[palette.bg]} />
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          onDoubleClick={(e) => {
+            // Only when the ground is what was actually under the cursor.
+            // r3f delivers the event to every handler-bearing object along
+            // the ray and lists only those in e.intersections, so a couch
+            // or the figure (no handlers) would not block it; raycast the
+            // whole scene instead and insist the ground is the nearest.
+            if (!controlsOn || !isNearestHit(e.object, e.ray, e.camera)) return;
+            e.stopPropagation();
+            setRecenter((n) => n + 1);
+          }}
+        >
           <planeGeometry args={[4000, 4000]} />
           <meshBasicMaterial color={palette.ground} />
         </mesh>
@@ -730,6 +885,7 @@ export default function SceneView({
           inputType={inputType}
           heightCm={heightCm}
           palette={palette}
+          held={heldGrip}
         />
         <ScenarioProps
           scenario={scenario}
@@ -763,7 +919,7 @@ export default function SceneView({
             <EngineVideoScreens
               video={engine.video}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </EngineVideoScreens>
@@ -771,7 +927,7 @@ export default function SceneView({
             <EngineGifScreens
               engine={engine}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </EngineGifScreens>
@@ -779,7 +935,7 @@ export default function SceneView({
             <ImageScreens
               url={imageUrl}
               crop={mediaCrop}
-              deviceCrops={deviceCrops}
+              fitCrops={fitCrops}
             >
               {rects}
             </ImageScreens>
@@ -797,18 +953,35 @@ export default function SceneView({
           instant={instant}
           onExited={onExited}
           onControlsChange={setControlsOn}
+          recenter={recenter}
         />
         {/* Mounted only while the rig is idle so its update loop never
             fights the fly-in/out; on remount it re-syncs from the camera. */}
         {controlsOn ? (
-          <OrbitControls
-            makeDefault
-            enableDamping
-            enabled={!nodeDragging}
-            target={orbitPose.target}
-            maxPolarAngle={Math.PI / 2 - 0.05}
-            maxDistance={farZ * 6}
-          />
+          <>
+            <OrbitControls
+              makeDefault
+              enableDamping
+              enabled={!nodeDragging}
+              target={orbitPose.target}
+              minPolarAngle={MIN_POLAR_ANGLE}
+              maxPolarAngle={MAX_POLAR_ANGLE}
+              maxDistance={farZ * 6}
+              // Wheel zoom homes in on the point under the cursor instead of
+              // the fixed target — reads the pointer via the same raycaster
+              // OrbitControls already uses for dollying, so it composes with
+              // minDistance/maxDistance/enableDamping with no extra wiring.
+              zoomToCursor
+              // Plain drag rotates about the target as drei always has;
+              // Ctrl+drag is intercepted by PivotOrbit below (Taylor
+              // 2026-09-02: default orbit is drei, Ctrl pins the click).
+            />
+            <PivotOrbit
+              active={!nodeDragging}
+              minPolarAngle={MIN_POLAR_ANGLE}
+              maxPolarAngle={MAX_POLAR_ANGLE}
+            />
+          </>
         ) : null}
       </Canvas>
       <SceneHud onExport={exportPng} />

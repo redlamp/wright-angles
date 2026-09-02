@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  ChevronRightIcon,
   CopyIcon,
   CornerDownRightIcon,
   EyeIcon,
@@ -12,13 +13,15 @@ import {
   RotateCwSquareIcon,
   RulerDimensionLineIcon,
   Trash2Icon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   FEATURE_3D_DEVICE_BODY,
   FEATURE_PINNED_DEVICES,
 } from "@/lib/flags";
-import type { Device } from "@/lib/types";
+import type { Device, FitMode } from "@/lib/types";
+import { FIT_MODES, fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import {
   COMMON_ASPECTS,
   COMMON_RESOLUTIONS,
@@ -33,9 +36,18 @@ import {
   sliderToDist,
 } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
+import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { SCENARIOS, useViewerStore } from "@/stores/viewer-store";
+import {
+  TILT_LIMIT_DEG,
+  autoOrientDefaultFor,
+  autoOrientOf,
+  autoTiltDeg,
+  centerYFor,
+  eyeLevelForScenario,
+} from "@/lib/viewing-geometry";
 import { NumberStepper } from "@/components/number-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,6 +113,122 @@ function DistanceStepper({
       decimals={shown >= 100 ? 0 : 1}
       className="h-7"
     />
+  );
+}
+
+/**
+ * Fold-away section, closed on mount. Local state, deliberately not
+ * persisted — but React keeps the instance alive as you move between
+ * devices, so an open section stays open while you compare them, and
+ * only a fresh editor starts folded. That is the behaviour you want
+ * here: nobody opens Offsets to look at exactly one device.
+ */
+function Collapsible({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRightIcon
+          className={cn(
+            "size-3.5 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        <Microlabel>{label}</Microlabel>
+      </button>
+      {open ? <div className="space-y-3 pl-4.5">{children}</div> : null}
+    </div>
+  );
+}
+
+/** One labelled row inside Offsets; children fill slider/value/switch. */
+function StanceRow({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_5.5rem_2.25rem] items-center gap-2">
+      <span
+        className={cn(
+          "truncate text-sm",
+          active ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A signed offset from the eye line, shown in the viewing-distance
+ * unit. Zero is dead level, so the slider is centred and the stored
+ * value is dropped entirely at 0 — "level with the gaze" is the absence
+ * of an offset, not an offset of nothing.
+ */
+const OFFSET_LIMIT_CM = 150;
+function OffsetControls({
+  label,
+  offsetCm,
+  onChange,
+}: {
+  label: string;
+  offsetCm: number | undefined;
+  onChange: (cm: number | undefined) => void;
+}) {
+  const unit = useSettingsStore((s) => s.unit);
+  const inches = unit === "in";
+  const cm = offsetCm ?? 0;
+  const shown = inches ? cm / CM_PER_IN : cm;
+  const limit = inches ? OFFSET_LIMIT_CM / CM_PER_IN : OFFSET_LIMIT_CM;
+  const set = (v: number) => onChange(v === 0 ? undefined : v);
+  return (
+    <>
+      {/* Not disabled at zero: dragging IS the intent to set an offset,
+          so it takes effect rather than making you flip the switch. */}
+      <Slider
+        min={-OFFSET_LIMIT_CM}
+        max={OFFSET_LIMIT_CM}
+        step={1}
+        value={cm}
+        aria-label={`${label} screen height offset`}
+        onValueChange={(v) => set(Math.round(Array.isArray(v) ? v[0] : v))}
+      />
+      <NumberStepper
+        ariaLabel={`${label} screen height offset from eye line`}
+        value={shown}
+        onChange={(v) => set(Math.round(inches ? v * CM_PER_IN : v))}
+        step={inches ? 0.5 : 1}
+        bigStep={inches ? 5 : 10}
+        min={-limit}
+        max={limit}
+        decimals={inches ? 1 : 0}
+        signed
+        className="h-7"
+      />
+      <Switch
+        checked={offsetCm === undefined}
+        aria-label={`${label} level with the eye line`}
+        onCheckedChange={(on) => onChange(on ? undefined : cm || 1)}
+      />
+    </>
   );
 }
 
@@ -190,6 +318,12 @@ export function DeviceEditor({
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
   const sizeInches = sizeUnit === "in";
+  // How far the active media is distorted on this panel — null unless
+  // the fit is `stretch` and the shapes actually disagree.
+  const items = useMediaStore((s) => s.items);
+  const activeId = useMediaStore((s) => s.activeId);
+  const activeItem = items.find((i) => i.id === activeId) ?? null;
+  const stretchNote = activeItem ? fitStretchNote(activeItem, device) : null;
   // Show the conventional name for the ratio (within tolerance — phone
   // panels like 2622×1206 are a hair off exact 19.5:9), else the ratio
   // itself, never raw pixel pairs. A 90°-pivoted panel reads as the
@@ -208,9 +342,6 @@ export function DeviceEditor({
     : portraitMatch
       ? portraitMatch.label.split(":").reverse().join(":")
       : `${ratio.toFixed(2)}:1`;
-  const scenarioLabel =
-    SCENARIOS.find((s) => s.id === scenario)?.label ?? scenario;
-  const elevation = device.elevation?.[scenario];
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _hc = heightCm; // keeps the editor reactive to height changes
   const sizeShown = sizeInches
@@ -325,7 +456,36 @@ export function DeviceEditor({
       </div>
 
       <div className="space-y-1.5">
-        <Microlabel>Dimensions</Microlabel>
+        {/* Prefabs ride the header row (Taylor 2026-08-20) — they're
+            shortcuts to the controls below, not a section of their own,
+            and the editor was a row taller for no reason. */}
+        <div className="flex items-center justify-between gap-2">
+          <Microlabel>Dimensions</Microlabel>
+          {COMMON_RESOLUTIONS[aspectLabel] ? (
+            <div className="flex flex-wrap justify-end gap-1">
+              {COMMON_RESOLUTIONS[aspectLabel].map((r) => (
+                <button
+                  key={`${r.w}x${r.h}`}
+                  type="button"
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-sm transition-colors",
+                    r.w === device.resolution.w && r.h === device.resolution.h
+                      ? "bg-foreground text-background"
+                      : "bg-muted text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() =>
+                    onPatch({
+                      resolution: { w: r.w, h: r.h },
+                      aspect: aspectFromResolution({ w: r.w, h: r.h }),
+                    })
+                  }
+                >
+                  {r.w}×{r.h}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="flex items-center gap-1.5">
           <Select
             value={aspectLabel}
@@ -345,28 +505,36 @@ export function DeviceEditor({
               ))}
             </SelectContent>
           </Select>
-          <Input
-            className="min-w-0 flex-1 text-right font-mono"
-            type="number"
-            aria-label="Width px"
+          {/* Steppers rather than bare fields (Taylor 2026-08-20), the
+              same − [value] + control the viewing distance uses. Panel
+              resolutions are nudged far more often than they are typed
+              from scratch, and the plain number inputs also committed
+              mid-keystroke — deleting a digit off 2560 briefly patched
+              the device to 256. bigStep is a round hundred. */}
+          <NumberStepper
+            ariaLabel="Width px"
             value={device.resolution.w}
-            onChange={(e) => {
-              const w = Number(e.target.value);
-              if (!Number.isInteger(w) || w <= 0) return;
-              onPatch({ resolution: { ...device.resolution, w } });
-            }}
+            onChange={(w) =>
+              onPatch({ resolution: { ...device.resolution, w } })
+            }
+            step={1}
+            bigStep={100}
+            min={1}
+            max={16384}
+            className="h-7 min-w-0 flex-1"
           />
           <span className="text-base text-muted-foreground">×</span>
-          <Input
-            className="min-w-0 flex-1 text-right font-mono"
-            type="number"
-            aria-label="Height px"
+          <NumberStepper
+            ariaLabel="Height px"
             value={device.resolution.h}
-            onChange={(e) => {
-              const h = Number(e.target.value);
-              if (!Number.isInteger(h) || h <= 0) return;
-              onPatch({ resolution: { ...device.resolution, h } });
-            }}
+            onChange={(h) =>
+              onPatch({ resolution: { ...device.resolution, h } })
+            }
+            step={1}
+            bigStep={100}
+            min={1}
+            max={16384}
+            className="h-7 min-w-0 flex-1"
           />
           <Button
             variant="ghost"
@@ -387,114 +555,179 @@ export function DeviceEditor({
             <RotateCwSquareIcon className="size-4" />
           </Button>
         </div>
-        {COMMON_RESOLUTIONS[aspectLabel] ? (
-          <div className="flex flex-wrap gap-1 pt-0.5">
-            {COMMON_RESOLUTIONS[aspectLabel].map((r) => (
-              <button
-                key={`${r.w}x${r.h}`}
-                type="button"
-                className={cn(
-                  "rounded-md px-2 py-1 font-mono text-sm transition-colors",
-                  r.w === device.resolution.w && r.h === device.resolution.h
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() =>
+      </div>
+
+      {/* Curve and Fit share a row, both triggers the same width with
+          their labels beside them (Taylor 2026-08-20). w-36 is the
+          popup's own min-width, so the open menu is exactly as wide as
+          the closed trigger and the selected string reads identically
+          in both — which is also why the fit modes carry short labels
+          and put the explanation in a title. */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex items-center justify-between gap-1.5">
+          <Microlabel>Curve</Microlabel>
+          <Select
+            value={String(device.curvatureR ?? 0)}
+            onValueChange={(v) =>
+              onPatch({ curvatureR: Number(v) || undefined })
+            }
+          >
+            <SelectTrigger className="w-36 shrink-0">
+              <SelectValue>
+                {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Flat</SelectItem>
+              {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
+                <SelectItem key={r} value={String(r)}>
+                  {r}R
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* What this panel does when the media's shape disagrees with
+            its own (decision-media-crop-vs-device-fit). Contain persists
+            as UNDEFINED so devices saved before fit modes existed — and
+            every device that never leaves the default — stay
+            byte-identical. */}
+        <div className="flex items-center justify-between gap-1.5">
+          <Microlabel>Fit</Microlabel>
+          <Select
+            value={fitModeOf(device)}
+            onValueChange={(v) =>
+              onPatch({ fit: v === "contain" ? undefined : (v as FitMode) })
+            }
+          >
+            <SelectTrigger className="w-36 shrink-0" aria-label="Content fit">
+              <SelectValue>{fitLabel(fitModeOf(device))}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {FIT_MODES.map((m) => (
+                <SelectItem key={m.id} value={m.id} title={m.hint}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Stretch is the one mode with non-square pixels — say by how
+          much, and that the reported arc minutes are the height. Its own
+          row now that Fit shares one with Curve. */}
+      {stretchNote ? (
+        <span className="inline-flex items-center gap-1 self-start rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]">
+          <TriangleAlertIcon className="size-3 shrink-0" />
+          {stretchNote}
+        </span>
+      ) : null}
+
+      {/* Height and pitch are scene-dressing next to size and distance,
+          so they fold away by default (Taylor 2026-08-20). Both are
+          shown for every stance at once: the same monitor is met at a
+          different height and angle from a desk chair than from a
+          couch, and comparing the three is the point. The active stance
+          is the only one in full contrast. */}
+      <Collapsible label="Offsets">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Microlabel>Screen height · from eye line</Microlabel>
+              <DistanceUnitFlip />
+            </span>
+            <span className="text-sm text-muted-foreground">Eye level</span>
+          </div>
+          {SCENARIOS.map((s) => (
+            <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
+              <OffsetControls
+                label={s.label}
+                offsetCm={device.heightOffsetCm?.[s.id]}
+                onChange={(v) =>
                   onPatch({
-                    resolution: { w: r.w, h: r.h },
-                    aspect: aspectFromResolution({ w: r.w, h: r.h }),
+                    heightOffsetCm: { ...device.heightOffsetCm, [s.id]: v },
                   })
                 }
-              >
-                {r.w}×{r.h}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <Microlabel>Curve</Microlabel>
-        <Select
-          value={String(device.curvatureR ?? 0)}
-          onValueChange={(v) => onPatch({ curvatureR: Number(v) || undefined })}
-        >
-          <SelectTrigger className="w-28">
-            <SelectValue>
-              {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="0">Flat</SelectItem>
-            {[800, 1000, 1500, 1800, 2300, 3000].map((r) => (
-              <SelectItem key={r} value={String(r)}>
-                {r}R
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Microlabel>Screen height · {scenarioLabel.toLowerCase()}</Microlabel>
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Eye level
-            <Switch
-              checked={elevation === undefined}
-              onCheckedChange={(on) =>
-                onPatch({
-                  elevation: {
-                    ...device.elevation,
-                    [scenario]: on
-                      ? undefined
-                      : Math.round(
-                          // Start the override at the current eye height.
-                          useViewerStore
-                            .getState()
-                            .heightCm && device.distanceCm
-                            ? eyeLevelNow()
-                            : 120,
-                        ),
-                  },
-                })
-              }
-            />
-          </label>
+              />
+            </StanceRow>
+          ))}
         </div>
-        {elevation !== undefined ? (
-          <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
-            <Slider
-              min={0}
-              max={250}
-              step={1}
-              value={elevation}
-              onValueChange={(v) =>
-                onPatch({
-                  elevation: {
-                    ...device.elevation,
-                    [scenario]: Array.isArray(v) ? v[0] : v,
-                  },
-                })
-              }
-            />
-            <NumberStepper
-              ariaLabel="screen height from floor"
-              value={elevation}
-              onChange={(v) =>
-                onPatch({
-                  elevation: { ...device.elevation, [scenario]: v },
-                })
-              }
-              step={1}
-              bigStep={10}
-              min={0}
-              max={300}
-              className="h-7"
-            />
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Microlabel>Tilt</Microlabel>
+            <span className="text-sm text-muted-foreground">Auto-orient</span>
           </div>
-        ) : null}
-      </div>
+          {SCENARIOS.map((s) => {
+            const auto = autoOrientOf(device, s.id);
+            // While auto-orienting the controls stay put but go inert,
+            // showing the angle the geometry WORKED OUT rather than a
+            // dead zero — you can read off that a screen below the gaze
+            // is pitched up to meet it. Same row shape as screen height
+            // above, so the two blocks line up (Taylor 2026-08-20).
+            const eyeY = eyeLevelForScenario(s.id, heightCm);
+            const deg = auto
+              ? autoTiltDeg(
+                  centerYFor(device, s.id, eyeY),
+                  eyeY,
+                  device.distanceCm,
+                )
+              : (device.tilt?.[s.id] ?? 0);
+            const patchTilt = (v: number | undefined) =>
+              onPatch({ tilt: { ...device.tilt, [s.id]: v } });
+            return (
+              <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
+                <Slider
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  step={1}
+                  // An auto angle can exceed the slider's range (a
+                  // handheld in the lap needs ~48°); the track pins at
+                  // its end while the readout keeps the true figure.
+                  value={Math.max(-TILT_LIMIT_DEG, Math.min(TILT_LIMIT_DEG, deg))}
+                  disabled={auto}
+                  aria-label={`${s.label} screen tilt`}
+                  onValueChange={(v) =>
+                    patchTilt(Array.isArray(v) ? v[0] : v)
+                  }
+                />
+                <NumberStepper
+                  ariaLabel={`${s.label} screen tilt in degrees`}
+                  value={deg}
+                  onChange={patchTilt}
+                  step={1}
+                  bigStep={5}
+                  min={-TILT_LIMIT_DEG}
+                  max={TILT_LIMIT_DEG}
+                  suffix="°"
+                  disabled={auto}
+                  className="h-7"
+                />
+                {/* Per stance, the same shape as eye level above. Stored
+                    only when it disagrees with the category, so
+                    untouched devices serialize byte-identically. */}
+                <Switch
+                  checked={auto}
+                  aria-label={`${s.label} auto-orient`}
+                  onCheckedChange={(on) =>
+                    onPatch({
+                      autoOrient: {
+                        ...device.autoOrient,
+                        [s.id]:
+                          on === autoOrientDefaultFor(device.category)
+                            ? undefined
+                            : on,
+                      },
+                    })
+                  }
+                />
+              </StanceRow>
+            );
+          })}
+        </div>
+      </Collapsible>
 
       {FEATURE_3D_DEVICE_BODY &&
       device.deviceName &&
@@ -541,18 +774,6 @@ export function DeviceEditor({
   );
 }
 
-function eyeLevelNow(): number {
-  const { scenario, heightCm } = useViewerStore.getState();
-  // Local import cycle avoidance: mirror eyeHeightCm's constants.
-  switch (scenario) {
-    case "standing":
-      return heightCm * 0.936;
-    case "desk":
-      return heightCm * 0.45 + 45;
-    case "couch":
-      return heightCm * 0.45 + 40;
-  }
-}
 
 interface ReorderHooks {
   onDragOver: (e: React.DragEvent) => void;

@@ -12,6 +12,7 @@ import {
   GripVerticalIcon,
   LayoutGridIcon,
   ListIcon,
+  LoaderCircleIcon,
   ScanTextIcon,
   SparklesIcon,
   Trash2Icon,
@@ -19,27 +20,22 @@ import {
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { batchLabel } from "@/lib/ocr-queue";
+import { useOcrQueueStore } from "@/stores/ocr-queue-store";
 import type { Device, MediaCrop, MediaItem } from "@/lib/types";
-import {
-  ACUITY,
-  aspectFromResolution,
-  boxMetricsOnDevice,
-  strokesSubAcuity,
-} from "@/lib/display-math";
+import { aspectFromResolution, strokesSubAcuity } from "@/lib/display-math";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
 import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
 import {
   ASPECT_PRESETS,
-  FULL_CROP,
   aspectCrop,
-  boxInCrop,
   cropOf,
   cropsEqual,
-  deviceCropOf,
   dragCrop,
-  effectiveCropFor,
   effectiveDims,
-  hasDeviceCrops,
   isFullFrame,
   type CropHandle,
 } from "@/lib/media-crop";
@@ -267,6 +263,52 @@ function Toolbar() {
   );
 }
 
+/**
+ * Per-item auto-scan progress (plan: "per-item progress state while a
+ * scan runs"). A component of its own, not an inline expression in the
+ * list's `.map()`, so the store subscription is a proper per-item hook
+ * call rather than one taken conditionally inside a loop. Silent for the
+ * manual "Detect Text Size" flow — that already has its own "Detecting…"
+ * button label; this badge is specifically the auto-scan queue.
+ */
+function ScanStatusBadge({
+  itemId,
+  variant,
+}: {
+  itemId: string;
+  variant: "grid" | "list";
+}) {
+  const status = useOcrQueueStore(
+    (s) => s.queue.find((q) => q.id === itemId)?.status ?? null,
+  );
+  if (status !== "queued" && status !== "running") return null;
+  const icon = (
+    <LoaderCircleIcon
+      className={cn("size-3", status === "running" && "animate-spin")}
+    />
+  );
+  const title =
+    status === "running" ? "Detecting text…" : "Queued for text detection";
+  if (variant === "grid") {
+    return (
+      <span
+        className="pointer-events-none absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-black/70 text-white"
+        title={title}
+      >
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="shrink-0 text-muted-foreground"
+      title={title}
+    >
+      {icon}
+    </span>
+  );
+}
+
 function LibraryList() {
   const items = useMediaStore((s) => s.items);
   const objectUrls = useMediaStore((s) => s.objectUrls);
@@ -410,7 +452,7 @@ function LibraryList() {
               key={item.id}
               type="button"
               className={cn(
-                "block aspect-video w-full overflow-hidden rounded-md bg-black/40",
+                "relative block aspect-video w-full overflow-hidden rounded-md bg-black/40",
                 item.id === activeId
                   ? "ring-2 ring-ring"
                   : "opacity-80 hover:opacity-100",
@@ -427,6 +469,7 @@ function LibraryList() {
                 draggable={false}
                 className="size-full object-cover"
               />
+              <ScanStatusBadge itemId={item.id} variant="grid" />
             </button>
           ))}
         </div>
@@ -458,6 +501,7 @@ function LibraryList() {
               <span className="min-w-0 flex-1 truncate text-base" title={item.name}>
                 {item.name}
               </span>
+              <ScanStatusBadge itemId={item.id} variant="list" />
             </button>
           ))}
         </div>
@@ -518,22 +562,15 @@ const CROP_HANDLES: { id: CropHandle; className: string }[] = [
  */
 function CropOverlayFrame({
   item,
-  scopeDevice,
   overlay,
   children,
 }: {
   item: MediaItem;
-  /**
-   * Non-null: the editor shows THIS device's effective crop and drags
-   * write its override (media crop untouched). Null: media scope.
-   */
-  scopeDevice: Device | null;
   /** Extra full-frame-coordinate layers (e.g. detected-text boxes). */
   overlay?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const setCrop = useMediaStore((s) => s.setCrop);
-  const setDeviceCrop = useMediaStore((s) => s.setDeviceCrop);
   const [draft, setDraft] = useState<MediaCrop | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -543,17 +580,9 @@ function CropOverlayFrame({
     base: MediaCrop;
   } | null>(null);
 
-  // Device scope starts from the EFFECTIVE crop: dragging an inherited
-  // window is exactly how an override is born.
-  const stored = scopeDevice
-    ? effectiveCropFor(item, scopeDevice.id)
-    : cropOf(item);
+  const stored = cropOf(item);
   const crop = draft ?? stored;
-  const hasWindow = draft
-    ? true
-    : scopeDevice
-      ? !isFullFrame(stored)
-      : !!item.crop;
+  const hasWindow = draft ? true : !!item.crop;
   const wide = item.width / item.height >= 16 / 9;
 
   // The handle id rides on data-handle so one handler serves all nine
@@ -590,20 +619,7 @@ function CropOverlayFrame({
   const onDragEnd = () => {
     if (!drag.current) return;
     drag.current = null;
-    if (draft) {
-      if (scopeDevice) {
-        // A full-frame override is MEANINGFUL when a media crop exists
-        // (this device shows the whole frame); with no media crop it's
-        // identical to inheriting, so clear it.
-        setDeviceCrop(
-          item.id,
-          scopeDevice.id,
-          isFullFrame(draft) && !item.crop ? undefined : draft,
-        );
-      } else {
-        setCrop(item.id, isFullFrame(draft) ? undefined : draft);
-      }
-    }
+    if (draft) setCrop(item.id, isFullFrame(draft) ? undefined : draft);
     setDraft(null);
   };
 
@@ -619,9 +635,7 @@ function CropOverlayFrame({
       {children}
       {/* The crop window; the oversized shadow is the outside scrim.
           Rendered only while a crop (or live drag) exists, so the frame
-          doubles as a plain full-frame host for other overlays. In
-          device scope the outline wears the device's key color so it's
-          obvious WHOSE window is being edited. */}
+          doubles as a plain full-frame host for other overlays. */}
       {hasWindow ? (
         <div
           className="absolute cursor-move touch-none"
@@ -631,7 +645,7 @@ function CropOverlayFrame({
             width: `${crop.w * 100}%`,
             height: `${crop.h * 100}%`,
             boxShadow: "0 0 0 100vmax rgba(0,0,0,0.6)",
-            outline: `1px solid ${scopeDevice ? scopeDevice.color : "rgba(255,255,255,0.9)"}`,
+            outline: "1px solid rgba(255,255,255,0.9)",
           }}
           data-handle="move"
           onPointerDown={onDragStart}
@@ -670,44 +684,16 @@ function CropOverlayFrame({
  * largest centered window; Custom for anything else — including a preset
  * freely adjusted on the overlay until it no longer matches.
  *
- * Per-device scope (plan-per-device-crop): once a device is selected
- * app-wide, an "applies to" control appears and the dropdown can target
- * that device's OVERRIDE instead of the shared media crop. Overrides
- * inherit the media crop until set and clear back to it via Inherit.
+ * SOURCE crop only (decision-media-crop-vs-device-fit): one window per
+ * item, applied everywhere. How a panel of a different shape presents
+ * that content is the device's own `fit` mode, edited in the Device
+ * Manager and the device hover card — not here.
  */
-function CropSection({
-  item,
-  selectedDevice,
-  scope,
-  setScope,
-}: {
-  item: MediaItem;
-  /** App-wide selected device — the device-scope target, if any. */
-  selectedDevice: Device | null;
-  scope: "media" | "device";
-  setScope: (s: "media" | "device") => void;
-}) {
+function CropSection({ item }: { item: MediaItem }) {
   const setCrop = useMediaStore((s) => s.setCrop);
-  const setDeviceCrop = useMediaStore((s) => s.setDeviceCrop);
 
-  const deviceScope = scope === "device" && selectedDevice ? selectedDevice : null;
-  const override = deviceScope
-    ? deviceCropOf(item, deviceScope.id)
-    : undefined;
-  const current = deviceScope ? (override ?? cropOf(item)) : cropOf(item);
-  const noCrop = deviceScope
-    ? !override
-    : !item.crop || isFullFrame(current);
-
-  // Device scope leads with "match this panel's shape" — the one-click
-  // "show me what fits this screen" default from the plan note.
-  const deviceAspect = deviceScope
-    ? aspectCrop(
-        deviceScope.aspect.w / deviceScope.aspect.h,
-        item.width,
-        item.height,
-      )
-    : null;
+  const current = cropOf(item);
+  const noCrop = !item.crop || isFullFrame(current);
   const presets = ASPECT_PRESETS.map(({ label, ratio }) => {
     const crop = aspectCrop(ratio, item.width, item.height);
     // An exact-aspect image makes this preset the full frame: uncropped,
@@ -718,184 +704,65 @@ function CropSection({
       label,
       crop,
       wholeFrame,
-      active: deviceScope
-        ? !!override && cropsEqual(override, crop)
-        : wholeFrame
-          ? noCrop
-          : !noCrop && cropsEqual(current, crop),
+      active: wholeFrame ? noCrop : !noCrop && cropsEqual(current, crop),
     };
   });
-  const value = deviceScope
-    ? !override
-      ? "inherit"
-      : isFullFrame(override)
-        ? "none"
-        : deviceAspect && cropsEqual(override, deviceAspect)
-          ? "device-aspect"
-          : (presets.find((p) => p.active)?.label ?? "custom")
-    : (presets.find((p) => p.active)?.label ?? (noCrop ? "none" : "custom"));
-
-  const commit = (crop: MediaCrop | undefined) => {
-    if (deviceScope) setDeviceCrop(item.id, deviceScope.id, crop);
-    else setCrop(item.id, crop);
-  };
+  const value =
+    presets.find((p) => p.active)?.label ?? (noCrop ? "none" : "custom");
 
   const applyChoice = (v: string | null) => {
     if (v === null) return;
-    if (v === "inherit") {
-      commit(undefined);
-      return;
-    }
     if (v === "none") {
-      // Device scope: an explicit full-frame override (meaningful when
-      // a media crop exists; identical to inherit when none does).
-      commit(deviceScope && item.crop ? { ...FULL_CROP } : undefined);
-      return;
-    }
-    if (v === "device-aspect") {
-      if (deviceAspect) {
-        commit(
-          isFullFrame(deviceAspect) && !item.crop
-            ? undefined
-            : deviceAspect,
-        );
-      }
+      setCrop(item.id, undefined);
       return;
     }
     if (v === "custom") {
       pauseIfAnimated();
-      if (isFullFrame(current)) {
+      if (noCrop) {
         // Start a centered ~80% window.
-        commit({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+        setCrop(item.id, { x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
       } else {
         // Entering Custom FROM a preset (Taylor): keep the window
         // where it is, nudged a hair (0.4%) off the preset match
         // so Custom takes the highlight and edits are freeform.
-        commit({ ...current, w: current.w * 0.996, h: current.h * 0.996 });
+        setCrop(item.id, {
+          ...current,
+          w: current.w * 0.996,
+          h: current.h * 0.996,
+        });
       }
       return;
     }
     const preset = presets.find((p) => p.label === v);
-    if (preset) {
-      commit(
-        preset.wholeFrame && !(deviceScope && item.crop)
-          ? undefined
-          : preset.crop,
-      );
-    }
+    if (preset) setCrop(item.id, preset.wholeFrame ? undefined : preset.crop);
   };
 
-  const overrideCount = hasDeviceCrops(item)
-    ? Object.keys(item.deviceCrops!).length
-    : 0;
-  const deviceAspectLabel = deviceScope
-    ? `${deviceScope.aspect.w}:${deviceScope.aspect.h}`
-    : "";
-
   return (
-    <div className="space-y-1">
-      <div className="flex h-9 items-center justify-between gap-2">
-        <span className="flex items-center gap-2">
-          <SectionLabel>Crop</SectionLabel>
-          {overrideCount > 0 ? (
-            <span
-              className="text-sm text-muted-foreground"
-              title="Devices with their own crop override on this media"
-            >
-              {overrideCount} per-device
-            </span>
-          ) : null}
-        </span>
-        <Select value={value} onValueChange={applyChoice}>
-          <SelectTrigger size="sm" aria-label="Crop aspect">
-            <SelectValue>
-              {value === "inherit"
-                ? "Inherit"
-                : value === "none"
-                  ? deviceScope
-                    ? "Full frame"
-                    : "None"
-                  : value === "device-aspect"
-                    ? `Match ${deviceAspectLabel}`
-                    : value === "custom"
-                      ? "Custom"
-                      : presets.find((p) => p.active)?.wholeFrame && !deviceScope
-                        ? `${value} (native)`
-                        : value}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {deviceScope ? (
-              <SelectItem value="inherit">
-                Inherit — use the media crop
-              </SelectItem>
-            ) : null}
-            <SelectItem value="none">
-              {deviceScope ? "Full frame on this device" : "None — full frame"}
+    <div className="flex h-9 items-center justify-between gap-2">
+      <SectionLabel>Crop</SectionLabel>
+      <Select value={value} onValueChange={applyChoice}>
+        <SelectTrigger size="sm" aria-label="Crop aspect">
+          <SelectValue>
+            {value === "none"
+              ? "None"
+              : value === "custom"
+                ? "Custom"
+                : presets.find((p) => p.active)?.wholeFrame
+                  ? `${value} (native)`
+                  : value}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">None — full frame</SelectItem>
+          {presets.map(({ label, wholeFrame }) => (
+            <SelectItem key={label} value={label}>
+              {label}
+              {wholeFrame ? " (native)" : ""}
             </SelectItem>
-            {deviceScope ? (
-              <SelectItem value="device-aspect">
-                Match {deviceAspectLabel} — this device&apos;s shape
-              </SelectItem>
-            ) : null}
-            {presets.map(({ label, wholeFrame }) => (
-              <SelectItem key={label} value={label}>
-                {label}
-                {wholeFrame && !deviceScope ? " (native)" : ""}
-              </SelectItem>
-            ))}
-            <SelectItem value="custom">Custom — drag on the preview</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {selectedDevice ? (
-        <div className="flex h-7 items-center justify-end gap-1.5">
-          <span className="text-sm text-muted-foreground">applies to</span>
-          <span className="panel-inset flex h-7 items-center gap-0.5 rounded-md p-0.5">
-            {(
-              [
-                { id: "media", label: "All devices" },
-                { id: "device", label: selectedDevice.label },
-              ] as const
-            ).map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                aria-pressed={scope === o.id}
-                title={
-                  o.id === "media"
-                    ? "Edit the shared media crop (devices without an override follow it)"
-                    : `Edit ${selectedDevice.label}'s own crop override`
-                }
-                className={cn(
-                  "flex h-full max-w-40 items-center gap-1.5 rounded-[5px] px-1.5 text-sm transition-colors",
-                  scope === o.id
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => setScope(o.id)}
-              >
-                {o.id === "device" ? (
-                  <span
-                    className="size-2 shrink-0 rounded-full"
-                    style={{
-                      background: selectedDevice.color,
-                      // Hollow dot until this device actually overrides.
-                      ...(deviceCropOf(item, selectedDevice.id)
-                        ? {}
-                        : {
-                            background: "transparent",
-                            border: `1.5px solid ${selectedDevice.color}`,
-                          }),
-                    }}
-                  />
-                ) : null}
-                <span className="truncate">{o.label}</span>
-              </button>
-            ))}
-          </span>
-        </div>
-      ) : null}
+          ))}
+          <SelectItem value="custom">Custom — drag on the preview</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -917,14 +784,6 @@ interface ScanLine {
   sizePx?: number;
 }
 
-
-const scanBandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
-
 /**
  * The useful data behind an OCR run: the image with each detected line
  * outlined and numbered, plus a per-line table (text, px height,
@@ -937,14 +796,9 @@ const scanLineColor = (
   thisDevice: Device,
 ): string => {
   if (mode === "group") return groupColor(line.groupId);
-  const crop = cropOf(item);
   const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-  const arcmin = boxMetricsOnDevice(
-    hNorm / crop.h,
-    effectiveDims(item),
-    thisDevice,
-  ).arcmin;
-  return scanBandColor(arcmin);
+  const m = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
+  return legibilityColor(m ? m.arcmin : null);
 };
 
 /**
@@ -1053,8 +907,6 @@ function ScanResults({
     lines,
     showContrast && item.kind === "image",
   );
-  const crop = cropOf(item);
-  const eff = effectiveDims(item);
   // User-adjustable list height (session-local).
   const [listH, setListH] = useState(160);
   const resize = useRef<{ startY: number; base: number } | null>(null);
@@ -1071,15 +923,19 @@ function ScanResults({
 
   const rows = lines
     .map((line, i) => {
-      const inCrop = boxInCrop(line.box, crop);
       // Group-corrected height when available (descender-aware, plan
-      // 7.2), else the raw ink box.
+      // 7.2), else the raw ink box. Measured through This Device's
+      // actual rendered crop (source crop, then its fit mode) — a fill
+      // mode's crop can exclude a line the source crop alone wouldn't.
       const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-      const arcmin = boxMetricsOnDevice(hNorm / crop.h, eff, thisDevice).arcmin;
+      const metrics = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
       const shownPx = Math.round(line.sizePx ?? line.box.h * item.height);
-      return { line, i, inCrop, arcmin, shownPx };
+      return { line, i, metrics, shownPx };
     })
-    .filter((r) => r.inCrop !== null);
+    .filter(
+      (r): r is typeof r & { metrics: NonNullable<typeof r.metrics> } =>
+        r.metrics !== null,
+    );
 
   return (
     <div className="space-y-1">
@@ -1088,7 +944,7 @@ function ScanResults({
         className="space-y-0.5 overflow-y-auto"
         style={{ height: listH }}
       >
-        {rows.map(({ line, i, arcmin, shownPx }) => (
+        {rows.map(({ line, i, metrics, shownPx }) => (
           <button
             key={line.id}
             data-box-id={line.id}
@@ -1118,7 +974,7 @@ function ScanResults({
                 background:
                   colorMode === "group"
                     ? groupColor(line.groupId)
-                    : scanBandColor(arcmin),
+                    : legibilityColor(metrics.arcmin),
               }}
             />
             <span className="w-5 shrink-0 font-mono text-sm text-muted-foreground">
@@ -1145,12 +1001,12 @@ function ScanResults({
             ) : null}
             <span
               className="shrink-0 font-mono text-sm"
-              style={{ color: scanBandColor(arcmin) }}
+              style={{ color: legibilityColor(metrics.arcmin) }}
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
-              {arcmin.toFixed(0)}′
+              {metrics.arcmin.toFixed(0)}′
             </span>
-            {strokesSubAcuity(arcmin) ? (
+            {strokesSubAcuity(metrics.arcmin) ? (
               <span
                 className="shrink-0"
                 title="Strokes render below 1′ on This Device — letterforms lose their detail at this distance"
@@ -1397,13 +1253,6 @@ function ScanFollowThrough() {
   );
 }
 
-
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
-
 /** Keyed by item id at the callsite so the armed/scan state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
@@ -1413,20 +1262,6 @@ function DetailCard({ item }: { item: MediaItem }) {
   const [armed, setArmed] = useState(false);
   const eff = effectiveDims(item);
 
-  // Per-device crop scope rides the app-wide selection: with a device
-  // selected, the crop controls can target ITS override; the preview's
-  // crop editor follows the same scope.
-  const selectedDeviceId = useUiStore((s) => s.selectedDeviceId);
-  const scopeThisDevice = useDeviceStore((s) => s.thisDevice);
-  const scopeDevices = useDeviceStore((s) => s.devices);
-  const selectedDevice = selectedDeviceId
-    ? selectedDeviceId === scopeThisDevice.id
-      ? scopeThisDevice
-      : (scopeDevices.find((d) => d.id === selectedDeviceId) ?? null)
-    : null;
-  const [cropScope, setCropScope] = useState<"media" | "device">("media");
-  const scopeDevice =
-    cropScope === "device" && selectedDevice ? selectedDevice : null;
   const aspect = aspectFromResolution({ w: eff.width, h: eff.height });
 
   // OCR scan state lives here so the detected boxes can render over the
@@ -1436,6 +1271,16 @@ function DetailCard({ item }: { item: MediaItem }) {
   // the playhead passes the next marker (plan topic 9).
   const [scanRunning, setScanRunning] = useState(false);
   const [scanFailed, setScanFailed] = useState(false);
+  // The active item can be mid-auto-scan (its turn in the import batch)
+  // without the manual button ever having been clicked — fold that into
+  // the same "running" signal so the button reads Detecting/disabled
+  // either way, rather than looking idle while a scan is genuinely
+  // in flight underneath it.
+  const autoScanStatus = useOcrQueueStore(
+    (s) => s.queue.find((q) => q.id === item.id)?.status ?? null,
+  );
+  const autoScanning =
+    autoScanStatus === "running" || autoScanStatus === "queued";
   // Global eye state — shared with the Perception Report and the
   // 2D/3D world views (Taylor: parity of state across panels/views).
   const showScanBoxes = useAnnotationStore((s) => s.showTextBoxes);
@@ -1460,18 +1305,33 @@ function DetailCard({ item }: { item: MediaItem }) {
     useMediaStore.getState().items.find((i) => i.id === item.id)
       ?.scanKeyframes ?? [];
 
+  // DetailCard is keyed by item.id (MediaLibraryContent), so switching
+  // the active item unmounts this instance outright while a detect()/
+  // scanAll() may still be mid-await — guard every setState after an
+  // await so a finishing scan for an item the user has since left
+  // doesn't write into a component that's gone. The scan itself (it
+  // persists straight to the store, keyed by item.id) still runs to
+  // completion either way.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const detect = async () => {
     if (scanRunning) return;
     setScanRunning(true);
     setScanFailed(false);
     try {
       await detectTextForItem(item.id);
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setScanRunning(false);
+      if (aliveRef.current) setScanRunning(false);
     }
   };
 
@@ -1482,16 +1342,20 @@ function DetailCard({ item }: { item: MediaItem }) {
     try {
       const pending = freshKeyframes().filter((k) => !k.lines);
       for (let i = 0; i < pending.length; i++) {
-        setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        if (aliveRef.current) {
+          setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        }
         await scanKeyframeAt(item.id, pending[i].timeSec);
       }
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Batch text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setBatchNote(null);
-      setScanRunning(false);
+      if (aliveRef.current) {
+        setBatchNote(null);
+        setScanRunning(false);
+      }
     }
   };
 
@@ -1504,10 +1368,10 @@ function DetailCard({ item }: { item: MediaItem }) {
         ? "Mark frames on the timeline (bookmark button), then scan them."
         : kf
           ? kf.lines
-            ? `Keyframe ${fmtKfTime(kf.timeSec)} · ${kf.lines.length} line${
+            ? `Keyframe ${formatTimecode(kf.timeSec)} · ${kf.lines.length} line${
                 kf.lines.length === 1 ? "" : "s"
               } · median ${Math.round(kf.medianPx ?? 0)} px — shown until the next marker`
-            : `Keyframe ${fmtKfTime(kf.timeSec)} — not scanned yet`
+            : `Keyframe ${formatTimecode(kf.timeSec)} — not scanned yet`
           : "Playhead is before the first keyframe."
       : null);
 
@@ -1587,7 +1451,6 @@ function DetailCard({ item }: { item: MediaItem }) {
             boxes (when scanned + shown) layered directly over it. */}
         <CropOverlayFrame
           item={item}
-          scopeDevice={scopeDevice}
           overlay={
             showScanBoxes && effectiveScan && effectiveScan.lines.length > 0 ? (
               <ScanBoxesOverlay lines={effectiveScan.lines} item={item} />
@@ -1619,12 +1482,7 @@ function DetailCard({ item }: { item: MediaItem }) {
 
       <TransportControls />
 
-      <CropSection
-        item={item}
-        selectedDevice={selectedDevice}
-        scope={cropScope}
-        setScope={setCropScope}
-      />
+      <CropSection item={item} />
 
       <label className="flex h-9 items-center justify-between gap-2 text-base text-muted-foreground">
         <span className="flex items-center gap-1.5">
@@ -1670,7 +1528,7 @@ function DetailCard({ item }: { item: MediaItem }) {
       <TextDetectionSection
         item={item}
         scan={effectiveScan}
-        running={scanRunning}
+        running={scanRunning || autoScanning}
         failed={scanFailed}
         showBoxes={showScanBoxes}
         onToggleBoxes={() => setShowScanBoxes(!showScanBoxes)}
@@ -1720,6 +1578,66 @@ function DisplayFillRow() {
   );
 }
 
+/**
+ * Lightweight batch indicator for auto-scan-on-import ("a ten-image
+ * import doesn't look frozen"): a status line plus "Cancel remaining"
+ * for the still-queued tail of the batch. Aborting the item currently
+ * mid-`recognize()` isn't offered — see stores/ocr-queue-store.ts.
+ */
+function AutoScanBanner() {
+  const queue = useOcrQueueStore((s) => s.queue);
+  const cancelRemaining = useOcrQueueStore((s) => s.cancelRemaining);
+  const label = batchLabel(queue);
+  if (!label) return null;
+  const hasQueued = queue.some((q) => q.status === "queued");
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-muted-foreground">
+      <span className="flex items-center gap-1.5 truncate">
+        <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+        {label}
+      </span>
+      {hasQueued ? (
+        <button
+          type="button"
+          className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+          onClick={cancelRemaining}
+        >
+          Cancel remaining
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * "N files couldn't be read: a.heic, b.tiff" — addFiles() no longer
+ * swallows decode failures; this is where they surface. Dismissible,
+ * same shape as AutoScanBanner.
+ */
+function ImportErrorsBanner() {
+  const errors = useMediaStore((s) => s.lastImportErrors);
+  const clearImportErrors = useMediaStore((s) => s.clearImportErrors);
+  if (errors.length === 0) return null;
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-[#e5484d]">
+      <span className="flex items-center gap-1.5 truncate">
+        <TriangleAlertIcon className="size-3.5 shrink-0" />
+        {errors.length === 1
+          ? `1 file couldn't be read: ${errors[0]}`
+          : `${errors.length} files couldn't be read: ${errors.join(", ")}`}
+      </span>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+        onClick={clearImportErrors}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 /** Media Library tab content (hosted by the workbench panel). */
 export function MediaLibraryContent() {
   const items = useMediaStore((s) => s.items);
@@ -1746,6 +1664,8 @@ export function MediaLibraryContent() {
       left={
         <div className="min-h-0 min-w-0 overflow-y-auto">
           <Toolbar />
+          <ImportErrorsBanner />
+          <AutoScanBanner />
           <LibraryList />
         </div>
       }

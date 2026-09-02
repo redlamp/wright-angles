@@ -18,6 +18,18 @@ export interface Aspect {
   h: number;
 }
 
+/**
+ * What happens when the device's aspect and the media's aspect disagree
+ * (see wiki/notes/decision-media-crop-vs-device-fit.md). This is a
+ * property of the DEVICE — a TV set to fill, fills — not of the image.
+ *
+ * `stretch` is the one anamorphic mode: it scales the axes
+ * independently, so pixels are no longer square and only the vertical
+ * arc-minute figure stays true. It exists because users ask for it;
+ * everywhere its numbers are reported the UI flags the distortion.
+ */
+export type FitMode = "contain" | "fill-width" | "fill-height" | "stretch";
+
 export type DeviceCategory =
   | "handheld"
   | "phone"
@@ -45,18 +57,48 @@ export interface Device {
   color: string;
   visible: boolean;
   /**
-   * Screen-center height from the floor in cm, per viewing scenario (3D
-   * view). A missing entry means "aligned to the viewer's eye height" —
-   * the angular math assumes a centered gaze either way; elevation is a
-   * scene-realism control. (A standing-desk monitor sits differently
-   * than the same monitor seen from a couch.)
+   * Screen-centre offset from the viewer's LINE OF VISION, in cm, per
+   * viewing scenario. Positive is above the gaze, negative below; a
+   * missing entry means dead level with the eye.
+   *
+   * Measured from the eye line rather than the floor (Taylor
+   * 2026-08-20) because that is the relationship a person actually
+   * holds in mind — "the TV sits a bit above my eyeline" — and it
+   * survives a change of body height or stance, which an absolute
+   * floor height does not. Stored in cm and converted at the UI edge
+   * like every other distance. Superseded `elevation`; see the
+   * device-store migration.
    */
-  elevation?: { standing?: number; desk?: number; couch?: number };
+  heightOffsetCm?: { standing?: number; desk?: number; couch?: number };
+  /**
+   * Screen pitch in DEGREES per viewing scenario, positive tipping the
+   * face upward (top edge away from the viewer) — a desk monitor angled
+   * up at a seated head. Per-stance because the same monitor is met at
+   * a different angle from a desk chair than from a couch. Ignored
+   * while the device auto-orients, and absent means flat.
+   * See `lib/viewing-geometry.ts` for the sign convention.
+   */
+  tilt?: { standing?: number; desk?: number; couch?: number };
+  /**
+   * Pitch the screen to face the viewer's eye directly instead of using
+   * `tilt`, PER SCENARIO — the same switch shape as a height offset's
+   * "eye level", because a tablet propped on a desk and the same tablet
+   * held on a couch don't answer the question the same way. A missing
+   * entry follows the category: held things (handheld, phone, tablet)
+   * track your gaze, furniture doesn't.
+   */
+  autoOrient?: { standing?: boolean; desk?: boolean; couch?: boolean };
   /**
    * Curvature radius in mm using the industry convention (1000R = 1m
    * radius; smaller = curvier). Undefined/0 = flat panel.
    */
   curvatureR?: number;
+  /**
+   * How content of a different aspect is presented on this panel.
+   * Absent = "contain" (scale to fit, bars where it doesn't reach) —
+   * the default, so existing scenes are unchanged.
+   */
+  fit?: FitMode;
   /** Show the device's 3D body/chassis model when one exists. Default on. */
   show3dBody?: boolean;
 }
@@ -119,14 +161,6 @@ export interface MediaItem {
    * intrinsic image so they never shift when the crop changes.
    */
   crop?: MediaCrop;
-  /**
-   * Per-device crop overrides, keyed by device id. Each window is
-   * normalized to the FULL intrinsic image exactly like `crop` (NOT
-   * relative to it) — the same rule that keeps boxes and scans valid
-   * when any crop changes. An absent entry inherits the plain media
-   * crop, so existing libraries need no migration.
-   */
-  deviceCrops?: Record<string, MediaCrop>;
   /**
    * OCR keyframes for timeline media (video/GIF): user-placed points on
    * the timeline, each optionally holding its frame's scan. A scan stays
