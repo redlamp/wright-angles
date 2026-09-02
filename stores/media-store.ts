@@ -114,6 +114,14 @@ interface MediaState {
   videoUrls: Record<string, string>;
   activeId: string | null;
   hydrated: boolean;
+  /**
+   * Names of files the most recent addFiles() couldn't import (wrong
+   * type, or failed to decode) — cleared at the start of the next
+   * addFiles() call. UI reads it to show a dismissible note.
+   */
+  lastImportErrors: string[];
+  /** Dismiss the current import-error note. */
+  clearImportErrors: () => void;
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
   /** Imports every decodable file, then queues the whole batch for
@@ -281,6 +289,9 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   videoUrls: {},
   activeId: null,
   hydrated: false,
+  lastImportErrors: [],
+
+  clearImportErrors: () => set({ lastImportErrors: [] }),
 
   hydrate: async () => {
     if (get().hydrated) return;
@@ -334,7 +345,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   addFiles: async (files) => {
-    const list = Array.from(files).filter(
+    const all = Array.from(files);
+    const list = all.filter(
       (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
     );
     if (list.length > 0 && navigator.storage?.persist) {
@@ -342,6 +354,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       // Fire-and-forget: denial just means default (best-effort) durability.
       void navigator.storage.persist();
     }
+    // Names of files that didn't make it in this call — wrong type, or
+    // failed to decode — surfaced via lastImportErrors instead of
+    // disappearing silently.
+    const failedNames = all
+      .filter((f) => !list.includes(f))
+      .map((f) => f.name);
     // Every id that actually made it into the library this call, so OCR
     // can be queued once for the whole batch below — not per file, and
     // not for a file that failed to decode.
@@ -402,9 +420,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           addedIds.push(meta.id);
         }
       } catch {
-        // Not decodable as an image/video — skip silently.
+        // Not decodable as an image/video — noted, not silent.
+        failedNames.push(file.name);
       }
     }
+    set({ lastImportErrors: failedNames });
     if (addedIds.length > 0) {
       // Dynamic import: keeps media-store free of a static dependency on
       // the OCR queue store (which itself imports this module to read
