@@ -60,20 +60,35 @@ export function downloadSetup() {
   URL.revokeObjectURL(url);
 }
 
-function isDevice(x: unknown): x is Device {
+/** A finite, positive {w,h} pair — a resolution or aspect ratio. */
+function isPositiveWH(x: unknown): x is { w: number; h: number } {
+  if (typeof x !== "object" || x === null) return false;
+  const v = x as Record<string, unknown>;
+  return (
+    typeof v.w === "number" &&
+    Number.isFinite(v.w) &&
+    v.w > 0 &&
+    typeof v.h === "number" &&
+    Number.isFinite(v.h) &&
+    v.h > 0
+  );
+}
+
+/** Exported for testing; not part of the module's public surface. */
+export function isDevice(x: unknown): x is Device {
   if (typeof x !== "object" || x === null) return false;
   const d = x as Record<string, unknown>;
   return (
     typeof d.id === "string" &&
     typeof d.label === "string" &&
     typeof d.diagonalIn === "number" &&
+    Number.isFinite(d.diagonalIn) &&
     d.diagonalIn > 0 &&
     typeof d.distanceCm === "number" &&
+    Number.isFinite(d.distanceCm) &&
     d.distanceCm > 0 &&
-    typeof d.resolution === "object" &&
-    d.resolution !== null &&
-    typeof d.aspect === "object" &&
-    d.aspect !== null &&
+    isPositiveWH(d.resolution) &&
+    isPositiveWH(d.aspect) &&
     typeof d.color === "string" &&
     typeof d.visible === "boolean"
   );
