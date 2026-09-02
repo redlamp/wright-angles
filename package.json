@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 7841",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "bun test",
     "check-version": "node scripts/check-version.mjs"
   },
