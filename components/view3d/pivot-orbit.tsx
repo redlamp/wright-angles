@@ -7,6 +7,7 @@ import { computeHandoffTarget, stepPivotOrbit } from "@/lib/orbit-pivot";
 
 interface ControlsLike {
   target: Vector3;
+  enabled: boolean;
   update: () => void;
 }
 
@@ -86,9 +87,14 @@ export default function PivotOrbit({
       if (controls) {
         const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
         controls.target.copy(computeHandoffTarget(camera.position, forward, pivot.current));
-        // enableDamping only affects zoom/pan momentum here (rotate never
-        // touched OrbitControls' own delta state), so a single update() is
-        // enough to make the handoff target take effect with no jump.
+        // Re-enable only now: drei's wrapper calls controls.update() every
+        // frame while enabled, and update() ends with lookAt(target) —
+        // during the drag that would re-aim the camera at the OLD target
+        // each frame, so the position orbited the pivot while the
+        // orientation kept pointing elsewhere (Taylor 2026-09-02: "not
+        // pivoting around the marked point"). With the target now on the
+        // view axis, this first update() changes nothing.
+        controls.enabled = true;
         controls.update();
       }
       if (pointerId.current !== null && el.hasPointerCapture?.(pointerId.current)) {
@@ -143,6 +149,9 @@ export default function PivotOrbit({
       }
 
       dragging.current = true;
+      // Hand the camera to this component outright for the drag; see
+      // endDrag for why OrbitControls must not run update() meanwhile.
+      controls.enabled = false;
       setShownPivot(pivot.current.clone());
       pointerId.current = e.pointerId;
       last.current = { x: e.clientX, y: e.clientY };
