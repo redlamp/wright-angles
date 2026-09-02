@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Raycaster, Vector2, Vector3, type Object3D } from "three";
-import { useThree } from "@react-three/fiber";
+import { useEffect, useRef, useState } from "react";
+import { DoubleSide, Group, Raycaster, Vector2, Vector3, type Object3D } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
 import { computeHandoffTarget, stepPivotOrbit } from "@/lib/orbit-pivot";
 
 interface ControlsLike {
@@ -63,6 +63,10 @@ export default function PivotOrbit({
   // Own Raycaster instance — never touches r3f's shared state.raycaster,
   // which is reserved for r3f's own hover/click hit-testing.
   const raycaster = useRef(new Raycaster());
+  // The pivot, for the duration of the drag only — rendered as a marker
+  // so the user can see what the world is turning around (Taylor
+  // 2026-09-02: without it the rotation read as confusing).
+  const [shownPivot, setShownPivot] = useState<Vector3 | null>(null);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -91,6 +95,7 @@ export default function PivotOrbit({
         el.releasePointerCapture(pointerId.current);
       }
       pointerId.current = null;
+      setShownPivot(null);
       invalidate();
     };
 
@@ -138,6 +143,7 @@ export default function PivotOrbit({
       }
 
       dragging.current = true;
+      setShownPivot(pivot.current.clone());
       pointerId.current = e.pointerId;
       last.current = { x: e.clientX, y: e.clientY };
       el.setPointerCapture(e.pointerId);
@@ -186,5 +192,40 @@ export default function PivotOrbit({
     };
   }, [gl, camera, scene, get, invalidate, minPolarAngle, maxPolarAngle, rotateSpeed]);
 
-  return null;
+  return shownPivot ? <PivotMarker position={shownPivot} /> : null;
+}
+
+/** Fraction of the camera distance the marker spans: constant on screen. */
+const MARKER_SCALE = 0.022;
+
+/**
+ * Screen-facing ring and dot at the orbit pivot. Scaled every frame by
+ * its distance from the camera so it reads the same size wherever the
+ * pivot lands, drawn on top of everything (no depth test) so a pivot on
+ * the far side of a panel is still visible.
+ */
+function PivotMarker({ position }: { position: Vector3 }) {
+  const group = useRef<Group>(null);
+  useFrame(({ camera }) => {
+    const g = group.current;
+    if (!g) return;
+    g.quaternion.copy(camera.quaternion);
+    g.scale.setScalar(camera.position.distanceTo(position) * MARKER_SCALE);
+  });
+  return (
+    <group ref={group} position={position} renderOrder={1000}>
+      <mesh renderOrder={1000}>
+        <ringGeometry args={[0.8, 1, 48]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.9} depthTest={false} depthWrite={false} side={DoubleSide} toneMapped={false} />
+      </mesh>
+      <mesh renderOrder={1000}>
+        <ringGeometry args={[1.6, 1.7, 48]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.35} depthTest={false} depthWrite={false} side={DoubleSide} toneMapped={false} />
+      </mesh>
+      <mesh renderOrder={1000}>
+        <circleGeometry args={[0.18, 24]} />
+        <meshBasicMaterial color="#ffffff" depthTest={false} depthWrite={false} toneMapped={false} />
+      </mesh>
+    </group>
+  );
 }

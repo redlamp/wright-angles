@@ -246,9 +246,10 @@ pose (fly-in finished).
    projector, not the screen centre. [ ]
 2. Wheel over empty sky. **Expect:** still zooms toward where the
    cursor is; no jump. [ ]
-3. Left-drag starting on the Steam Deck's face. **Expect:** the Deck
-   stays roughly under the cursor while the world turns around it; no
-   jump at press or release. [ ]
+3. Left-drag starting on the Steam Deck's face. **Expect:** a white
+   ring-and-dot marker appears on the Deck at the click point and the
+   world turns around it; the marker keeps one screen size as you
+   orbit and vanishes on release; no jump at press or release. [ ]
 4. Left-drag starting on the floor near the bottom of the window, drag
    upward hard. **Expect:** the camera stops at the horizon rather than
    flipping, and nothing snaps when you release. [ ]
