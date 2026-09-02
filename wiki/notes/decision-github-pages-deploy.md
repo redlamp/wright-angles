@@ -37,3 +37,7 @@ workflow on push to `main`.
   pin to a stale branch name; a wedged deployment record is keyed to the
   commit SHA — push a new commit rather than rerunning.
 - Live URL (once first deploy runs): https://redlamp.github.io/wright-angles/
+- Bump `package.json` `version` on dev after each release; CI
+  (`bun run check-version`, via `scripts/check-version.mjs`) fails once a
+  `v<version>` tag exists elsewhere until it moves; tag `v<version>` on
+  `main` at release time.
