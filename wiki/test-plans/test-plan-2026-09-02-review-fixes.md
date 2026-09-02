@@ -232,6 +232,35 @@ Preconditions: a video item active, Perception Report open.
 - [ ] 2.15.4 The calibration card still drags/resizes/keyboard-resizes
       normally, on top of the new cancel path.
 
+### 2.16 3D camera: zoom to cursor, orbit around the click
+
+Landed after the fixes above (`96ab4e0`): wheel zoom now homes in on
+the point under the cursor, and a left-drag orbits around the 3D point
+under the initial click instead of a fixed target. Touch one-finger
+rotate is NOT reimplemented yet; mouse only.
+
+Preconditions: 3D view, starter devices, camera settled at the orbit
+pose (fly-in finished).
+
+1. Wheel over the far projector. **Expect:** the view converges on the
+   projector, not the screen centre. [ ]
+2. Wheel over empty sky. **Expect:** still zooms toward where the
+   cursor is; no jump. [ ]
+3. Left-drag starting on the Steam Deck's face. **Expect:** the Deck
+   stays roughly under the cursor while the world turns around it; no
+   jump at press or release. [ ]
+4. Left-drag starting on the floor near the bottom of the window, drag
+   upward hard. **Expect:** the camera stops at the horizon rather than
+   flipping, and nothing snaps when you release. [ ]
+5. Left-drag starting on empty sky. **Expect:** orbits like before
+   (around a point at the old target's depth). [ ]
+6. Press and release without moving. **Expect:** no camera change;
+   click-select on a device still works. [ ]
+7. Left-drag starting on a device's distance handle. **Expect:** the
+   handle drags the device as before; the camera does not orbit. [ ]
+8. Right-drag. **Expect:** pan unchanged. [ ]
+9. Orbit, then Tab to 2D. **Expect:** the exit fly aims correctly and
+   the head-on pose lines up with 2D. [ ]
 ## 3. Also new on dev, no QA needed but be aware
 
 - CI now gates `dev` the same way deploy gates `main` (`ci.yml`).
