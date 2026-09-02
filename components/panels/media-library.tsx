@@ -23,18 +23,15 @@ import { cn } from "@/lib/utils";
 import { batchLabel } from "@/lib/ocr-queue";
 import { useOcrQueueStore } from "@/stores/ocr-queue-store";
 import type { Device, MediaCrop, MediaItem } from "@/lib/types";
-import {
-  ACUITY,
-  aspectFromResolution,
-  boxMetricsOnDevice,
-  strokesSubAcuity,
-} from "@/lib/display-math";
+import { aspectFromResolution, strokesSubAcuity } from "@/lib/display-math";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
 import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
 import {
   ASPECT_PRESETS,
   aspectCrop,
-  boxInCrop,
   cropOf,
   cropsEqual,
   dragCrop,
@@ -787,14 +784,6 @@ interface ScanLine {
   sizePx?: number;
 }
 
-
-const scanBandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
-
 /**
  * The useful data behind an OCR run: the image with each detected line
  * outlined and numbered, plus a per-line table (text, px height,
@@ -807,14 +796,9 @@ const scanLineColor = (
   thisDevice: Device,
 ): string => {
   if (mode === "group") return groupColor(line.groupId);
-  const crop = cropOf(item);
   const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-  const arcmin = boxMetricsOnDevice(
-    hNorm / crop.h,
-    effectiveDims(item),
-    thisDevice,
-  ).arcmin;
-  return scanBandColor(arcmin);
+  const m = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
+  return legibilityColor(m ? m.arcmin : null);
 };
 
 /**
@@ -923,8 +907,6 @@ function ScanResults({
     lines,
     showContrast && item.kind === "image",
   );
-  const crop = cropOf(item);
-  const eff = effectiveDims(item);
   // User-adjustable list height (session-local).
   const [listH, setListH] = useState(160);
   const resize = useRef<{ startY: number; base: number } | null>(null);
@@ -941,15 +923,19 @@ function ScanResults({
 
   const rows = lines
     .map((line, i) => {
-      const inCrop = boxInCrop(line.box, crop);
       // Group-corrected height when available (descender-aware, plan
-      // 7.2), else the raw ink box.
+      // 7.2), else the raw ink box. Measured through This Device's
+      // actual rendered crop (source crop, then its fit mode) — a fill
+      // mode's crop can exclude a line the source crop alone wouldn't.
       const hNorm = line.sizePx ? line.sizePx / item.height : line.box.h;
-      const arcmin = boxMetricsOnDevice(hNorm / crop.h, eff, thisDevice).arcmin;
+      const metrics = boxMetricsInCrop(line.box, hNorm, item, thisDevice);
       const shownPx = Math.round(line.sizePx ?? line.box.h * item.height);
-      return { line, i, inCrop, arcmin, shownPx };
+      return { line, i, metrics, shownPx };
     })
-    .filter((r) => r.inCrop !== null);
+    .filter(
+      (r): r is typeof r & { metrics: NonNullable<typeof r.metrics> } =>
+        r.metrics !== null,
+    );
 
   return (
     <div className="space-y-1">
@@ -958,7 +944,7 @@ function ScanResults({
         className="space-y-0.5 overflow-y-auto"
         style={{ height: listH }}
       >
-        {rows.map(({ line, i, arcmin, shownPx }) => (
+        {rows.map(({ line, i, metrics, shownPx }) => (
           <button
             key={line.id}
             data-box-id={line.id}
@@ -988,7 +974,7 @@ function ScanResults({
                 background:
                   colorMode === "group"
                     ? groupColor(line.groupId)
-                    : scanBandColor(arcmin),
+                    : legibilityColor(metrics.arcmin),
               }}
             />
             <span className="w-5 shrink-0 font-mono text-sm text-muted-foreground">
@@ -1015,12 +1001,12 @@ function ScanResults({
             ) : null}
             <span
               className="shrink-0 font-mono text-sm"
-              style={{ color: scanBandColor(arcmin) }}
+              style={{ color: legibilityColor(metrics.arcmin) }}
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
-              {arcmin.toFixed(0)}′
+              {metrics.arcmin.toFixed(0)}′
             </span>
-            {strokesSubAcuity(arcmin) ? (
+            {strokesSubAcuity(metrics.arcmin) ? (
               <span
                 className="shrink-0"
                 title="Strokes render below 1′ on This Device — letterforms lose their detail at this distance"
@@ -1267,13 +1253,6 @@ function ScanFollowThrough() {
   );
 }
 
-
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
-
 /** Keyed by item id at the callsite so the armed/scan state resets on switch. */
 function DetailCard({ item }: { item: MediaItem }) {
   const objectUrl = useMediaStore((s) => s.objectUrls[item.id]);
@@ -1326,18 +1305,33 @@ function DetailCard({ item }: { item: MediaItem }) {
     useMediaStore.getState().items.find((i) => i.id === item.id)
       ?.scanKeyframes ?? [];
 
+  // DetailCard is keyed by item.id (MediaLibraryContent), so switching
+  // the active item unmounts this instance outright while a detect()/
+  // scanAll() may still be mid-await — guard every setState after an
+  // await so a finishing scan for an item the user has since left
+  // doesn't write into a component that's gone. The scan itself (it
+  // persists straight to the store, keyed by item.id) still runs to
+  // completion either way.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
   const detect = async () => {
     if (scanRunning) return;
     setScanRunning(true);
     setScanFailed(false);
     try {
       await detectTextForItem(item.id);
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setScanRunning(false);
+      if (aliveRef.current) setScanRunning(false);
     }
   };
 
@@ -1348,16 +1342,20 @@ function DetailCard({ item }: { item: MediaItem }) {
     try {
       const pending = freshKeyframes().filter((k) => !k.lines);
       for (let i = 0; i < pending.length; i++) {
-        setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        if (aliveRef.current) {
+          setBatchNote(`Scanning keyframe ${i + 1} of ${pending.length}…`);
+        }
         await scanKeyframeAt(item.id, pending[i].timeSec);
       }
-      setShowScanBoxes(true);
+      if (aliveRef.current) setShowScanBoxes(true);
     } catch (err) {
       console.warn("Batch text detection failed:", err);
-      setScanFailed(true);
+      if (aliveRef.current) setScanFailed(true);
     } finally {
-      setBatchNote(null);
-      setScanRunning(false);
+      if (aliveRef.current) {
+        setBatchNote(null);
+        setScanRunning(false);
+      }
     }
   };
 
@@ -1370,10 +1368,10 @@ function DetailCard({ item }: { item: MediaItem }) {
         ? "Mark frames on the timeline (bookmark button), then scan them."
         : kf
           ? kf.lines
-            ? `Keyframe ${fmtKfTime(kf.timeSec)} · ${kf.lines.length} line${
+            ? `Keyframe ${formatTimecode(kf.timeSec)} · ${kf.lines.length} line${
                 kf.lines.length === 1 ? "" : "s"
               } · median ${Math.round(kf.medianPx ?? 0)} px — shown until the next marker`
-            : `Keyframe ${fmtKfTime(kf.timeSec)} — not scanned yet`
+            : `Keyframe ${formatTimecode(kf.timeSec)} — not scanned yet`
           : "Playhead is before the first keyframe."
       : null);
 
@@ -1611,6 +1609,35 @@ function AutoScanBanner() {
   );
 }
 
+/**
+ * "N files couldn't be read: a.heic, b.tiff" — addFiles() no longer
+ * swallows decode failures; this is where they surface. Dismissible,
+ * same shape as AutoScanBanner.
+ */
+function ImportErrorsBanner() {
+  const errors = useMediaStore((s) => s.lastImportErrors);
+  const clearImportErrors = useMediaStore((s) => s.clearImportErrors);
+  if (errors.length === 0) return null;
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-[#e5484d]">
+      <span className="flex items-center gap-1.5 truncate">
+        <TriangleAlertIcon className="size-3.5 shrink-0" />
+        {errors.length === 1
+          ? `1 file couldn't be read: ${errors[0]}`
+          : `${errors.length} files couldn't be read: ${errors.join(", ")}`}
+      </span>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
+        onClick={clearImportErrors}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 /** Media Library tab content (hosted by the workbench panel). */
 export function MediaLibraryContent() {
   const items = useMediaStore((s) => s.items);
@@ -1637,6 +1664,7 @@ export function MediaLibraryContent() {
       left={
         <div className="min-h-0 min-w-0 overflow-y-auto">
           <Toolbar />
+          <ImportErrorsBanner />
           <AutoScanBanner />
           <LibraryList />
         </div>

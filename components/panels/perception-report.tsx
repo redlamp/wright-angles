@@ -11,9 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  ACUITY,
   apparentWidthRatio,
-  boxMetricsOnDevice,
   contentPxToArcmin,
   deviceAngles,
   formatDistance,
@@ -24,13 +22,10 @@ import {
   clearCurrentKeyframeScan,
   detectTextForItem,
 } from "@/lib/scan-actions";
-import { boxInCrop } from "@/lib/media-crop";
-import {
-  deviceFitCrop,
-  fitLabel,
-  fitModeOf,
-  fitStretchNote,
-} from "@/lib/fit";
+import { boxMetricsInCrop, type BoxDeviceMetrics } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { formatTimecode } from "@/lib/units";
+import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
@@ -58,19 +53,11 @@ import { SplitGrid } from "./split-grid";
  * the probe.
  */
 
-/** ISO 16′/20′ verdict band color for an arcmin value. */
-const bandColor = (arcmin: number) =>
-  arcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : arcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
-
 function LegibilityDot({ arcmin }: { arcmin: number }) {
   return (
     <span
       className="inline-block size-2 rounded-full"
-      style={{ background: bandColor(arcmin) }}
+      style={{ background: legibilityColor(arcmin) }}
     />
   );
 }
@@ -146,12 +133,6 @@ interface TextEntry {
   box: { x: number; y: number; w: number; h: number };
 }
 
-const fmtKfTime = (t: number) => {
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-};
-
 function buildTextEntries(item: MediaItem): TextEntry[] {
   const entries: TextEntry[] = [];
   (item.boxes ?? []).forEach((b, idx) => {
@@ -214,14 +195,60 @@ export function PerceptionReportContent() {
   );
 
   /** Which devices annotate each text entry's verdict row. */
-  const verdictDevices =
-    mode === "device" && pickedDevice
-      ? [pickedDevice]
-      : mode === "mine"
-        ? [thisDevice]
-        : [thisDevice, ...devices];
+  const verdictDevices = useMemo(
+    () =>
+      mode === "device" && pickedDevice
+        ? [pickedDevice]
+        : mode === "mine"
+          ? [thisDevice]
+          : [thisDevice, ...devices],
+    [mode, pickedDevice, thisDevice, devices],
+  );
 
-  const textEntries = activeItem ? buildTextEntries(activeItem) : [];
+  // Pure function of the item's own content (boxes/scan/keyframes) —
+  // doesn't depend on the playhead, so it shouldn't recompute every
+  // timeSec tick the way running it straight in the render body did.
+  const textEntries = useMemo(
+    () => (activeItem ? buildTextEntries(activeItem) : []),
+    [activeItem],
+  );
+
+  /** One verdict row per (text entry, device) pair — cropped-out, or
+   * shown with its measured metrics. Same shape the render below used
+   * to compute inline on every render (including every playhead tick,
+   * via the timeSec subscription below); moved here so it only
+   * recomputes when the item, its entries, or the device set change. */
+  const entryVerdicts = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<
+        | { kind: "cropped"; device: Device }
+        | {
+            kind: "shown";
+            device: Device;
+            m: BoxDeviceMetrics;
+            stretch: string | null;
+          }
+      >
+    >();
+    if (!activeItem) return map;
+    for (const e of textEntries) {
+      map.set(
+        e.id,
+        verdictDevices.map((d) => {
+          const m = boxMetricsInCrop(e.box, e.h, activeItem, d);
+          if (!m) return { kind: "cropped" as const, device: d };
+          return {
+            kind: "shown" as const,
+            device: d,
+            m,
+            stretch: fitStretchNote(activeItem, d),
+          };
+        }),
+      );
+    }
+    return map;
+  }, [activeItem, textEntries, verdictDevices]);
 
   // Clear-button state mirrors the Media Library's Text Detection row.
   const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
@@ -481,7 +508,7 @@ export function PerceptionReportContent() {
                       {e.label}
                     </span>
                     <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                      {e.kfTime !== null ? `@ ${fmtKfTime(e.kfTime)} · ` : ""}
+                      {e.kfTime !== null ? `@ ${formatTimecode(e.kfTime)} · ` : ""}
                       {e.srcH} px
                     </span>
                     {e.removable && activeItem ? (
@@ -504,14 +531,15 @@ export function PerceptionReportContent() {
                       arcmin number wears the verdict band, the hover
                       title names the device with mm/px. */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                    {verdictDevices.map((d) => {
+                    {(entryVerdicts.get(e.id) ?? []).map((row) => {
+                      const d = row.device;
                       // Fit modes crop: a box the device's fit trims
                       // away isn't on that screen at all — show a muted
-                      // dash instead of a verdict.
-                      if (
-                        activeItem &&
-                        !boxInCrop(e.box, deviceFitCrop(activeItem, d))
-                      ) {
+                      // dash instead of a verdict. Measuring through the
+                      // device's actual rendered crop (not the intrinsic
+                      // image) also means a cropped-in box reads its
+                      // true, bigger size on that screen.
+                      if (row.kind === "cropped") {
                         return (
                           <span
                             key={d.id}
@@ -526,12 +554,9 @@ export function PerceptionReportContent() {
                           </span>
                         );
                       }
-                      const m = boxMetricsOnDevice(e.h, activeItem!, d);
                       // A stretched panel distorts: the figure is the
                       // HEIGHT one, and the chip says so on hover.
-                      const stretch = activeItem
-                        ? fitStretchNote(activeItem, d)
-                        : null;
+                      const { m, stretch } = row;
                       return (
                         <span
                           key={d.id}
@@ -542,7 +567,7 @@ export function PerceptionReportContent() {
                             className="inline-block size-2 rounded-full"
                             style={{ background: d.color }}
                           />
-                          <span style={{ color: bandColor(m.arcmin) }}>
+                          <span style={{ color: legibilityColor(m.arcmin) }}>
                             {m.arcmin.toFixed(0)}′
                           </span>
                           {strokesSubAcuity(m.arcmin) ? (

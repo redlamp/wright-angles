@@ -569,6 +569,7 @@ export function CalibrationPanel({
                 onPointerDown={onEdgeDown(edge)}
                 onPointerMove={onHandleMove}
                 onPointerUp={onHandleUp}
+                onPointerCancel={onHandleUp}
                 onKeyDown={onEdgeKeyDown(edge)}
               >
                 {/* bg-background + ring, not bg-foreground/40: the grip
@@ -611,6 +612,7 @@ export function CalibrationPanel({
                 onPointerDown={onCornerDown(corner)}
                 onPointerMove={onHandleMove}
                 onPointerUp={onHandleUp}
+                onPointerCancel={onHandleUp}
                 onKeyDown={onCornerKeyDown(corner)}
               >
                 <div className="absolute inset-1 rounded-full bg-background ring-1 ring-foreground/30" />

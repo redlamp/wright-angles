@@ -29,12 +29,14 @@ import {
 } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import {
-  ACUITY,
   boxMetricsOnDevice,
   formatDistance,
   simulatedSizeOnHostPx,
 } from "@/lib/display-math";
 import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
+import { boxMetricsInCrop } from "@/lib/box-metrics";
+import { legibilityColor } from "@/lib/legibility";
+import { deviceViewScale } from "@/lib/view-scale";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
@@ -61,13 +63,21 @@ import type {
  * estimated from the outer/inner delta (borders split left/right, the
  * rest is the title/tab bar). Polled — there is no window-move event.
  */
+type ScreenViewport = {
+  clientX: number;
+  clientY: number;
+  screenW: number;
+  screenH: number;
+} | null;
+
 export function useScreenViewport() {
-  const [vp, setVp] = useState<{
-    clientX: number;
-    clientY: number;
-    screenW: number;
-    screenH: number;
-  } | null>(null);
+  const [vp, setVp] = useState<ScreenViewport>(null);
+  // Mirrors the last value OUTSIDE React state so "did it move" can be
+  // computed synchronously, in plain code — not by reading a variable an
+  // updater function assigns as a side effect, which only works when
+  // React happens to run that updater eagerly (it isn't a guaranteed
+  // contract of setState).
+  const vpRef = useRef<ScreenViewport>(null);
 
   useEffect(() => {
     // Adaptive cadence: idle at 2Hz, but the moment the window moves,
@@ -99,21 +109,19 @@ export function useScreenViewport() {
         screenW: s.width,
         screenH: s.height,
       };
-      let moved = false;
-      setVp((prev) => {
-        if (
-          prev &&
-          prev.clientX === next.clientX &&
-          prev.clientY === next.clientY &&
-          prev.screenW === next.screenW &&
-          prev.screenH === next.screenH
-        ) {
-          return prev;
-        }
-        moved = prev !== null;
-        return next;
-      });
-      if (moved) lastMoveAt = performance.now();
+      const prev = vpRef.current;
+      const unchanged =
+        prev &&
+        prev.clientX === next.clientX &&
+        prev.clientY === next.clientY &&
+        prev.screenW === next.screenW &&
+        prev.screenH === next.screenH;
+      if (!unchanged) {
+        const moved = prev !== null;
+        vpRef.current = next;
+        setVp(next);
+        if (moved) lastMoveAt = performance.now();
+      }
       const fast = performance.now() - lastMoveAt < SETTLE_MS;
       timer = window.setTimeout(read, fast ? FAST_MS : IDLE_MS);
     };
@@ -428,12 +436,6 @@ function PixelLoupe({
 const setDeviceHover = (h: DeviceHover | null) =>
   useAnnotationStore.getState().setDeviceHover(h);
 
-const boxBandColor = (worstArcmin: number) =>
-  worstArcmin >= ACUITY.comfortableTextArcmin
-    ? "#46a758"
-    : worstArcmin >= ACUITY.minCriticalTextArcmin
-      ? "#f5a524"
-      : "#e5484d";
 
 /**
  * Highlight boxes over one device rect. Coordinates are normalized to
@@ -458,7 +460,8 @@ function BoxLayer({
   media: MediaItem;
   /** Measure boxes + active-keyframe lines, full-image normalized. */
   boxes: HighlightBox[];
-  worstByBox: Map<string, number>;
+  /** null = no visible device's fit shows this box; render it muted. */
+  worstByBox: Map<string, number | null>;
   /** Text-block ids for the global Groups color mode. */
   groupById: Map<string, number>;
   isHost: boolean;
@@ -486,7 +489,7 @@ function BoxLayer({
         const color =
           colorMode === "group" && gid !== undefined
             ? groupColor(gid)
-            : boxBandColor(worstByBox.get(b.id) ?? 99);
+            : legibilityColor(worstByBox.get(b.id) ?? null);
         const selected = b.id === selectedBoxId;
         return (
           <div
@@ -592,12 +595,29 @@ export function DisplayArea() {
       });
     });
     ro.observe(el);
-    setDpr(window.devicePixelRatio || 1);
-    const onResize = () => setDpr(window.devicePixelRatio || 1);
-    window.addEventListener("resize", onResize);
+    const updateDpr = () => setDpr(window.devicePixelRatio || 1);
+    updateDpr();
+    // `resize` alone misses a DPR change with no size change — dragging
+    // the window to a different-DPI monitor, most commonly. A
+    // matchMedia query on the CURRENT ratio fires once that ratio no
+    // longer matches; re-arm it on the new ratio each time so it keeps
+    // tracking indefinitely, not just the first crossing.
+    let mq: MediaQueryList | null = null;
+    const onDprChange = () => {
+      updateDpr();
+      armDprWatch();
+    };
+    const armDprWatch = () => {
+      mq?.removeEventListener("change", onDprChange);
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mq.addEventListener("change", onDprChange);
+    };
+    armDprWatch();
+    window.addEventListener("resize", updateDpr);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", updateDpr);
+      mq?.removeEventListener("change", onDprChange);
     };
   }, []);
 
@@ -664,7 +684,7 @@ export function DisplayArea() {
   // Keyframe lines measure with their group-corrected size when it
   // exists (descender-aware).
   const worstByBox = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, number | null>();
     if (!activeItem) return map;
     const devs = [
       ...(thisDevice.visible ? [thisDevice] : []),
@@ -676,20 +696,18 @@ export function DisplayArea() {
         if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
     for (const b of overlayBoxes) {
       const hNorm = kfSize.get(b.id) ?? b.h;
-      let worst = Infinity;
+      // Each device measures through ITS rendered crop (source crop
+      // reframed by the device's fit mode): that region is what lands
+      // on the panel, so the box height re-normalizes against it. A
+      // device whose fit crops the box away doesn't show it, so it
+      // can't drag the worst-case verdict either — and when EVERY
+      // visible device crops it away, the box has no verdict at all
+      // (null), not an infinitely-good one.
+      let worst: number | null = null;
       for (const d of devs) {
-        // Each device measures through ITS rendered crop (source crop
-        // reframed by the device's fit mode): that region is what lands
-        // on the panel, so the box height re-normalizes against it
-        // (h/c.h of the crop's height = the box's unchanged source-pixel
-        // height). A device whose fit crops the box away doesn't show
-        // it, so it can't drag the worst-case verdict either.
-        const c = deviceFitCrop(activeItem, d);
-        if (!boxInCrop(b, c)) continue;
-        worst = Math.min(
-          worst,
-          boxMetricsOnDevice(hNorm / c.h, cropDims(activeItem, c), d).arcmin,
-        );
+        const m = boxMetricsInCrop(b, hNorm, activeItem, d);
+        if (!m) continue;
+        worst = worst === null ? m.arcmin : Math.min(worst, m.arcmin);
       }
       map.set(b.id, worst);
     }
@@ -745,21 +763,24 @@ export function DisplayArea() {
   // Scale: CSS px per This-Device pixel. Viewport mode maps This Device's
   // panel exactly onto the physical screen (the window shows the slice it
   // covers); fit mode shrinks the whole panel into the window.
-  const k = useMemo(() => {
-    if (!area.w || !area.h) return 0;
-    if (viewportActive && vp) return vp.screenW / thisDevice.resolution.w;
-    return Math.min(
-      area.w / thisDevice.resolution.w,
-      area.h / thisDevice.resolution.h,
-    );
-  }, [
-    area.w,
-    area.h,
-    viewportActive,
-    vp,
-    thisDevice.resolution.w,
-    thisDevice.resolution.h,
-  ]);
+  const k = useMemo(
+    () =>
+      deviceViewScale(
+        thisDevice.resolution.w,
+        thisDevice.resolution.h,
+        area.w,
+        area.h,
+        viewportActive && vp ? vp.screenW : null,
+      ),
+    [
+      area.w,
+      area.h,
+      viewportActive,
+      vp,
+      thisDevice.resolution.w,
+      thisDevice.resolution.h,
+    ],
+  );
 
   // Composition center in client coordinates: the physical screen's
   // center ("screen" center mode, viewport only) or the window's center,
@@ -910,7 +931,9 @@ export function DisplayArea() {
     a.href = url;
     a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Deferred: revoking synchronously after click() can beat Firefox/
+    // Safari to actually starting the download.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
 
   /**
@@ -1001,6 +1024,20 @@ export function DisplayArea() {
           const hit = deviceAt(e.clientX, e.clientY);
           selectDevice(hit === selectedDeviceId ? null : hit);
         }
+      }}
+      onPointerCancel={() => {
+        // The gesture was interrupted (browser gesture takeover, a
+        // window losing focus mid-drag, …) — just clear the drag, never
+        // treat it as a click-select.
+        panDrag.current = null;
+        setPanning(false);
+      }}
+      onLostPointerCapture={() => {
+        // Capture can be lost without either pointerup or pointercancel
+        // firing (e.g. another element steals it) — same treatment:
+        // clear the drag, no click-select.
+        panDrag.current = null;
+        setPanning(false);
       }}
       onDoubleClick={(e) => {
         if (drawMode || onInteractive(e.target)) return;

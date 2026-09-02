@@ -225,6 +225,7 @@ export function FloatingPanel({
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
       >
         <Icon className="size-3.5 text-muted-foreground" />
         <span className="text-base font-medium">{title}</span>
@@ -261,6 +262,7 @@ export function FloatingPanel({
         onPointerDown={(e) => onResizeDown(e, "left")}
         onPointerMove={onResizeMove}
         onPointerUp={onResizeUp}
+        onPointerCancel={onResizeUp}
       />
       <div
         role="separator"
@@ -270,6 +272,7 @@ export function FloatingPanel({
         onPointerDown={(e) => onResizeDown(e, "right")}
         onPointerMove={onResizeMove}
         onPointerUp={onResizeUp}
+        onPointerCancel={onResizeUp}
       />
       {resizableHeight ? (
         <>
@@ -281,6 +284,7 @@ export function FloatingPanel({
             onPointerDown={(e) => onResizeDown(e, "bottom")}
             onPointerMove={onResizeMove}
             onPointerUp={onResizeUp}
+            onPointerCancel={onResizeUp}
           />
           <div
             role="separator"
@@ -289,6 +293,7 @@ export function FloatingPanel({
             onPointerDown={(e) => onResizeDown(e, "corner")}
             onPointerMove={onResizeMove}
             onPointerUp={onResizeUp}
+            onPointerCancel={onResizeUp}
           />
         </>
       ) : null}

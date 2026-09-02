@@ -12,6 +12,7 @@ import {
   idbClearMedia,
   idbDeleteMedia,
   idbGetAllMedia,
+  idbGetMedia,
   idbPutMedia,
 } from "@/lib/idb";
 import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
@@ -22,14 +23,18 @@ const newId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
+/** Re-write one item's metadata beside its stored blob(s), by id — a
+ * single-record read/write, not a scan of the whole library. */
+function persistItemMeta(item: MediaItem) {
+  void idbGetMedia(item.id).then((rec) => {
+    if (rec) void idbPutMedia(item.id, { ...rec, meta: item });
+  });
+}
+
 /** Re-write an item's metadata beside its stored blob(s). */
 function persistMeta(get: () => { items: MediaItem[] }, id: string) {
   const item = get().items.find((i) => i.id === id);
-  if (!item) return;
-  void idbGetAllMedia().then((records) => {
-    const rec = records.find((r) => r.meta.id === id);
-    if (rec) void idbPutMedia(id, { ...rec, meta: item });
-  });
+  if (item) persistItemMeta(item);
 }
 
 /** Intrinsic pixel size of an image blob. */
@@ -109,6 +114,14 @@ interface MediaState {
   videoUrls: Record<string, string>;
   activeId: string | null;
   hydrated: boolean;
+  /**
+   * Names of files the most recent addFiles() couldn't import (wrong
+   * type, or failed to decode) — cleared at the start of the next
+   * addFiles() call. UI reads it to show a dismissible note.
+   */
+  lastImportErrors: string[];
+  /** Dismiss the current import-error note. */
+  clearImportErrors: () => void;
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
   /** Imports every decodable file, then queues the whole batch for
@@ -276,6 +289,9 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   videoUrls: {},
   activeId: null,
   hydrated: false,
+  lastImportErrors: [],
+
+  clearImportErrors: () => set({ lastImportErrors: [] }),
 
   hydrate: async () => {
     if (get().hydrated) return;
@@ -329,7 +345,8 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   addFiles: async (files) => {
-    const list = Array.from(files).filter(
+    const all = Array.from(files);
+    const list = all.filter(
       (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
     );
     if (list.length > 0 && navigator.storage?.persist) {
@@ -337,6 +354,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       // Fire-and-forget: denial just means default (best-effort) durability.
       void navigator.storage.persist();
     }
+    // Names of files that didn't make it in this call — wrong type, or
+    // failed to decode — surfaced via lastImportErrors instead of
+    // disappearing silently.
+    const failedNames = all
+      .filter((f) => !list.includes(f))
+      .map((f) => f.name);
     // Every id that actually made it into the library this call, so OCR
     // can be queued once for the whole batch below — not per file, and
     // not for a file that failed to decode.
@@ -397,9 +420,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           addedIds.push(meta.id);
         }
       } catch {
-        // Not decodable as an image/video — skip silently.
+        // Not decodable as an image/video — noted, not silent.
+        failedNames.push(file.name);
       }
     }
+    set({ lastImportErrors: failedNames });
     if (addedIds.length > 0) {
       // Dynamic import: keeps media-store free of a static dependency on
       // the OCR queue store (which itself imports this module to read
@@ -547,6 +572,11 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   reorderItem: (id, toIndex) => {
+    // Captured from the set() updater so the persist pass below reuses
+    // the freshly-reordered items directly — one pass over the array
+    // it already computed, not an O(n) re-lookup (and idbGetAllMedia
+    // whole-library read) per item.
+    let reordered: MediaItem[] = [];
     set((s) => {
       const from = s.items.findIndex((i) => i.id === id);
       if (from < 0) return s;
@@ -554,9 +584,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       const [moved] = items.splice(from, 1);
       items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
       // The array order becomes the persisted manual order.
-      return { items: items.map((i, idx) => ({ ...i, sortIndex: idx })) };
+      reordered = items.map((i, idx) => ({ ...i, sortIndex: idx }));
+      return { items: reordered };
     });
-    for (const i of get().items) persistMeta(get, i.id);
+    for (const item of reordered) persistItemMeta(item);
   },
 
   clearDetection: (id) => {
