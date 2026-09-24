@@ -1,5 +1,5 @@
 ---
-tags: [domain/product, status/open]
+tags: [domain/product, status/superseded]
 ---
 
 # Test Plan v7 — First Run, Focus and Auto-OCR (2026-08-21)

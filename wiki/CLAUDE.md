@@ -9,7 +9,7 @@ gitignored; `.vault-nickname` names the vault in Obsidian's switcher.
 |---|---|
 | Formal, user-facing spec | `docs/` (not the wiki) |
 | Decisions, rationale, state, half-formed thoughts | `wiki/notes/` |
-| External references, summarised for this project | `wiki/research/` |
+| External references, summarized for this project | `wiki/research/` |
 | What happened today | `wiki/daily/YYYY-MM-DD.md` |
 | Session test plans for Taylor to tick through | `wiki/test-plans/` |
 | Hand-curated indexes per cluster | `wiki/mocs/` |
@@ -22,6 +22,8 @@ gitignored; `.vault-nickname` names the vault in Obsidian's switcher.
   Constraints carried forward. Link from `mocs/decisions.md`.
 - Daily notes: `daily/YYYY-MM-DD.md`, date H1, `##` per work stream.
 - Test plans: `test-plans/test-plan-YYYY-MM-DD-topic.md`.
+- Prose: American English, no em dashes (the global rule in
+  `~/.claude/CLAUDE.md`; wiki notes are where most generated prose lands).
 
 ## Linking and tags
 

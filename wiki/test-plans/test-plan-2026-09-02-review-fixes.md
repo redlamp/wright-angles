@@ -1,5 +1,5 @@
 ---
-tags: [domain/product, status/open]
+tags: [domain/product, status/superseded]
 ---
 
 # Test Plan v8 — Review Fixes (2026-09-02)
