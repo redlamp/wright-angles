@@ -5,8 +5,6 @@ import { cn } from "@/lib/utils";
 import { displayLength } from "@/lib/units";
 import { zoomWarningPct } from "@/lib/browser-zoom";
 import {
-  CARD_ASPECT,
-  CARD_DIAGONAL_RATIO,
   CARD_H_MM,
   CARD_W_MM,
   COMMON_DIAGONALS_IN,
@@ -16,6 +14,15 @@ import {
   widthFromDiagonalPx,
   widthFromHeightPx,
 } from "@/lib/calibration";
+import {
+  boxFromCorner,
+  draggedCorner,
+  growthDir,
+  pinnedCorner,
+  type Box,
+  type Corner,
+  type Edge,
+} from "@/lib/calibration-drag";
 import type { Aspect, Resolution } from "@/lib/types";
 import { useSettingsStore } from "@/stores/settings-store";
 import { Button } from "@/components/ui/button";
@@ -63,78 +70,6 @@ const MIN_STAGE_VIEWPORT_PX = 200;
  * isn't the moment they'd reach for the toggle anyway.
  */
 const LABEL_MIN_PX = 190;
-
-type Edge = "left" | "right" | "top" | "bottom";
-type Corner = "tl" | "tr" | "bl" | "br";
-
-type Box = { width: number; left: number; top: number };
-
-/** The corner OPPOSITE the one being dragged — it pins, exactly like an
- * edge drag pins its opposite edge. */
-function pinnedCorner(corner: Corner, box: Box, heightPx: number) {
-  switch (corner) {
-    case "br":
-      return { x: box.left, y: box.top };
-    case "tl":
-      return { x: box.left + box.width, y: box.top + heightPx };
-    case "tr":
-      return { x: box.left, y: box.top + heightPx };
-    case "bl":
-      return { x: box.left + box.width, y: box.top };
-  }
-}
-
-/** The corner actually being dragged, same coordinate space. */
-function draggedCorner(corner: Corner, box: Box, heightPx: number) {
-  switch (corner) {
-    case "br":
-      return { x: box.left + box.width, y: box.top + heightPx };
-    case "tl":
-      return { x: box.left, y: box.top };
-    case "tr":
-      return { x: box.left + box.width, y: box.top };
-    case "bl":
-      return { x: box.left, y: box.top + heightPx };
-  }
-}
-
-/** Unit vector, in canvas coordinates, pointing from a corner's pin
- * toward where dragging that corner GROWS the card — along the card's
- * own diagonal, not necessarily 45°, since the card isn't square. */
-function growthDir(corner: Corner) {
-  const x = 1 / CARD_DIAGONAL_RATIO;
-  const y = CARD_ASPECT / CARD_DIAGONAL_RATIO;
-  switch (corner) {
-    case "br":
-      return { x, y };
-    case "tl":
-      return { x: -x, y: -y };
-    case "tr":
-      return { x, y: -y };
-    case "bl":
-      return { x: -x, y };
-  }
-}
-
-/** Box position for a corner drag: pin stays put, the card fills the
- * rectangle from the pin to (width, height) in the corner's quadrant. */
-function boxFromCorner(
-  corner: Corner,
-  pin: { x: number; y: number },
-  width: number,
-  height: number,
-): Box {
-  switch (corner) {
-    case "br":
-      return { width, left: pin.x, top: pin.y };
-    case "tl":
-      return { width, left: pin.x - width, top: pin.y - height };
-    case "tr":
-      return { width, left: pin.x, top: pin.y - height };
-    case "bl":
-      return { width, left: pin.x - width, top: pin.y };
-  }
-}
 
 type DragState =
   | {
