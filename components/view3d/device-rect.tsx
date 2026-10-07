@@ -7,7 +7,7 @@ import {
   type Group,
   type Texture,
 } from "three";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
@@ -26,7 +26,6 @@ import {
   dropLen,
   updateProjection,
   applyLabelLift,
-  setBodyCursor,
   raiseDistLabel,
   raiseNameLabel,
   applyNameOffset,
@@ -35,6 +34,7 @@ import {
 } from "./device-rect-helpers";
 import DeviceContentBoxes from "./device-rect-content-boxes";
 import DeviceScreen from "./device-rect-screen";
+import { useDistanceDrag } from "./use-distance-drag";
 
 export { NAME_FONT_CM };
 
@@ -262,12 +262,7 @@ export default function DeviceRect({
     prevPoseKey.current = poseKey;
   }, [centerY, poseKey]);
 
-  // setBodyCursor writes to document.body, outside this component's own
-  // DOM — if it unmounts (device removed, media changes the tree) mid
-  // hover/drag, nothing else clears that cursor back to normal.
-  useEffect(() => {
-    return () => setBodyCursor("");
-  }, []);
+  const dragHandlers = useDistanceDrag(onDistanceDrag, onDragState);
 
   useFrame((state) => {
     const a = anim.current;
@@ -309,51 +304,6 @@ export default function DeviceRect({
       );
     }
   });
-
-  // Shared by the node's hit sphere AND the distance text, so both drag
-  // the viewing distance and both advertise it: open hand on hover,
-  // closed fist while dragging. The grab cursor is a promise — anything
-  // showing it must actually drag.
-  const dragHandlers = onDistanceDrag
-    ? {
-        onPointerOver: (e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          setBodyCursor("grab");
-        },
-        onPointerOut: (e: ThreeEvent<PointerEvent>) => {
-          // Keep the fist while a captured drag passes outside the target.
-          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
-            setBodyCursor("");
-          }
-        },
-        onPointerDown: (e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          (e.target as Element).setPointerCapture(e.pointerId);
-          onDragState?.(true);
-          setBodyCursor("grabbing");
-        },
-        onPointerMove: (e: ThreeEvent<PointerEvent>) => {
-          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
-            return;
-          }
-          // Project the pointer ray onto the floor plane (y = 0);
-          // its world z IS the new viewing distance.
-          const t = -e.ray.origin.y / e.ray.direction.y;
-          if (t > 0) {
-            const z = e.ray.origin.z + e.ray.direction.z * t;
-            onDistanceDrag(Math.round(Math.min(9999, Math.max(10, z))));
-          }
-        },
-        onPointerUp: (e: ThreeEvent<PointerEvent>) => {
-          (e.target as Element).releasePointerCapture?.(e.pointerId);
-          onDragState?.(false);
-          // Back to the open hand; if the pointer ended off-target, the
-          // pointerout that follows the release clears it entirely.
-          setBodyCursor("grab");
-        },
-        onClick: (e: ThreeEvent<MouseEvent>) => e.stopPropagation(),
-      }
-    : null;
 
   const outline = useMemo<[number, number, number][]>(() => {
     const hw = widthCm / 2;
