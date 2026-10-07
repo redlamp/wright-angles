@@ -24,18 +24,15 @@ import { PixelLoupe } from "@/components/display-area/pixel-loupe";
 import { useHostArea } from "@/components/display-area/use-host-area";
 import { exportViewPng } from "@/components/display-area/export-view";
 import { BoxLayer, setDeviceHover } from "@/components/display-area/box-layer";
+import { useOverlayBoxes } from "@/components/display-area/use-overlay-boxes";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
-import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import { formatDistance, simulatedSizeOnHostPx } from "@/lib/display-math";
 import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
-import { boxMetricsInCrop } from "@/lib/box-metrics";
 import { deviceViewScale } from "@/lib/view-scale";
-import { isAnimatedItem } from "@/lib/playback-engine";
-import { activeKeyframe } from "@/lib/scan-keyframes";
 import { zoomWarningPct } from "@/lib/browser-zoom";
 import {
   boxInCrop,
@@ -106,70 +103,11 @@ export function DisplayArea() {
   const [draft, setDraft] = useState<HighlightBox | null>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-  // Timeline media contributes its ACTIVE keyframe's detected lines to
-  // the world overlays (they behave like read-only measure boxes and
-  // follow the playhead until the next marker).
-  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
-  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
-  const overlayBoxes = useMemo<HighlightBox[]>(() => {
-    if (!activeItem) return [];
-    const base = activeItem.boxes ?? [];
-    if (!animatedActive || !activeItem.scanKeyframes) return base;
-    const kf = activeKeyframe(activeItem.scanKeyframes, timeSec);
-    if (!kf?.lines) return base;
-    return [
-      ...base,
-      ...kf.lines.map((l) => ({ id: l.id, label: l.text, ...l.box })),
-    ];
-  }, [activeItem, animatedActive, timeSec]);
-
-  // Text-block ids from the persisted scan + keyframes, for the global
-  // Groups color mode in the world views.
-  const groupById = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!activeItem) return map;
-    for (const l of activeItem.scan?.lines ?? [])
-      if (l.groupId !== undefined) map.set(l.id, l.groupId);
-    for (const k of activeItem.scanKeyframes ?? [])
-      for (const l of k.lines ?? [])
-        if (l.groupId !== undefined) map.set(l.id, l.groupId);
-    return map;
-  }, [activeItem]);
-
-  // Worst-case legibility per box across every visible device — the
-  // "will this text survive everywhere" verdict that colors the box.
-  // Keyframe lines measure with their group-corrected size when it
-  // exists (descender-aware).
-  const worstByBox = useMemo(() => {
-    const map = new Map<string, number | null>();
-    if (!activeItem) return map;
-    const devs = [
-      ...(thisDevice.visible ? [thisDevice] : []),
-      ...devices.filter((d) => d.visible),
-    ];
-    const kfSize = new Map<string, number>();
-    for (const k of activeItem.scanKeyframes ?? [])
-      for (const l of k.lines ?? [])
-        if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
-    for (const b of overlayBoxes) {
-      const hNorm = kfSize.get(b.id) ?? b.h;
-      // Each device measures through ITS rendered crop (source crop
-      // reframed by the device's fit mode): that region is what lands
-      // on the panel, so the box height re-normalizes against it. A
-      // device whose fit crops the box away doesn't show it, so it
-      // can't drag the worst-case verdict either — and when EVERY
-      // visible device crops it away, the box has no verdict at all
-      // (null), not an infinitely-good one.
-      let worst: number | null = null;
-      for (const d of devs) {
-        const m = boxMetricsInCrop(b, hNorm, activeItem, d);
-        if (!m) continue;
-        worst = worst === null ? m.arcmin : Math.min(worst, m.arcmin);
-      }
-      map.set(b.id, worst);
-    }
-    return map;
-  }, [activeItem, overlayBoxes, thisDevice, devices]);
+  const { overlayBoxes, groupById, worstByBox } = useOverlayBoxes(
+    activeItem,
+    thisDevice,
+    devices,
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
