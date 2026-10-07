@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import {
-  BackSide,
-  DoubleSide,
   MathUtils,
   type BufferGeometry,
   type Group,
@@ -36,6 +34,7 @@ import {
   NAME_FONT_CM,
 } from "./device-rect-helpers";
 import DeviceContentBoxes from "./device-rect-content-boxes";
+import DeviceScreen from "./device-rect-screen";
 
 export { NAME_FONT_CM };
 
@@ -389,9 +388,6 @@ export default function DeviceRect({
     return pts;
   }, [widthCm, heightCm, curved, R]);
 
-  // Letterbox backing behind media content, matching the 2D view's fill.
-  const backing = displayFill === "device-color" ? device.color : "#000000";
-
   const shownDistLabel = distLabel ?? `${Math.round(device.distanceCm)} cm`;
   const distLiftRef = useRef<Group>(null);
   const nameOffsetRef = useRef<Group>(null);
@@ -456,65 +452,16 @@ export default function DeviceRect({
         </RoundedBox>
       ) : null}
 
-      {media && fit ? (
-        curved ? (
-          <group position={[0, 0, -R]}>
-            {/* Letterbox backing, a hair inside the outline's arc. */}
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device (double-sided
-                screens are intentional — Taylor). */}
-            <mesh>
-              <cylinderGeometry
-                args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
-                  -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
-              />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
-            </mesh>
-            <mesh>
-              <cylinderGeometry
-                args={[R - 0.25, R - 0.25, fit.h, 48, 1, true,
-                  -fit.w / (R - 0.25) / 2, fit.w / (R - 0.25)]}
-              />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
-            </mesh>
-          </group>
-        ) : (
-          <>
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device (double-sided
-                screens are intentional — Taylor). */}
-            <mesh position={[0, 0, -0.15]}>
-              <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
-            </mesh>
-            <mesh position={[0, 0, -0.3]}>
-              <planeGeometry args={[fit.w, fit.h]} />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
-            </mesh>
-          </>
-        )
-      ) : (
-        /* Empty panel: solid key-color fill when the setting asks for it,
-           else a faint fill so nested rects still read where outlines
-           overlap. depthWrite stays off either way so nesting never
-           z-fights. */
-        <mesh position={curved ? [0, 0, -R] : [0, 0, 0]}>
-          {curved ? (
-            <cylinderGeometry
-              args={[R, R, heightCm, 48, 1, true, -widthCm / R / 2, widthCm / R]}
-            />
-          ) : (
-            <planeGeometry args={[widthCm, heightCm]} />
-          )}
-          <meshBasicMaterial
-            color={device.color}
-            transparent
-            opacity={displayFill === "device-color" ? 0.9 : 0.06}
-            side={DoubleSide}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
+      <DeviceScreen
+        device={device}
+        media={media}
+        fit={fit}
+        displayFill={displayFill}
+        curved={curved}
+        R={R}
+        widthCm={widthCm}
+        heightCm={heightCm}
+      />
 
       {/* Measure boxes / detected lines ON this screen, colored by THIS
           device's legibility verdict — the same text can be green on
