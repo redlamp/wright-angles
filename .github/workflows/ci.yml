@@ -54,3 +54,14 @@ jobs:
         env:
           NEXT_OUTPUT_EXPORT: "1"
           NEXT_PUBLIC_BASE_PATH: /wright-angles
+
+      # Loads that export in headless Chromium and drives it: catches
+      # runtime breaks typecheck can't see, and fails on any request
+      # that leaves localhost (the local-only promise).
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Smoke test
+        run: bun run smoke
+        env:
+          NEXT_PUBLIC_BASE_PATH: /wright-angles

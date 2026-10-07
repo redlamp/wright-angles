@@ -15,8 +15,31 @@ import {
   idbGetMedia,
   idbPutMedia,
 } from "@/lib/idb";
-import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
 import { stripImageMetadata } from "@/lib/strip-metadata";
+import { probeImage, probeVideo } from "@/lib/media-probe";
+import {
+  drawGenerated,
+  generatedItemMeta,
+  type GeneratedKind,
+} from "@/lib/generated-media";
+import {
+  addItemBox,
+  clearItemDetection,
+  compareLibraryOrder,
+  hydratedActiveId,
+  omitKey,
+  removeItem,
+  removeItemBox,
+  renameItem,
+  reorderItems,
+  setItemCrop,
+  setItemReferenceHeight,
+  setItemScan,
+  setItemScanKeyframes,
+  updateItemBox,
+} from "@/lib/media-items";
+
+export { GENERATED_KINDS, type GeneratedKind } from "@/lib/generated-media";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -35,72 +58,6 @@ function persistItemMeta(item: MediaItem) {
 function persistMeta(get: () => { items: MediaItem[] }, id: string) {
   const item = get().items.find((i) => i.id === id);
   if (item) persistItemMeta(item);
-}
-
-/** Intrinsic pixel size of an image blob. */
-function probeImage(blob: Blob): Promise<{ width: number; height: number }> {
-  return createImageBitmap(blob).then((bmp) => {
-    const size = { width: bmp.width, height: bmp.height };
-    bmp.close();
-    return size;
-  });
-}
-
-/**
- * Video metadata + a poster frame. Hard 10s timeout with teardown on
- * every path — an element that never fires events must not leak or hang
- * the import loop.
- */
-function probeVideo(blob: Blob): Promise<{
-  width: number;
-  height: number;
-  duration: number;
-  poster: Blob;
-}> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const v = document.createElement("video");
-    v.preload = "metadata";
-    v.muted = true;
-    v.playsInline = true;
-    const cleanup = () => {
-      clearTimeout(timer);
-      v.removeAttribute("src");
-      v.load();
-      URL.revokeObjectURL(url);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("video probe timeout"));
-    }, 10_000);
-    v.onloadedmetadata = () => {
-      v.currentTime = Math.min(1, (v.duration || 0) / 2);
-    };
-    v.onseeked = () => {
-      const c = document.createElement("canvas");
-      c.width = v.videoWidth;
-      c.height = v.videoHeight;
-      c.getContext("2d")!.drawImage(v, 0, 0);
-      const { videoWidth, videoHeight, duration } = v;
-      c.toBlob(
-        (poster) => {
-          cleanup();
-          if (poster) {
-            resolve({ width: videoWidth, height: videoHeight, duration, poster });
-          } else {
-            reject(new Error("poster capture failed"));
-          }
-        },
-        "image/jpeg",
-        0.8,
-      );
-    };
-    v.onerror = () => {
-      cleanup();
-      reject(new Error("video load error"));
-    };
-    v.src = url;
-  });
 }
 
 interface MediaState {
@@ -163,8 +120,6 @@ interface MediaState {
   wipeAll: () => Promise<void>;
 }
 
-export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
-
 /**
  * First-run seeding flag: a never-seeded browser with an empty library
  * gets the gradient card so the app demonstrates itself. Deleting the
@@ -205,84 +160,6 @@ const markSeeded = () => {
   }
 };
 
-export const GENERATED_KINDS: { kind: GeneratedKind; label: string }[] = [
-  { kind: "smpte-bars", label: "Color bars" },
-  { kind: "grid", label: "Alignment grid" },
-  { kind: "gradient", label: "Gradient card" },
-  { kind: "solid", label: "Solid gray" },
-];
-
-/** Draw a 1920×1080 test image. Pure canvas; no assets. */
-function drawGenerated(kind: GeneratedKind): HTMLCanvasElement {
-  const W = 1920;
-  const H = 1080;
-  const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const g = c.getContext("2d")!;
-  if (kind === "smpte-bars") {
-    const bars = [
-      "#c0c0c0", "#c0c000", "#00c0c0", "#00c000",
-      "#c000c0", "#c00000", "#0000c0",
-    ];
-    const w = W / bars.length;
-    bars.forEach((col, i) => {
-      g.fillStyle = col;
-      g.fillRect(i * w, 0, w + 1, H * 0.75);
-    });
-    const lower = ["#0000c0", "#131313", "#c000c0", "#131313", "#00c0c0", "#131313", "#c0c0c0"];
-    const lw = W / lower.length;
-    lower.forEach((col, i) => {
-      g.fillStyle = col;
-      g.fillRect(i * lw, H * 0.75, lw + 1, H * 0.125);
-    });
-    const grays = 12;
-    for (let i = 0; i < grays; i++) {
-      const v = Math.round((i / (grays - 1)) * 255);
-      g.fillStyle = `rgb(${v},${v},${v})`;
-      g.fillRect((i * W) / grays, H * 0.875, W / grays + 1, H * 0.125);
-    }
-  } else if (kind === "grid") {
-    g.fillStyle = "#1c1c1c";
-    g.fillRect(0, 0, W, H);
-    g.strokeStyle = "#3d3d3d";
-    g.lineWidth = 1;
-    for (let x = 0; x <= W; x += 60) {
-      g.beginPath(); g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, H); g.stroke();
-    }
-    for (let y = 0; y <= H; y += 60) {
-      g.beginPath(); g.moveTo(0, y + 0.5); g.lineTo(W, y + 0.5); g.stroke();
-    }
-    g.strokeStyle = "#7a7a7a";
-    g.lineWidth = 2;
-    g.strokeRect(1, 1, W - 2, H - 2);
-    g.beginPath(); g.moveTo(W / 2, 0); g.lineTo(W / 2, H); g.stroke();
-    g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
-    g.beginPath(); g.arc(W / 2, H / 2, H / 3, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = "#e5e5e5";
-    g.font = "500 40px sans-serif";
-    g.fillText("1920 × 1080", 40, 70);
-  } else if (kind === "gradient") {
-    const grad = g.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, "#b23a3a");
-    grad.addColorStop(1, "#3ab26e");
-    g.fillStyle = grad;
-    g.fillRect(0, 0, W, H);
-    g.fillStyle = "#fff";
-    const sizes = [48, 36, 28, 22, 17, 13];
-    let y = 100;
-    for (const s of sizes) {
-      g.font = `600 ${s}px sans-serif`;
-      g.fillText(`${s}px — The quick brown fox jumps over the lazy dog`, 60, y);
-      y += s * 1.8;
-    }
-  } else {
-    g.fillStyle = "#808080";
-    g.fillRect(0, 0, W, H);
-  }
-  return c;
-}
-
 export const useMediaStore = create<MediaState>()((set, get) => ({
   items: [],
   objectUrls: {},
@@ -311,26 +188,17 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
           }
           return meta;
         })
-        // Manual order wins; items never reordered keep insertion order
-        // (sortIndex is a small int, addedAt an epoch — unordered items
-        // sort after every manually placed one, i.e. append).
-        .sort(
-          (a, b) =>
-            (a.sortIndex ?? a.addedAt) - (b.sortIndex ?? b.addedAt),
-        );
+        // Manual order wins, then insertion order (lib/media-items.ts).
+        .sort(compareLibraryOrder);
       // The remembered selection wins over "first item" — a refresh
       // must not hop back to whatever sorts first.
       const remembered = recallActive();
-      const rememberedValid =
-        remembered !== null && items.some((i) => i.id === remembered)
-          ? remembered
-          : null;
       set((s) => ({
         items,
         objectUrls: urls,
         videoUrls: vids,
         hydrated: true,
-        activeId: s.activeId ?? rememberedValid ?? items[0]?.id ?? null,
+        activeId: hydratedActiveId(s.activeId, remembered, items),
       }));
       // First run: seed the gradient card as the default image.
       if (items.length === 0 && !wasSeeded()) {
@@ -443,31 +311,14 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       canvas.toBlob(r, "image/png"),
     );
     if (!blob) return;
-    const label = GENERATED_KINDS.find((k) => k.kind === kind)?.label ?? kind;
-    const meta: MediaItem = {
-      id: newId(),
-      name: `${label} (generated)`,
-      type: "image/png",
-      kind: "image",
-      width: canvas.width,
-      height: canvas.height,
-      referenceHeight: canvas.height,
-      addedAt: Date.now(),
-    };
-    if (kind === "gradient") {
-      // The gradient card's draw is deterministic, so its OCR result is
-      // pinned data rather than a live scan (wiki/research/ocr-cost.md) —
-      // ships identically whether this is the first-run seed or a manual
-      // "Test → Gradient card". `boxes` is derived the same way
-      // detectTextForItem's live path builds it, so the overlay/report
-      // treat a seeded card exactly like a freshly scanned one.
-      meta.scan = GRADIENT_SEED_SCAN;
-      meta.boxes = GRADIENT_SEED_SCAN.lines.map((line) => ({
-        id: line.id,
-        label: line.text,
-        ...line.box,
-      }));
-    }
+    // The gradient card carries its pinned OCR scan + boxes.
+    const meta = generatedItemMeta(
+      kind,
+      newId(),
+      canvas.width,
+      canvas.height,
+      Date.now(),
+    );
     await idbPutMedia(meta.id, { meta, blob });
     const url = URL.createObjectURL(blob);
     set((s) => ({
@@ -480,45 +331,22 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   rename: (id, name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, name: trimmed } : i)),
-    }));
+    set((s) => ({ items: renameItem(s.items, id, trimmed) }));
     persistMeta(get, id);
   },
 
   addBox: (mediaId, box) => {
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === mediaId ? { ...i, boxes: [...(i.boxes ?? []), box] } : i,
-      ),
-    }));
+    set((s) => ({ items: addItemBox(s.items, mediaId, box) }));
     persistMeta(get, mediaId);
   },
 
   updateBox: (mediaId, boxId, patch) => {
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === mediaId
-          ? {
-              ...i,
-              boxes: (i.boxes ?? []).map((b) =>
-                b.id === boxId ? { ...b, ...patch } : b,
-              ),
-            }
-          : i,
-      ),
-    }));
+    set((s) => ({ items: updateItemBox(s.items, mediaId, boxId, patch) }));
     persistMeta(get, mediaId);
   },
 
   removeBox: (mediaId, boxId) => {
-    set((s) => ({
-      items: s.items.map((i) =>
-        i.id === mediaId
-          ? { ...i, boxes: (i.boxes ?? []).filter((b) => b.id !== boxId) }
-          : i,
-      ),
-    }));
+    set((s) => ({ items: removeItemBox(s.items, mediaId, boxId) }));
     persistMeta(get, mediaId);
   },
 
@@ -528,17 +356,10 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       for (const map of [s.objectUrls, s.videoUrls]) {
         if (map[id]) URL.revokeObjectURL(map[id]);
       }
-      const objectUrls = { ...s.objectUrls };
-      const videoUrls = { ...s.videoUrls };
-      delete objectUrls[id];
-      delete videoUrls[id];
-      const items = s.items.filter((i) => i.id !== id);
       return {
-        items,
-        objectUrls,
-        videoUrls,
-        activeId:
-          s.activeId === id ? (items[0]?.id ?? null) : s.activeId,
+        ...removeItem(s.items, s.activeId, id),
+        objectUrls: omitKey(s.objectUrls, id),
+        videoUrls: omitKey(s.videoUrls, id),
       };
     });
   },
@@ -550,24 +371,14 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
 
   setReferenceHeight: (id, referenceHeight) => {
     set((s) => ({
-      items: s.items.map((i) => (i.id === id ? { ...i, referenceHeight } : i)),
+      items: setItemReferenceHeight(s.items, id, referenceHeight),
     }));
     persistMeta(get, id);
   },
 
   setCrop: (id, crop) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        if (!crop) {
-          // Drop the key entirely so cleared items persist crop-free.
-          const rest = { ...i };
-          delete rest.crop;
-          return rest;
-        }
-        return { ...i, crop };
-      }),
-    }));
+    // A cleared crop drops the key so the item persists crop-free.
+    set((s) => ({ items: setItemCrop(s.items, id, crop) }));
     persistMeta(get, id);
   },
 
@@ -578,59 +389,27 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     // whole-library read) per item.
     let reordered: MediaItem[] = [];
     set((s) => {
-      const from = s.items.findIndex((i) => i.id === id);
-      if (from < 0) return s;
-      const items = [...s.items];
-      const [moved] = items.splice(from, 1);
-      items.splice(Math.max(0, Math.min(toIndex, items.length)), 0, moved);
       // The array order becomes the persisted manual order.
-      reordered = items.map((i, idx) => ({ ...i, sortIndex: idx }));
+      const next = reorderItems(s.items, id, toIndex);
+      if (!next) return s;
+      reordered = next;
       return { items: reordered };
     });
     for (const item of reordered) persistItemMeta(item);
   },
 
   clearDetection: (id) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        const rest = { ...i };
-        delete rest.boxes;
-        delete rest.scanKeyframes;
-        delete rest.scan;
-        return rest;
-      }),
-    }));
+    set((s) => ({ items: clearItemDetection(s.items, id) }));
     persistMeta(get, id);
   },
 
   setScan: (id, scan) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        if (!scan) {
-          const rest = { ...i };
-          delete rest.scan;
-          return rest;
-        }
-        return { ...i, scan };
-      }),
-    }));
+    set((s) => ({ items: setItemScan(s.items, id, scan) }));
     persistMeta(get, id);
   },
 
   setScanKeyframes: (id, scanKeyframes) => {
-    set((s) => ({
-      items: s.items.map((i) => {
-        if (i.id !== id) return i;
-        if (!scanKeyframes || scanKeyframes.length === 0) {
-          const rest = { ...i };
-          delete rest.scanKeyframes;
-          return rest;
-        }
-        return { ...i, scanKeyframes };
-      }),
-    }));
+    set((s) => ({ items: setItemScanKeyframes(s.items, id, scanKeyframes) }));
     persistMeta(get, id);
   },
 

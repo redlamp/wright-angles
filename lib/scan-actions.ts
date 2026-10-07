@@ -137,7 +137,7 @@ function captureVideoFrameZero(videoUrl: string): Promise<CapturedFrame | null> 
       v.removeAttribute("src");
       v.load();
     };
-    // Same hard-timeout-with-teardown shape as media-store's probeVideo:
+    // Same hard-timeout-with-teardown shape as probeVideo (lib/media-probe.ts):
     // an element that never fires an event must not hang the batch.
     const timer = setTimeout(() => {
       cleanup();
@@ -229,7 +229,7 @@ export async function scanFirstFrame(itemId: string): Promise<void> {
   if (!item) throw new Error("media item not found");
 
   // Video: the poster frame saved at import time is taken from the
-  // MIDDLE of the clip (media-store's probeVideo), not the start, so it
+  // MIDDLE of the clip (probeVideo, lib/media-probe.ts), not the start, so it
   // can't be reused. GIF: the item's own blob IS the source to decode.
   const sourceUrl =
     item.type === "image/gif" ? media.objectUrls[itemId] : media.videoUrls[itemId];

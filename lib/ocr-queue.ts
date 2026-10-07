@@ -42,16 +42,20 @@ export function finishScan(
 }
 
 /**
- * Drop every entry still QUEUED — the "cancel remaining" affordance. A
- * RUNNING entry is left alone: aborting the in-flight `recognize()` needs
- * the caller to hold the live worker reference, which `lib/ocr.ts`
- * doesn't expose today (follow-up, not this task).
+ * Drop every entry still QUEUED — half of "cancel": the runner aborts
+ * the RUNNING entry separately (`abortDetection` in `lib/ocr.ts`) and
+ * removes it with {@link dropScan} once the scan has stopped.
  */
 export function cancelQueued(queue: ScanQueueItem[]): ScanQueueItem[] {
   return queue.filter((q) => q.status !== "queued");
 }
 
 /** The next id waiting to run, in FIFO order, or null when none are queued. */
+/** Remove one entry outright — a cancelled scan is neither done nor failed. */
+export function dropScan(queue: ScanQueueItem[], id: string): ScanQueueItem[] {
+  return queue.filter((q) => q.id !== id);
+}
+
 export function nextQueued(queue: ScanQueueItem[]): string | null {
   return queue.find((q) => q.status === "queued")?.id ?? null;
 }

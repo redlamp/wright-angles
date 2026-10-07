@@ -1,556 +1,35 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlignCenterVerticalIcon,
-  DownloadIcon,
-  ImageIcon,
-  LayersIcon,
-  PencilRulerIcon,
-  PictureInPicture2Icon,
-  WallpaperIcon,
-} from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
+import {
+  useScreenViewport,
+} from "@/components/display-area/use-screen-viewport";
+import { CropFrame, SafeAreas } from "@/components/display-area/overlays";
+import { PixelLoupe } from "@/components/display-area/pixel-loupe";
+import { useHostArea } from "@/components/display-area/use-host-area";
+import { exportViewPng } from "@/components/display-area/export-view";
+import { BoxLayer, setDeviceHover } from "@/components/display-area/box-layer";
+import { useOverlayBoxes } from "@/components/display-area/use-overlay-boxes";
+import { AnnotationLayer } from "@/components/display-area/annotation-layer";
+import {
+  ScaleReadouts,
+  ViewActions,
+} from "@/components/display-area/view-chrome";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
-import { usePlaybackStore } from "@/stores/playback-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import {
-  useAnnotationStore,
-  type DeviceHover,
-} from "@/stores/annotation-store";
+import { useAnnotationStore } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
-import {
-  boxMetricsOnDevice,
-  formatDistance,
-  simulatedSizeOnHostPx,
-} from "@/lib/display-math";
-import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
-import { boxMetricsInCrop } from "@/lib/box-metrics";
-import { legibilityColor } from "@/lib/legibility";
+import { formatDistance, simulatedSizeOnHostPx } from "@/lib/display-math";
+import { deviceFitCrop, fitModeOf } from "@/lib/fit";
 import { deviceViewScale } from "@/lib/view-scale";
-import { isAnimatedItem } from "@/lib/playback-engine";
-import { activeKeyframe } from "@/lib/scan-keyframes";
-import { groupColor } from "@/lib/text-groups";
-import {
-  FULL_CROP,
-  boxInCrop,
-  cropDims,
-  cropScaleOf,
-  isFullFrame,
-  viewBoxOf,
-} from "@/lib/media-crop";
-import type {
-  Device,
-  FitMode,
-  HighlightBox,
-  MediaCrop,
-  MediaItem,
-} from "@/lib/types";
+import { zoomWarningPct } from "@/lib/browser-zoom";
+import { cropDims, isFullFrame, viewBoxOf } from "@/lib/media-crop";
+import type { Device } from "@/lib/types";
 
-/**
- * Where the window's client area sits on the physical screen, in CSS px.
- * screenX/screenY are virtual-desktop coordinates; availLeft/availTop
- * (Chromium) locate this monitor in that space. Browser chrome is
- * estimated from the outer/inner delta (borders split left/right, the
- * rest is the title/tab bar). Polled — there is no window-move event.
- */
-type ScreenViewport = {
-  clientX: number;
-  clientY: number;
-  screenW: number;
-  screenH: number;
-} | null;
-
-export function useScreenViewport() {
-  const [vp, setVp] = useState<ScreenViewport>(null);
-  // Mirrors the last value OUTSIDE React state so "did it move" can be
-  // computed synchronously, in plain code — not by reading a variable an
-  // updater function assigns as a side effect, which only works when
-  // React happens to run that updater eagerly (it isn't a guaranteed
-  // contract of setState).
-  const vpRef = useRef<ScreenViewport>(null);
-
-  useEffect(() => {
-    // Adaptive cadence: idle at 2Hz, but the moment the window moves,
-    // poll at ~30fps until it has been still for a beat. There is no
-    // window-move event, so change detection IS the drag sensor.
-    const IDLE_MS = 500;
-    const FAST_MS = 33;
-    const SETTLE_MS = 700;
-    let timer = 0;
-    let lastMoveAt = -Infinity;
-    let stopped = false;
-
-    const read = () => {
-      if (stopped) return;
-      // Resize also calls read; clearing first keeps a single timer chain.
-      window.clearTimeout(timer);
-      const chromeX = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
-      const chromeY = Math.max(
-        0,
-        window.outerHeight - window.innerHeight - chromeX,
-      );
-      const s = window.screen as Screen & {
-        availLeft?: number;
-        availTop?: number;
-      };
-      const next = {
-        clientX: window.screenX + chromeX - (s.availLeft ?? 0),
-        clientY: window.screenY + chromeY - (s.availTop ?? 0),
-        screenW: s.width,
-        screenH: s.height,
-      };
-      const prev = vpRef.current;
-      const unchanged =
-        prev &&
-        prev.clientX === next.clientX &&
-        prev.clientY === next.clientY &&
-        prev.screenW === next.screenW &&
-        prev.screenH === next.screenH;
-      if (!unchanged) {
-        const moved = prev !== null;
-        vpRef.current = next;
-        setVp(next);
-        if (moved) lastMoveAt = performance.now();
-      }
-      const fast = performance.now() - lastMoveAt < SETTLE_MS;
-      timer = window.setTimeout(read, fast ? FAST_MS : IDLE_MS);
-    };
-
-    read();
-    window.addEventListener("resize", read);
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", read);
-    };
-  }, []);
-
-  return vp;
-}
-
-/**
- * Wrapper-based CSS crop for media elements that take no style prop
- * (SyncedVideo, the GIF follower canvas — object-view-box needs an inline
- * style): the effective region contain-fit into the rect becomes a clip
- * box, with the full-frame element oversized and offset behind it.
- */
-function CropFrame({
-  item,
-  crop,
-  mode,
-  w,
-  h,
-  children,
-}: {
-  item: MediaItem;
-  /** The crop to show — the owning device's EFFECTIVE crop. */
-  crop: MediaCrop;
-  /** The owning device's fit mode — stretch fills the whole rect. */
-  mode: FitMode;
-  w: number;
-  h: number;
-  children: React.ReactNode;
-}) {
-  const eff = cropDims(item, crop);
-  const area = fitBox(mode, eff.width, eff.height, w, h);
-  return (
-    <div
-      className="absolute overflow-hidden"
-      style={{ left: area.x, top: area.y, width: area.w, height: area.h }}
-    >
-      <div className="absolute" style={cropScaleOf(crop)}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Debug-overlays menu chip (plan topic 10): safe areas, contrast
- * badges, pixel loupe. Session-only toggles with app-wide parity.
- */
-function OverlaysChip() {
-  const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
-  const setShowSafeAreas = useAnnotationStore((s) => s.setShowSafeAreas);
-  const showContrast = useAnnotationStore((s) => s.showContrast);
-  const setShowContrast = useAnnotationStore((s) => s.setShowContrast);
-  const loupeOn = useAnnotationStore((s) => s.loupeOn);
-  const setLoupeOn = useAnnotationStore((s) => s.setLoupeOn);
-  const anyOn = showSafeAreas || showContrast || loupeOn;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={cn(
-          "flex h-7 items-center gap-1 rounded-md px-2.5 font-mono text-sm transition-colors",
-          anyOn
-            ? "bg-white/25 text-white"
-            : "bg-black/50 text-white/60 hover:text-white",
-        )}
-        title="Debug overlays: safe areas, contrast badges, pixel loupe"
-      >
-        <LayersIcon className="size-3" />
-        overlays
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuCheckboxItem
-          checked={showSafeAreas}
-          onCheckedChange={setShowSafeAreas}
-        >
-          TV safe areas (93% / 90%)
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          checked={showContrast}
-          onCheckedChange={setShowContrast}
-        >
-          Contrast badges on scanned text
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem
-          checked={loupeOn}
-          onCheckedChange={setLoupeOn}
-        >
-          Pixel loupe
-        </DropdownMenuCheckboxItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
- * SMPTE ST 2046-1 safe-area frames, relative to the DISPLAY (not the
- * media): action-safe 93%, title-safe 90%. Overlaid per device rect so
- * TV-bound UI can be judged against every screen at once.
- */
-function SafeAreas({ large }: { large: boolean }) {
-  return (
-    <div className="pointer-events-none absolute inset-0">
-      <div
-        className="absolute border border-dashed border-white/50"
-        style={{ inset: "3.5%" }}
-      >
-        {large ? (
-          <span className="absolute top-0 left-1 font-mono text-sm text-white/50">
-            action 93%
-          </span>
-        ) : null}
-      </div>
-      <div
-        className="absolute border border-dashed border-[#f5a524]/60"
-        style={{ inset: "5%" }}
-      >
-        {large ? (
-          <span className="absolute bottom-0 left-1 font-mono text-sm text-[#f5a524]/70">
-            title 90%
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-const LOUPE_SIZE = 176;
-const LOUPE_ZOOM = 8;
-
-/**
- * Pixel loupe (plan 10.2): follows the cursor over This Device's rect
- * and magnifies the source image 8×, pixel grid on top, with a readout
- * of the source coordinate and what one source pixel subtends on This
- * Device. Static images only — video would need per-frame capture.
- */
-function PixelLoupe({
-  containerRef,
-  center,
-  hostW,
-  hostH,
-  item,
-  crop,
-  url,
-  thisDevice,
-}: {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  center: { x: number; y: number };
-  hostW: number;
-  hostH: number;
-  item: MediaItem;
-  /** This Device's effective crop (the loupe rides the host rect). */
-  crop: MediaCrop;
-  url: string;
-  thisDevice: Device;
-}) {
-  const [pt, setPt] = useState<{
-    x: number;
-    y: number;
-    cw: number;
-    ch: number;
-  } | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    const img = new Image();
-    img.src = url;
-    img
-      .decode()
-      .then(() => {
-        if (alive) imgRef.current = img;
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-      imgRef.current = null;
-    };
-  }, [url]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const move = (e: PointerEvent) => {
-      const r = el.getBoundingClientRect();
-      setPt({
-        x: e.clientX - r.left,
-        y: e.clientY - r.top,
-        cw: r.width,
-        ch: r.height,
-      });
-    };
-    const leave = () => setPt(null);
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerleave", leave);
-    return () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerleave", leave);
-    };
-  }, [containerRef]);
-
-  const eff = cropDims(item, crop);
-  // The loupe rides This Device's rect, so it samples through This
-  // Device's fit — a stretched host draws content edge to edge.
-  const area = fitBox(
-    fitModeOf(thisDevice),
-    eff.width,
-    eff.height,
-    hostW,
-    hostH,
-  );
-  let sx = -1;
-  let sy = -1;
-  if (pt && area.w) {
-    const u = (pt.x - (center.x - hostW / 2) - area.x) / area.w;
-    const v = (pt.y - (center.y - hostH / 2) - area.y) / area.h;
-    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
-      sx = (crop.x + u * crop.w) * item.width;
-      sy = (crop.y + v * crop.h) * item.height;
-    }
-  }
-  const active = sx >= 0;
-
-  useEffect(() => {
-    if (!active) return;
-    const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img) return;
-    const g = canvas.getContext("2d");
-    if (!g) return;
-    const win = LOUPE_SIZE / LOUPE_ZOOM;
-    g.imageSmoothingEnabled = false;
-    g.fillStyle = "#111";
-    g.fillRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
-    g.drawImage(
-      img,
-      sx - win / 2,
-      sy - win / 2,
-      win,
-      win,
-      0,
-      0,
-      LOUPE_SIZE,
-      LOUPE_SIZE,
-    );
-    // Grid aligned to whole source pixels.
-    g.strokeStyle = "rgba(255,255,255,0.18)";
-    g.lineWidth = 1;
-    const xOff = (Math.ceil(sx - win / 2) - (sx - win / 2)) * LOUPE_ZOOM;
-    const yOff = (Math.ceil(sy - win / 2) - (sy - win / 2)) * LOUPE_ZOOM;
-    g.beginPath();
-    for (let x = xOff; x <= LOUPE_SIZE; x += LOUPE_ZOOM) {
-      g.moveTo(x + 0.5, 0);
-      g.lineTo(x + 0.5, LOUPE_SIZE);
-    }
-    for (let y = yOff; y <= LOUPE_SIZE; y += LOUPE_ZOOM) {
-      g.moveTo(0, y + 0.5);
-      g.lineTo(LOUPE_SIZE, y + 0.5);
-    }
-    g.stroke();
-    // Crosshair on the sampled pixel.
-    g.strokeStyle = "#f5a524";
-    g.strokeRect(
-      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
-      LOUPE_SIZE / 2 - LOUPE_ZOOM / 2 + 0.5,
-      LOUPE_ZOOM - 1,
-      LOUPE_ZOOM - 1,
-    );
-  }, [active, sx, sy]);
-
-  if (!pt || !active) return null;
-  const left =
-    pt.x + 18 + LOUPE_SIZE > pt.cw ? pt.x - 18 - LOUPE_SIZE : pt.x + 18;
-  const top =
-    pt.y + 18 + LOUPE_SIZE + 24 > pt.ch
-      ? pt.y - 18 - LOUPE_SIZE - 24
-      : pt.y + 18;
-  const arcminPerPx = boxMetricsOnDevice(
-    1 / item.height / crop.h,
-    eff,
-    thisDevice,
-  ).arcmin;
-  return (
-    <div
-      className="pointer-events-none absolute z-40 overflow-hidden rounded-md border border-white/30 bg-black/80 shadow-lg"
-      style={{ left, top, width: LOUPE_SIZE }}
-    >
-      <canvas
-        ref={canvasRef}
-        width={LOUPE_SIZE}
-        height={LOUPE_SIZE}
-        className="block"
-      />
-      <div className="px-1.5 py-0.5 font-mono text-sm leading-4.5 text-white/70">
-        {Math.floor(sx)}, {Math.floor(sy)} px · 1 px ≈{" "}
-        {arcminPerPx.toFixed(2)}′
-      </div>
-    </div>
-  );
-}
-
-/** Module-level mutator (react-compiler convention): view hover state. */
-const setDeviceHover = (h: DeviceHover | null) =>
-  useAnnotationStore.getState().setDeviceHover(h);
-
-
-/**
- * Highlight boxes over one device rect. Coordinates are normalized to
- * the media's content area — wherever this device's fit mode puts it in
- * the rect (`fitBox`) — so the same box lands on the same pixels of the
- * image on every device, stretched panels included.
- */
-function BoxLayer({
-  rectW,
-  rectH,
-  media,
-  boxes,
-  worstByBox,
-  groupById,
-  isHost,
-  deviceId,
-  crop,
-  mode,
-}: {
-  rectW: number;
-  rectH: number;
-  media: MediaItem;
-  /** Measure boxes + active-keyframe lines, full-image normalized. */
-  boxes: HighlightBox[];
-  /** null = no visible device's fit shows this box; render it muted. */
-  worstByBox: Map<string, number | null>;
-  /** Text-block ids for the global Groups color mode. */
-  groupById: Map<string, number>;
-  isHost: boolean;
-  /** Owning rect's device — box hovers feed the inspector with it. */
-  deviceId: string;
-  /** The owning device's rendered crop (source crop, fit-reframed). */
-  crop: MediaCrop;
-  /** The owning device's fit mode — boxes must land where IT draws. */
-  mode: FitMode;
-}) {
-  const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
-  const selectBox = useAnnotationStore((s) => s.selectBox);
-  const colorMode = useAnnotationStore((s) => s.scanColorMode);
-  const eff = cropDims(media, crop);
-  const area = fitBox(mode, eff.width, eff.height, rectW, rectH);
-  if (!area.w) return null;
-  return (
-    <>
-      {boxes.map((b) => {
-        // Boxes stay normalized to the full image; render them through
-        // the crop window (clipped; hidden when fully outside).
-        const cb = boxInCrop(b, crop);
-        if (!cb) return null;
-        const gid = groupById.get(b.id);
-        const color =
-          colorMode === "group" && gid !== undefined
-            ? groupColor(gid)
-            : legibilityColor(worstByBox.get(b.id) ?? null);
-        const selected = b.id === selectedBoxId;
-        return (
-          <div
-            key={b.id}
-            role={isHost ? "button" : undefined}
-            className="absolute"
-            style={{
-              left: area.x + cb.x * area.w,
-              top: area.y + cb.y * area.h,
-              width: cb.w * area.w,
-              height: cb.h * area.h,
-              border: `${selected && isHost ? 2 : 1}px solid ${color}`,
-              boxShadow: selected && isHost ? `0 0 0 1px ${color}55` : undefined,
-              cursor: isHost ? "pointer" : undefined,
-              // All rects' boxes are hoverable (inspector details);
-              // only the host's are clickable.
-              pointerEvents: "auto",
-            }}
-            onClick={
-              isHost
-                ? (e) => {
-                    e.stopPropagation();
-                    selectBox(selected ? null : b.id);
-                  }
-                : undefined
-            }
-            onPointerEnter={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              const s = e.currentTarget.parentElement?.getBoundingClientRect();
-              setDeviceHover({
-                deviceId,
-                box: {
-                  id: b.id,
-                  label: b.label,
-                  srcPx: Math.round(b.h * media.height),
-                  hFull: b.h,
-                  groupId: groupById.get(b.id),
-                  bounds: {
-                    left: r.left,
-                    top: r.top,
-                    right: r.right,
-                    bottom: r.bottom,
-                  },
-                  screen: s
-                    ? {
-                        left: s.left,
-                        top: s.top,
-                        right: s.right,
-                        bottom: s.bottom,
-                      }
-                    : undefined,
-                },
-              });
-            }}
-            onPointerLeave={() => setDeviceHover({ deviceId, box: null })}
-          />
-        );
-      })}
-    </>
-  );
-}
+export { useScreenViewport };
 
 // Cycle label corners so tightly nested rects stay readable — shared by
 // the in-stack label and the focused-chrome overlay's copy, so a device's
@@ -581,45 +60,7 @@ export function DisplayArea() {
   const displayFill = useSettingsStore((s) => s.displayFill);
   const unit = useSettingsStore((s) => s.unit);
 
-  const ref = useRef<HTMLDivElement>(null);
-  const [area, setArea] = useState({ w: 0, h: 0 });
-  const [dpr, setDpr] = useState(1);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setArea({
-        w: entry.contentRect.width,
-        h: entry.contentRect.height,
-      });
-    });
-    ro.observe(el);
-    const updateDpr = () => setDpr(window.devicePixelRatio || 1);
-    updateDpr();
-    // `resize` alone misses a DPR change with no size change — dragging
-    // the window to a different-DPI monitor, most commonly. A
-    // matchMedia query on the CURRENT ratio fires once that ratio no
-    // longer matches; re-arm it on the new ratio each time so it keeps
-    // tracking indefinitely, not just the first crossing.
-    let mq: MediaQueryList | null = null;
-    const onDprChange = () => {
-      updateDpr();
-      armDprWatch();
-    };
-    const armDprWatch = () => {
-      mq?.removeEventListener("change", onDprChange);
-      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      mq.addEventListener("change", onDprChange);
-    };
-    armDprWatch();
-    window.addEventListener("resize", updateDpr);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", updateDpr);
-      mq?.removeEventListener("change", onDprChange);
-    };
-  }, []);
+  const { ref, area, dpr } = useHostArea();
 
   const activeItem = items.find((i) => i.id === activeId) ?? null;
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
@@ -646,73 +87,12 @@ export function DisplayArea() {
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
   const removeBox = useMediaStore((s) => s.removeBox);
-  const [draft, setDraft] = useState<HighlightBox | null>(null);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-  // Timeline media contributes its ACTIVE keyframe's detected lines to
-  // the world overlays (they behave like read-only measure boxes and
-  // follow the playhead until the next marker).
-  const animatedActive = activeItem ? isAnimatedItem(activeItem) : false;
-  const timeSec = usePlaybackStore((s) => (animatedActive ? s.timeSec : 0));
-  const overlayBoxes = useMemo<HighlightBox[]>(() => {
-    if (!activeItem) return [];
-    const base = activeItem.boxes ?? [];
-    if (!animatedActive || !activeItem.scanKeyframes) return base;
-    const kf = activeKeyframe(activeItem.scanKeyframes, timeSec);
-    if (!kf?.lines) return base;
-    return [
-      ...base,
-      ...kf.lines.map((l) => ({ id: l.id, label: l.text, ...l.box })),
-    ];
-  }, [activeItem, animatedActive, timeSec]);
-
-  // Text-block ids from the persisted scan + keyframes, for the global
-  // Groups color mode in the world views.
-  const groupById = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!activeItem) return map;
-    for (const l of activeItem.scan?.lines ?? [])
-      if (l.groupId !== undefined) map.set(l.id, l.groupId);
-    for (const k of activeItem.scanKeyframes ?? [])
-      for (const l of k.lines ?? [])
-        if (l.groupId !== undefined) map.set(l.id, l.groupId);
-    return map;
-  }, [activeItem]);
-
-  // Worst-case legibility per box across every visible device — the
-  // "will this text survive everywhere" verdict that colors the box.
-  // Keyframe lines measure with their group-corrected size when it
-  // exists (descender-aware).
-  const worstByBox = useMemo(() => {
-    const map = new Map<string, number | null>();
-    if (!activeItem) return map;
-    const devs = [
-      ...(thisDevice.visible ? [thisDevice] : []),
-      ...devices.filter((d) => d.visible),
-    ];
-    const kfSize = new Map<string, number>();
-    for (const k of activeItem.scanKeyframes ?? [])
-      for (const l of k.lines ?? [])
-        if (l.sizePx) kfSize.set(l.id, l.sizePx / activeItem.height);
-    for (const b of overlayBoxes) {
-      const hNorm = kfSize.get(b.id) ?? b.h;
-      // Each device measures through ITS rendered crop (source crop
-      // reframed by the device's fit mode): that region is what lands
-      // on the panel, so the box height re-normalizes against it. A
-      // device whose fit crops the box away doesn't show it, so it
-      // can't drag the worst-case verdict either — and when EVERY
-      // visible device crops it away, the box has no verdict at all
-      // (null), not an infinitely-good one.
-      let worst: number | null = null;
-      for (const d of devs) {
-        const m = boxMetricsInCrop(b, hNorm, activeItem, d);
-        if (!m) continue;
-        worst = worst === null ? m.arcmin : Math.min(worst, m.arcmin);
-      }
-      map.set(b.id, worst);
-    }
-    return map;
-  }, [activeItem, overlayBoxes, thisDevice, devices]);
+  const { overlayBoxes, groupById, worstByBox } = useOverlayBoxes(
+    activeItem,
+    thisDevice,
+    devices,
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -823,118 +203,24 @@ export function DisplayArea() {
     [k, dpr],
   );
 
-  /**
-   * Browser-zoom estimate (plan 11.1). screen.width is in CSS px and
-   * ignores page zoom while devicePixelRatio scales with it, so with
-   * This Device set to this screen's real panel their product over the
-   * native width reads the zoom factor. >±2% off earns a warning —
-   * zoomed rendering breaks every physical-scale promise.
-   */
-  const zoomPct = useMemo(() => {
-    if (!vp) return null;
-    const pct = Math.round(
-      ((vp.screenW * dpr) / thisDevice.resolution.w) * 100,
-    );
-    return Math.abs(pct - 100) > 2 ? pct : null;
-  }, [vp, dpr, thisDevice.resolution.w]);
+  /** Browser zoom off 100%, as a percent — see lib/browser-zoom. */
+  const zoomPct = useMemo(
+    () => (vp ? zoomWarningPct(vp.screenW, dpr, thisDevice.resolution.w) : null),
+    [vp, dpr, thisDevice.resolution.w],
+  );
 
-  // Snapshot the composition at This Device's native resolution — a
-  // shareable reference PNG of the comparison (poster frame for videos).
-  const exportView = useCallback(async () => {
-    const host = thisDevice;
-    const W = host.resolution.w;
-    const H = host.resolution.h;
-    const c = document.createElement("canvas");
-    c.width = W;
-    c.height = H;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#161616";
-    g.fillRect(0, 0, W, H);
-
-    const all: (Device & { isThis?: boolean })[] = [
-      ...(host.visible ? [{ ...host, isThis: true }] : []),
-      ...devices.filter((d) => d.visible),
-    ];
-    const rectList = all
-      .map((d) => {
-        const sim = d.isThis
-          ? { widthPx: W, heightPx: H }
-          : simulatedSizeOnHostPx(d, host);
-        return { d, w: sim.widthPx, h: sim.heightPx };
-      })
-      .sort((a, b) => b.w * b.h - a.w * a.h);
-
-    let img: HTMLImageElement | null = null;
-    if (activeUrl) {
-      img = new Image();
-      img.src = activeUrl;
-      await new Promise((res) => {
-        img!.onload = res;
-        img!.onerror = res;
-      });
-      if (!img.naturalWidth) img = null;
-    }
-
-    for (const { d, w, h } of rectList) {
-      const x = (W - w) / 2;
-      const y = (H - h) / 2;
-      if (img) {
-        g.fillStyle = "#000";
-        g.fillRect(x, y, w, h);
-        // Draw only this device's rendered crop window (source crop
-        // reframed by its fit mode; full frame when neither applies).
-        const c = activeItem ? deviceFitCrop(activeItem, d) : FULL_CROP;
-        const sw = c.w * img.naturalWidth;
-        const sh = c.h * img.naturalHeight;
-        // Same fitBox the on-screen rect uses, so the export is the
-        // screenshot it claims to be — a stretched device fills its rect.
-        const a = fitBox(fitModeOf(d), sw, sh, w, h);
-        g.drawImage(
-          img,
-          c.x * img.naturalWidth,
-          c.y * img.naturalHeight,
-          sw,
-          sh,
-          x + a.x,
-          y + a.y,
-          a.w,
-          a.h,
-        );
-      } else {
-        g.fillStyle =
-          displayFill === "device-color" ? d.color : "rgba(0,0,0,0.5)";
-        g.fillRect(x, y, w, h);
-      }
-      g.strokeStyle = d.color;
-      g.lineWidth = Math.max(2, W / 800);
-      g.strokeRect(x, y, w, h);
-      g.fillStyle = d.color;
-      g.font = `${Math.max(16, Math.round(W / 90))}px monospace`;
-      const label = `${d.label} · ${formatDistance(d.distanceCm, unit)}`;
-      g.fillText(label, x + 8, y > 30 ? y - 8 : y + 26);
-    }
-
-    g.fillStyle = "rgba(255,255,255,0.55)";
-    g.font = `${Math.max(13, Math.round(W / 110))}px monospace`;
-    g.fillText(
-      `Wright Angles — host: ${host.label} ${W}×${H} @ ${formatDistance(host.distanceCm, unit)}`,
-      16,
-      H - 16,
-    );
-
-    const blob = await new Promise<Blob | null>((r) =>
-      c.toBlob(r, "image/png"),
-    );
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
-    a.click();
-    // Deferred: revoking synchronously after click() can beat Firefox/
-    // Safari to actually starting the download.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
+  const exportView = useCallback(
+    () =>
+      exportViewPng({
+        thisDevice,
+        devices,
+        activeUrl,
+        activeItem,
+        displayFill,
+        unit,
+      }),
+    [thisDevice, devices, activeUrl, activeItem, displayFill, unit],
+  );
 
   /**
    * Topmost device rect (highest z = last in draw order) under a point.
@@ -1221,110 +507,17 @@ export function DisplayArea() {
 
       {/* Host annotation layer sits above every device rect so drawing
           and box selection are never blocked by nested rects. */}
-      {(() => {
-        const hostRect = rects.find((r) => r.device.isThis);
-        if (!activeItem || !eff || !crop || !hostRect) return null;
-        // The layer overlays This Device's rect, so it maps through
-        // This Device's fit — same geometry its BoxLayer uses.
-        const hostMode = fitModeOf(thisDevice);
-        const area = fitBox(
-          hostMode,
-          eff.width,
-          eff.height,
-          hostRect.w,
-          hostRect.h,
-        );
-        // Draft is kept in full-image coords like persisted boxes; render
-        // it through the crop window like BoxLayer does.
-        const draftCb = draft ? boxInCrop(draft, crop) : null;
-        return (
-          <div
-            // Above every device rect (z 1..n), below the app chrome
-            // (sidebar z-30, panels z-40+), so UI stays clickable while
-            // drawing.
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: center.x,
-              top: center.y,
-              width: hostRect.w,
-              height: hostRect.h,
-            }}
-          >
-            {draftCb ? (
-              <div
-                className="pointer-events-none absolute border border-dashed border-white/80"
-                style={{
-                  left: area.x + draftCb.x * area.w,
-                  top: area.y + draftCb.y * area.h,
-                  width: draftCb.w * area.w,
-                  height: draftCb.h * area.h,
-                }}
-              />
-            ) : null}
-            {drawMode ? (
-              <div
-                className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
-                onPointerDown={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const a = fitBox(
-                    hostMode,
-                    eff.width,
-                    eff.height,
-                    r.width,
-                    r.height,
-                  );
-                  if (!a.w) return;
-                  // Screen → crop space → full-image coords (boxes are
-                  // stored against the full intrinsic image).
-                  dragStart.current = {
-                    x: crop.x + ((e.clientX - r.left - a.x) / a.w) * crop.w,
-                    y: crop.y + ((e.clientY - r.top - a.y) / a.h) * crop.h,
-                  };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (!dragStart.current) return;
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const a = fitBox(
-                    hostMode,
-                    eff.width,
-                    eff.height,
-                    r.width,
-                    r.height,
-                  );
-                  if (!a.w) return;
-                  const clamp = (v: number) => Math.min(1, Math.max(0, v));
-                  const nx =
-                    crop.x + clamp((e.clientX - r.left - a.x) / a.w) * crop.w;
-                  const ny =
-                    crop.y + clamp((e.clientY - r.top - a.y) / a.h) * crop.h;
-                  const s = dragStart.current;
-                  setDraft({
-                    id: "draft",
-                    x: Math.min(s.x, nx),
-                    y: Math.min(s.y, ny),
-                    w: Math.abs(nx - s.x),
-                    h: Math.abs(ny - s.y),
-                  });
-                }}
-                onPointerUp={() => {
-                  const d = draft;
-                  dragStart.current = null;
-                  setDraft(null);
-                  if (d && d.w > 0.004 && d.h > 0.004) {
-                    const id =
-                      typeof crypto !== "undefined" && "randomUUID" in crypto
-                        ? crypto.randomUUID()
-                        : Math.random().toString(36).slice(2);
-                    addBox(activeItem.id, { ...d, id });
-                    selectBox(id);
-                  }
-                }}
-              />
-            ) : null}
-          </div>
-        );
-      })()}
+      <AnnotationLayer
+        rects={rects}
+        activeItem={activeItem}
+        eff={eff}
+        crop={crop}
+        thisDevice={thisDevice}
+        center={center}
+        drawMode={drawMode}
+        addBox={addBox}
+        selectBox={selectBox}
+      />
 
       {rects.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center text-base text-white/40">
@@ -1356,100 +549,25 @@ export function DisplayArea() {
 
 
       {/* Readouts stay bottom-right; action buttons live top-right. */}
-      <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
-        {zoomPct !== null ? (
-          <div
-            className="rounded-md bg-[#f5a524]/90 px-2 py-1 font-mono text-sm text-black"
-            title="Browser zoom (or a This Device resolution that doesn't match this screen) breaks the 1:1 physical-scale promise. Set zoom to 100% — or fix This Device — for true sizes."
-          >
-            ⚠ browser zoom ≈ {zoomPct}% — sizes are not true
-          </div>
-        ) : null}
-        {scalePct !== null ? (
-          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-sm text-white/60">
-            {viewportActive
-              ? scalePct >= 99 && scalePct <= 101
-                ? "1:1 physical scale · drag to pan"
-                : `${scalePct}% — This Device res ≠ this screen's native res`
-              : scalePct === 100
-                ? "1:1 physical scale"
-                : `${scalePct}% scale — viewport mode for 1:1`}
-          </div>
-        ) : null}
-      </div>
+      <ScaleReadouts
+        zoomPct={zoomPct}
+        scalePct={scalePct}
+        viewportActive={viewportActive}
+      />
       {/* data-ui-chrome: pan/select gestures must never start here —
           select/menu triggers aren't <button>s, so the generic guard
           can't see them (the click-through device-select bug). */}
-      <div
-        data-ui-chrome
-        className="absolute top-2 right-2 z-40 flex items-center gap-1.5"
-      >
-          {activeItem ? (
-            <button
-              type="button"
-              title={
-                drawMode
-                  ? "Done drawing boxes (Esc)"
-                  : "Draw measurement boxes on the image"
-              }
-              className={cn(
-                "flex h-7 w-28 items-center justify-center gap-1 rounded-md font-mono text-sm transition-colors",
-                drawMode
-                  ? "bg-white/25 text-white"
-                  : "bg-black/50 text-white/60 hover:text-white",
-              )}
-              onClick={() => setDrawMode(!drawMode)}
-            >
-              <PencilRulerIcon className="size-3" />
-              {drawMode ? "done" : "measure"}
-            </button>
-          ) : null}
-          <OverlaysChip />
-          <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
-          <button
-            type="button"
-            title={
-              displayCenter === "screen"
-                ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
-                : "Centered in this window. Click to lock the content to your monitor's physical center instead."
-            }
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
-            onClick={() => {
-              setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
-              setPanOffset({ x: 0, y: 0 });
-            }}
-          >
-            {displayCenter === "screen" ? (
-              <PictureInPicture2Icon className="size-3.5" />
-            ) : (
-              <AlignCenterVerticalIcon className="size-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            title={
-              viewportActive
-                ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
-                : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
-            }
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
-            onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
-          >
-            {viewportActive ? (
-              <ImageIcon className="size-3.5" />
-            ) : (
-              <WallpaperIcon className="size-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            title="Export this view as a PNG reference image"
-            className="flex h-7 w-32 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
-            onClick={() => void exportView()}
-          >
-            <DownloadIcon className="size-3" /> export view
-          </button>
-      </div>
+      <ViewActions
+        activeItem={activeItem}
+        drawMode={drawMode}
+        setDrawMode={setDrawMode}
+        displayCenter={displayCenter}
+        setDisplayCenter={setDisplayCenter}
+        setPanOffset={setPanOffset}
+        viewportActive={viewportActive}
+        setDisplayMode={setDisplayMode}
+        exportView={exportView}
+      />
     </div>
   );
 }

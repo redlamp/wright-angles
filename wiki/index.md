@@ -1,6 +1,6 @@
 # Wright Angles Wiki
 
-Start here. Conventions: [[CLAUDE]] (wiki/CLAUDE.md).
+Start here. Conventions: [[AGENTS]] (wiki/AGENTS.md).
 
 ## MOCs
 

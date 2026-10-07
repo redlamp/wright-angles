@@ -1,7 +1,7 @@
 import type { KeyframeLine } from "./types";
 
 /**
- * The OCR result for `drawGenerated("gradient")` (stores/media-store.ts),
+ * The OCR result for `drawGenerated("gradient")` (lib/generated-media.ts),
  * captured once and shipped as a static constant instead of scanned live.
  * The gradient card is a deterministic canvas draw — fixed gradient,
  * fixed six-line label ladder, fixed 1920×1080 — so its detections never

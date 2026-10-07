@@ -17,10 +17,13 @@ workflow on push to `main`.
 
 - `next.config.ts` enables `output: "export"` + `basePath`/`assetPrefix`
   only when `NEXT_OUTPUT_EXPORT=1`; base path `/wright-angles`.
-- `.github/workflows/deploy-pages.yml` fires on push to `main`: builds
+- `.github/workflows/deploy-pages.yml` fires on push to `main` or `dev`
+  (dev added 2026-10-07 so `/dev` tracks dev without a promotion): builds
   `main` at `/wright-angles` and `dev` at `/wright-angles/dev` (dev slot
   `continue-on-error` so a broken dev never blocks production), adds
-  `.nojekyll`, uploads one artifact, deploys.
+  `.nojekyll`, uploads one artifact, deploys. Both slots build from
+  their branch heads on every run, so a dev push leaves production's
+  content as it was.
 - Branch flow: `main` ← `dev` ← `feature/*`. `main` is the deploy source;
   dev → main promotion only on Taylor's explicit go-ahead.
 

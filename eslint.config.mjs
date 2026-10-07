@@ -5,6 +5,18 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // Soft cap on file size: a big file costs every reader (and every
+  // agent session) its whole length in context. Warn-only, so it nudges
+  // a split without failing CI. Counts code, not comments.
+  {
+    files: ["**/*.{ts,tsx}"],
+    rules: {
+      "max-lines": [
+        "warn",
+        { max: 500, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

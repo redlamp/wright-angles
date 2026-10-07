@@ -2,245 +2,37 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import {
-  BackSide,
-  BufferAttribute,
-  DoubleSide,
   MathUtils,
-  Vector3,
   type BufferGeometry,
-  type Camera,
   type Group,
-  type Material,
-  type Object3D,
   type Texture,
 } from "three";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
-import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { Line, RoundedBox } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
-import { useAnnotationStore, type DeviceHover } from "@/stores/annotation-store";
 import { physicalSizeCm } from "@/lib/display-math";
-import { legibilityColor } from "@/lib/legibility";
-import { boxMetricsOnDevice } from "@/lib/box-metrics";
 import { fitBox, fitModeOf } from "@/lib/fit";
 import { easeInOutCubic } from "@/lib/easing";
 import { degToRad } from "@/lib/viewing-geometry";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
-import { groupColor } from "@/lib/text-groups";
 import type { ScenePalette } from "./scene-palette";
+import {
+  setDeviceHover,
+  TWEEN_S,
+  updateProjection,
+  applyLabelLift,
+  applyNameOffset,
+  applyCenterY,
+  NAME_FONT_CM,
+} from "./device-rect-helpers";
+import DeviceContentBoxes from "./device-rect-content-boxes";
+import DeviceScreen from "./device-rect-screen";
+import { useDistanceDrag } from "./use-distance-drag";
+import { DeviceFloorMarker, DeviceNameLabel } from "./device-rect-labels";
 
-const SHOW_LABELS = true;
-
-/** Module-level mutator (react-compiler convention): 3D hover state. */
-const setDeviceHover = (h: DeviceHover | null) =>
-  useAnnotationStore.getState().setDeviceHover(h);
-
-const _projCorner = new Vector3();
-
-/**
- * Screen bounds (client px) of a hovered box's catcher plane: its four
- * local corners through the mesh's world matrix and the camera, mapped
- * into the canvas's client rect — so the hover card can position
- * itself OUTSIDE the box in either view.
- */
-function projectBounds(
-  e: ThreeEvent<PointerEvent>,
-  w: number,
-  h: number,
-  object: Object3D = e.object,
-): { left: number; top: number; right: number; bottom: number } {
-  const canvas = e.nativeEvent.target as HTMLElement;
-  const r = canvas.getBoundingClientRect();
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-  for (const [cx, cy] of [
-    [-w / 2, -h / 2],
-    [w / 2, -h / 2],
-    [-w / 2, h / 2],
-    [w / 2, h / 2],
-  ]) {
-    _projCorner
-      .set(cx, cy, 0)
-      .applyMatrix4(object.matrixWorld)
-      .project(e.camera);
-    const x = r.left + ((_projCorner.x + 1) / 2) * r.width;
-    const y = r.top + ((1 - _projCorner.y) / 2) * r.height;
-    left = Math.min(left, x);
-    right = Math.max(right, x);
-    top = Math.min(top, y);
-    bottom = Math.max(bottom, y);
-  }
-  return { left, top, right, bottom };
-}
-
-/**
- * Barlow Medium for the 3D labels, matching the app's primary typeface.
- * troika-three-text can't read the CSS-registered @fontsource faces (or
- * .woff2), so a static .woff copy ships in public/fonts (see its README).
- */
-const FONT_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/fonts/barlow-latin-500-normal.woff`;
-
-/** Matches the viewer figure's pose tween so stance changes move in sync. */
-const TWEEN_S = 0.5;
-
-/**
- * Module-level mutator (react-compiler lint forbids property assignment on
- * hook-returned objects inside components). Places everything that depends
- * on the animated center height: the rect group itself, the drop-line group
- * (a unit line anchored at the rect bottom whose scale.y is the drop length
- * to the floor), and the floor label 5cm above the floor.
- */
-/**
- * Rect-bottom → floor span for the drop line's scale.y. The epsilon keeps
- * the matrix invertible when the rect bottom sits exactly on the floor;
- * sign is preserved so a below-floor bottom draws upward.
- */
-function dropLen(y: number, heightCm: number): number {
-  const len = y - heightCm / 2;
-  return Math.abs(len) < 1e-3 ? 1e-3 : len;
-}
-
-/**
- * Rewrite the 4 eye→corner rays in the rect's local space, extended
- * THROUGH the corners out to `reachZ` (world distance) so the cone
- * visibly lands on the farthest display.
- *
- * The rays are overlay-drawn (no depth test), so anything they cross
- * gets painted over — including the figure's head, which the eye
- * point sits inside. Each ray therefore STARTS just outside the
- * head's surface instead of at the eye: seen THROUGH the head is fine,
- * entering its space is not (Taylor 2026-08-19). The figure's cranium
- * is a 10.5 cm sphere about the eye point (viewer-figure), so its
- * radius plus a hair of margin is the clearance.
- */
-const HEAD_CLEAR_CM = 11.5;
-
-function updateProjection(
-  geom: BufferGeometry | null,
-  eye: [number, number, number],
-  corners: [number, number, number][],
-  distCm: number,
-  reachZ: number,
-) {
-  if (!geom) return;
-  let attr = geom.getAttribute("position") as BufferAttribute | undefined;
-  if (!attr || attr.count !== corners.length * 2) {
-    attr = new BufferAttribute(new Float32Array(corners.length * 2 * 3), 3);
-    geom.setAttribute("position", attr);
-  }
-  const a = attr.array as Float32Array;
-  corners.forEach((c, i) => {
-    const dirX = c[0] - eye[0];
-    const dirY = c[1] - eye[1];
-    const dirZ = c[2] - eye[2];
-    // Local z of the eye is -distCm; scale the ray so its end lands on
-    // the reachZ plane (world) = reachZ - distCm (local).
-    const k = dirZ > 1e-6 ? reachZ / dirZ : 1;
-    // Start offset in ray-parameter units (1 = the corner). Capped at
-    // half the eye→corner run so a handheld at 36 cm keeps a visible
-    // segment rather than losing it all to the clearance.
-    const len = Math.hypot(dirX, dirY, dirZ);
-    const s = len > 1e-6 ? Math.min(HEAD_CLEAR_CM / len, 0.5) : 0;
-    const o = i * 6;
-    a[o] = eye[0] + dirX * s;
-    a[o + 1] = eye[1] + dirY * s;
-    a[o + 2] = eye[2] + dirZ * s;
-    a[o + 3] = eye[0] + dirX * k;
-    a[o + 4] = eye[1] + dirY * k;
-    a[o + 5] = eye[2] + dirZ * k;
-  });
-  attr.needsUpdate = true;
-}
-
-/**
- * Camera-aware de-collision. The base offsets assume "farther projects
- * screen-right"; this measures the actual on-screen direction of the
- * depth axis each frame by projecting two points of the sight line,
- * and scales the offset by it. Viewing from the other side of the
- * human flips the factor (labels invert); edge-on it passes through
- * zero, so the swap is always a glide. Module-level temps avoid
- * per-frame allocation.
- */
-const _projA = new Vector3();
-const _projB = new Vector3();
-function applyLabelLift(
-  group: Group | null,
-  baseLift: number,
-  camera: Camera,
-  deviceZ: number,
-) {
-  if (!group) return;
-  _projA.set(0, 1.2, deviceZ).project(camera);
-  _projB.set(0, 1.2, deviceZ + 40).project(camera);
-  // Steep tanh: hold ~full separation until within a few degrees of
-  // edge-on, then swap quickly — the sign must flip somewhere, but the
-  // window where labels approach each other stays tiny.
-  const f = Math.tanh((_projB.x - _projA.x) * 40);
-  group.position.y = baseLift * f;
-}
-
-/**
- * Drag-affordance cursor for the distance handles. Set on the body (not
- * the canvas) so the fist survives a captured drag wandering over HUD
- * elements; empty string restores the default.
- */
-function setBodyCursor(cursor: string) {
-  document.body.style.cursor = cursor;
-}
-
-/**
- * Distance labels draw over scene geometry (feet, furniture, even the
- * floor) — they're readouts, not objects in the room. Applied via the
- * Text's onSync so it survives troika re-syncs (label changes, outline
- * settings), which rebuild materials AFTER a mount effect would have
- * run; the traverse also catches the outline sub-mesh.
- */
-function raiseLabel(text: Object3D, order: number) {
-  text.traverse((o) => {
-    o.renderOrder = order;
-    const m = (o as { material?: Material | Material[] }).material;
-    if (!m) return;
-    for (const mat of Array.isArray(m) ? m : [m]) mat.depthTest = false;
-  });
-}
-const raiseDistLabel = (text: Object3D) => raiseLabel(text, 20);
-/** Name labels ride just under the distance readouts. */
-const raiseNameLabel = (text: Object3D) => raiseLabel(text, 15);
-
-/**
- * Same camera-side modulation as the distance labels, applied to the
- * NAME label's horizontal de-collision offset: nested rects park their
- * names on alternating rect edges, and flipping the side with the
- * viewing direction keeps "nearer name outward" true from both sides
- * of the scene instead of crossing over.
- */
-function applyNameOffset(
-  group: Group | null,
-  baseX: number,
-  camera: Camera,
-  deviceZ: number,
-) {
-  if (!group) return;
-  _projA.set(0, 1.2, deviceZ).project(camera);
-  _projB.set(0, 1.2, deviceZ + 40).project(camera);
-  group.position.x = baseX * Math.tanh((_projB.x - _projA.x) * 40);
-}
-
-function applyCenterY(
-  rect: Group | null,
-  drop: Group | null,
-  label: Group | null,
-  y: number,
-  heightCm: number,
-) {
-  if (rect) rect.position.y = y;
-  if (drop) drop.scale.y = dropLen(y, heightCm);
-  // The floor marker (node + flat angled label) sits on the ground.
-  if (label) label.position.y = -y + 0.12;
-}
+export { NAME_FONT_CM };
 
 /**
  * The active media item's texture, loaded once at scene level and shared by
@@ -278,64 +70,6 @@ export interface ContentBox {
   /** Full-image normalized measure height (pre-crop), for metrics. */
   hFull: number;
 }
-
-
-/**
- * Outline loop for a content-space rect on the screen surface. The
- * shared texture is U-mirrored (the viewer at -Z sees back faces), so
- * content-left lands at local +x; curved panels bend the horizontal
- * edges along the same chord math as the screen itself, on a slightly
- * viewer-side radius so the lines never z-fight the content.
- */
-function boxLoopPoints(
-  rect: { x: number; y: number; w: number; h: number },
-  fitW: number,
-  fitH: number,
-  R: number,
-): [number, number, number][] {
-  const yTop = fitH / 2 - rect.y * fitH;
-  const yBot = yTop - rect.h * fitH;
-  const xAt = (fImg: number) => fitW / 2 - fImg * fitW;
-  if (!R) {
-    const x0 = xAt(rect.x + rect.w);
-    const x1 = xAt(rect.x);
-    const z = -0.3;
-    return [
-      [x0, yTop, z],
-      [x1, yTop, z],
-      [x1, yBot, z],
-      [x0, yBot, z],
-      [x0, yTop, z],
-    ];
-  }
-  const r = R - 0.5;
-  const arc = fitW / r;
-  const at = (fImg: number, y: number): [number, number, number] => {
-    const u = xAt(fImg) / fitW; // -0.5..0.5 across the arc
-    return [r * Math.sin(arc * u), y, -R + r * Math.cos(arc * u)];
-  };
-  const N = 8;
-  const pts: [number, number, number][] = [];
-  for (let i = 0; i <= N; i++)
-    pts.push(at(rect.x + (rect.w * i) / N, yTop));
-  for (let i = 0; i <= N; i++)
-    pts.push(at(rect.x + rect.w - (rect.w * i) / N, yBot));
-  pts.push(at(rect.x, yTop));
-  return pts;
-}
-
-/**
- * Device name labels are one size for every screen, in scene units (1 =
- * 1cm). They used to scale with the rect (`heightCm * 0.14`, clamped
- * 4–12) so a handheld wouldn't drown in text, but that made the name a
- * second, competing readout of how big the panel is — a 120″ projector
- * shouted while a Switch whispered, and the labels stopped reading as
- * one set. They are chrome, not scenery (see `raiseNameLabel`: no depth
- * test, drawn over the room), so they get one type size like any other
- * UI text. Shared with `computeLabelPlacements`, which sizes the
- * de-collision stack from it.
- */
-export const NAME_FONT_CM = 7;
 
 export interface LabelPlacement {
   /** Name billboard: x anchor offset (± rect half-width) + extra lift. */
@@ -524,12 +258,7 @@ export default function DeviceRect({
     prevPoseKey.current = poseKey;
   }, [centerY, poseKey]);
 
-  // setBodyCursor writes to document.body, outside this component's own
-  // DOM — if it unmounts (device removed, media changes the tree) mid
-  // hover/drag, nothing else clears that cursor back to normal.
-  useEffect(() => {
-    return () => setBodyCursor("");
-  }, []);
+  const dragHandlers = useDistanceDrag(onDistanceDrag, onDragState);
 
   useFrame((state) => {
     const a = anim.current;
@@ -572,51 +301,6 @@ export default function DeviceRect({
     }
   });
 
-  // Shared by the node's hit sphere AND the distance text, so both drag
-  // the viewing distance and both advertise it: open hand on hover,
-  // closed fist while dragging. The grab cursor is a promise — anything
-  // showing it must actually drag.
-  const dragHandlers = onDistanceDrag
-    ? {
-        onPointerOver: (e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          setBodyCursor("grab");
-        },
-        onPointerOut: (e: ThreeEvent<PointerEvent>) => {
-          // Keep the fist while a captured drag passes outside the target.
-          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
-            setBodyCursor("");
-          }
-        },
-        onPointerDown: (e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          (e.target as Element).setPointerCapture(e.pointerId);
-          onDragState?.(true);
-          setBodyCursor("grabbing");
-        },
-        onPointerMove: (e: ThreeEvent<PointerEvent>) => {
-          if (!(e.target as Element).hasPointerCapture?.(e.pointerId)) {
-            return;
-          }
-          // Project the pointer ray onto the floor plane (y = 0);
-          // its world z IS the new viewing distance.
-          const t = -e.ray.origin.y / e.ray.direction.y;
-          if (t > 0) {
-            const z = e.ray.origin.z + e.ray.direction.z * t;
-            onDistanceDrag(Math.round(Math.min(9999, Math.max(10, z))));
-          }
-        },
-        onPointerUp: (e: ThreeEvent<PointerEvent>) => {
-          (e.target as Element).releasePointerCapture?.(e.pointerId);
-          onDragState?.(false);
-          // Back to the open hand; if the pointer ended off-target, the
-          // pointerout that follows the release clears it entirely.
-          setBodyCursor("grab");
-        },
-        onClick: (e: ThreeEvent<MouseEvent>) => e.stopPropagation(),
-      }
-    : null;
-
   const outline = useMemo<[number, number, number][]>(() => {
     const hw = widthCm / 2;
     const hh = heightCm / 2;
@@ -650,9 +334,6 @@ export default function DeviceRect({
     return pts;
   }, [widthCm, heightCm, curved, R]);
 
-  // Letterbox backing behind media content, matching the 2D view's fill.
-  const backing = displayFill === "device-color" ? device.color : "#000000";
-
   const shownDistLabel = distLabel ?? `${Math.round(device.distanceCm)} cm`;
   const distLiftRef = useRef<Group>(null);
   const nameOffsetRef = useRef<Group>(null);
@@ -661,8 +342,6 @@ export default function DeviceRect({
     FEATURE_3D_DEVICE_BODY && device.show3dBody !== false && device.deviceName
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
-
-  const nameSize = NAME_FONT_CM;
 
   return (
     <group
@@ -717,172 +396,35 @@ export default function DeviceRect({
         </RoundedBox>
       ) : null}
 
-      {media && fit ? (
-        curved ? (
-          <group position={[0, 0, -R]}>
-            {/* Letterbox backing, a hair inside the outline's arc. */}
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device (double-sided
-                screens are intentional — Taylor). */}
-            <mesh>
-              <cylinderGeometry
-                args={[R - 0.1, R - 0.1, heightCm, 48, 1, true,
-                  -widthCm / (R - 0.1) / 2, widthCm / (R - 0.1)]}
-              />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
-            </mesh>
-            <mesh>
-              <cylinderGeometry
-                args={[R - 0.25, R - 0.25, fit.h, 48, 1, true,
-                  -fit.w / (R - 0.25) / 2, fit.w / (R - 0.25)]}
-              />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
-            </mesh>
-          </group>
-        ) : (
-          <>
-            {/* Backing renders viewer-side only so the content's mirror
-                image stays visible from behind the device (double-sided
-                screens are intentional — Taylor). */}
-            <mesh position={[0, 0, -0.15]}>
-              <planeGeometry args={[widthCm, heightCm]} />
-              <meshBasicMaterial color={backing} side={BackSide} toneMapped={false} />
-            </mesh>
-            <mesh position={[0, 0, -0.3]}>
-              <planeGeometry args={[fit.w, fit.h]} />
-              <meshBasicMaterial map={media.texture} side={DoubleSide} toneMapped={false} />
-            </mesh>
-          </>
-        )
-      ) : (
-        /* Empty panel: solid key-color fill when the setting asks for it,
-           else a faint fill so nested rects still read where outlines
-           overlap. depthWrite stays off either way so nesting never
-           z-fights. */
-        <mesh position={curved ? [0, 0, -R] : [0, 0, 0]}>
-          {curved ? (
-            <cylinderGeometry
-              args={[R, R, heightCm, 48, 1, true, -widthCm / R / 2, widthCm / R]}
-            />
-          ) : (
-            <planeGeometry args={[widthCm, heightCm]} />
-          )}
-          <meshBasicMaterial
-            color={device.color}
-            transparent
-            opacity={displayFill === "device-color" ? 0.9 : 0.06}
-            side={DoubleSide}
-            depthWrite={false}
-          />
-        </mesh>
-      )}
+      <DeviceScreen
+        device={device}
+        media={media}
+        fit={fit}
+        displayFill={displayFill}
+        curved={curved}
+        R={R}
+        widthCm={widthCm}
+        heightCm={heightCm}
+      />
 
       {/* Measure boxes / detected lines ON this screen, colored by THIS
           device's legibility verdict — the same text can be green on
           the TV and red on the handheld. */}
-      {media && fit && contentBoxes && contentBoxes.length > 0
-        ? contentBoxes.map((cb) => {
-            const arcmin = boxMetricsOnDevice(
-              cb.hMeasure,
-              { width: media.width, height: media.height },
-              device,
-            ).arcmin;
-            const sel = cb.id === selectedBoxId;
-            const color =
-              boxColorMode === "group" && cb.groupId !== undefined
-                ? groupColor(cb.groupId)
-                : legibilityColor(arcmin);
-            // Invisible hover catcher over the box (chord plane — close
-            // enough on curved panels for pointer purposes): hovering
-            // feeds the inspector's live text details (Taylor).
-            const yCenter = fit.h / 2 - (cb.rect.y + cb.rect.h / 2) * fit.h;
-            const uc = 0.5 - (cb.rect.x + cb.rect.w / 2);
-            // Fatter hot zone than the visible outline: half a line of
-            // padding, floored at ~1.2% of the screen height, so small
-            // text is hoverable from across the room. Neighbors may
-            // overlap slightly; whichever catcher wins is fine.
-            const pad = Math.max(cb.rect.h * fit.h * 0.5, fit.h * 0.012);
-            const hitW = cb.rect.w * fit.w + pad * 2;
-            const hitH = cb.rect.h * fit.h + pad * 2;
-            return (
-              <group key={cb.id}>
-                <Line
-                  points={boxLoopPoints(cb.rect, fit.w, fit.h, curved ? R : 0)}
-                  color={sel ? "#ffffff" : color}
-                  lineWidth={sel ? 2.5 : 1.25}
-                  transparent
-                  opacity={sel ? 1 : 0.9}
-                />
-                {/* One catcher per SIDE of the screen: pointer events
-                    deliver front-to-back, so from behind the (nearer)
-                    media plane would swallow the hit before a single
-                    viewer-side catcher ever saw it. The back catcher
-                    sits just past the screen surface, making a catcher
-                    the first hit from either side — hovering the
-                    mirrored view works too, and the DOM card reads
-                    normally regardless (bounds are min/max normalized). */}
-                {([-1, 1] as const).map((face) => {
-                  const r = curved ? (face < 0 ? R - 0.5 : R + 0.05) : 0;
-                  const theta = curved ? (fit.w / r) * uc : 0;
-                  return (
-                    <mesh
-                      key={face}
-                      position={
-                        curved
-                          ? [
-                              r * Math.sin(theta),
-                              yCenter,
-                              -R + r * Math.cos(theta),
-                            ]
-                          : [uc * fit.w, yCenter, face < 0 ? -0.35 : 0.05]
-                      }
-                      rotation={[0, theta, 0]}
-                      onPointerOver={(e) => {
-                        e.stopPropagation();
-                        setDeviceHover({
-                          deviceId: device.id,
-                          box: {
-                            id: cb.id,
-                            label: cb.label,
-                            srcPx: cb.srcPx,
-                            hFull: cb.hFull,
-                            groupId: cb.groupId,
-                            bounds: projectBounds(
-                              e,
-                              cb.rect.w * fit.w,
-                              cb.rect.h * fit.h,
-                            ),
-                            // The panel's own footprint, so the card can
-                            // sit fully off the screen space.
-                            screen: rectRef.current
-                              ? projectBounds(
-                                  e,
-                                  widthCm,
-                                  heightCm,
-                                  rectRef.current,
-                                )
-                              : undefined,
-                          },
-                        });
-                      }}
-                      // No pointerout handler: the leave bubbles to the
-                      // group (clearing hover), and whatever the pointer
-                      // lands on next re-sets it in the same event batch.
-                    >
-                      <planeGeometry args={[hitW, hitH]} />
-                      <meshBasicMaterial
-                        transparent
-                        opacity={0}
-                        depthWrite={false}
-                        side={DoubleSide}
-                      />
-                    </mesh>
-                  );
-                })}
-              </group>
-            );
-          })
-        : null}
+      {media && fit && contentBoxes && contentBoxes.length > 0 ? (
+        <DeviceContentBoxes
+          contentBoxes={contentBoxes}
+          media={media}
+          fit={fit}
+          device={device}
+          selectedBoxId={selectedBoxId}
+          boxColorMode={boxColorMode}
+          curved={curved}
+          R={R}
+          rectRef={rectRef}
+          widthCm={widthCm}
+          heightCm={heightCm}
+        />
+      ) : null}
       </group>
 
       {showProjection || selected ? (
@@ -901,103 +443,24 @@ export default function DeviceRect({
         </lineSegments>
       ) : null}
 
-      {SHOW_LABELS ? (
-        <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>
-          {/* Registration-point clip (same model as the distance
-              labels): the horizontal de-collision offset lives on this
-              inner group and flips with the camera side per frame, so
-              nested rects' names keep a stable side relative to the
-              viewer instead of crossing over. */}
-          <group ref={nameOffsetRef} position={[lp.nameX, 0, 0]}>
-            <Text
-              font={FONT_URL}
-              fontSize={nameSize}
-              color={device.color}
-              anchorX="center"
-              anchorY="bottom"
-              outlineColor="#000000"
-              outlineOpacity={0.5}
-              outlineOffsetX="3%"
-              outlineOffsetY="3%"
-              onSync={raiseNameLabel}
-            >
-              {device.label}
-            </Text>
-          </group>
-        </Billboard>
-      ) : null}
+      <DeviceNameLabel
+        device={device}
+        heightCm={heightCm}
+        lp={lp}
+        nameOffsetRef={nameOffsetRef}
+      />
 
-      {/* Unit-length drop line anchored at the rect bottom; applyCenterY
-          scales it down to the floor as the rect animates. lineWidth is in
-          screen px, so scale.y doesn't fatten it. */}
-      <group
-        ref={dropRef}
-        position={[0, -heightCm / 2, 0]}
-        scale={[1, dropLen(centerY, heightCm), 1]}
-      >
-        <Line
-          points={[
-            [0, 0, 0],
-            [0, -1, 0],
-          ]}
-          color={device.color}
-          lineWidth={1}
-          transparent
-          opacity={0.45}
-        />
-      </group>
-      {SHOW_LABELS ? (
-        /* Floor marker: a small node where the drop line lands, with the
-           distance laid flat on the ground at 45° (spreadsheet-header
-           style) — parallel diagonals never collide. */
-        <group ref={labelRef} position={[0, -centerY + 0.12, 0]}>
-          <mesh position={[0, 1.2, 0]}>
-            <sphereGeometry args={[1.4, 16, 12]} />
-            <meshBasicMaterial color={device.color} />
-          </mesh>
-          {/* Oversized invisible hit target: the node doubles as a drag
-              handle for the viewing distance along the sight line. */}
-          {dragHandlers ? (
-            <mesh position={[0, 1.2, 0]} {...dragHandlers}>
-              <sphereGeometry args={[5, 8, 6]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
-          ) : null}
-          {/* Per Taylor's markup (2026-08-15 screenshots): the label
-              hangs just below-right of the node, sloping 30° south-east
-              in screen space, text reading along the slope. Parallel
-              diagonals keep neighbors legible; static offsets only. */}
-          {/* Flash model: a clip whose registration point (text left
-              edge, vertical center) anchors ON the node; the 30° slope
-              rotates about that point. De-collision moves the text's
-              local Y inside the rotated clip, so neighboring parallel
-              labels separate perpendicular to the slope with an even
-              buffer. */}
-          <Billboard position={[0, 1.2, 0]}>
-            <group rotation={[0, 0, -Math.PI / 6]}>
-              {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
-              <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
-                <Text
-                  font={FONT_URL}
-                  fontSize={5}
-                  color={device.color}
-                  anchorX="left"
-                  anchorY="middle"
-                  position={[6, 0, 0]}
-                  outlineColor="#000000"
-                  outlineOpacity={0.5}
-                  outlineOffsetX="3%"
-                  outlineOffsetY="3%"
-                  onSync={raiseDistLabel}
-                  {...(dragHandlers ?? {})}
-                >
-                  {shownDistLabel}
-                </Text>
-              </group>
-            </group>
-          </Billboard>
-        </group>
-      ) : null}
+      <DeviceFloorMarker
+        device={device}
+        centerY={centerY}
+        heightCm={heightCm}
+        lp={lp}
+        shownDistLabel={shownDistLabel}
+        dragHandlers={dragHandlers}
+        dropRef={dropRef}
+        labelRef={labelRef}
+        distLiftRef={distLiftRef}
+      />
     </group>
   );
 }
