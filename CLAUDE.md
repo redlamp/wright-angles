@@ -38,6 +38,10 @@ conflict before coding.
 - **Canonical units:** diagonal inches, distance centimeters. Unit toggles
   convert at the UI edge only.
 - `reactStrictMode` stays off (R3F WebGL context loss in dev).
+- **Keep files small.** ESLint warns past 500 lines of code per file
+  (`max-lines`). Split by concern into a sibling folder (see
+  `components/panels/media-library/`), keeping the original path as the
+  entry point so importers don't change.
 
 ## Git
 
