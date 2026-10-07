@@ -7,29 +7,30 @@ import { useMediaStore } from "@/stores/media-store";
 
 /**
  * Lightweight batch indicator for auto-scan-on-import ("a ten-image
- * import doesn't look frozen"): a status line plus "Cancel remaining"
- * for the still-queued tail of the batch. Aborting the item currently
- * mid-`recognize()` isn't offered — see stores/ocr-queue-store.ts.
+ * import doesn't look frozen"): a status line plus "Cancel", which
+ * aborts the scan in progress and drops the rest of the batch.
  */
 export function AutoScanBanner() {
   const queue = useOcrQueueStore((s) => s.queue);
   const cancelRemaining = useOcrQueueStore((s) => s.cancelRemaining);
   const label = batchLabel(queue);
   if (!label) return null;
-  const hasQueued = queue.some((q) => q.status === "queued");
+  const cancellable = queue.some(
+    (q) => q.status === "queued" || q.status === "running",
+  );
   return (
     <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-muted-foreground">
       <span className="flex items-center gap-1.5 truncate">
         <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
         {label}
       </span>
-      {hasQueued ? (
+      {cancellable ? (
         <button
           type="button"
           className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
           onClick={cancelRemaining}
         >
-          Cancel remaining
+          Cancel
         </button>
       ) : null}
     </div>

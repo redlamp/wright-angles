@@ -164,6 +164,26 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 let inflight: Promise<DetectedLine[]> | null = null;
 
+/** Rejects the in-flight run's abort signal; null while nothing runs. */
+let abortCurrent: (() => void) | null = null;
+
+/** Thrown by {@link detectTextLines} when {@link abortDetection} stops it. */
+export class OcrAbortedError extends Error {
+  constructor() {
+    super("text detection cancelled");
+    this.name = "OcrAbortedError";
+  }
+}
+
+/**
+ * Stop the in-flight run, if any: its promise rejects with
+ * {@link OcrAbortedError} and its worker is terminated. Every caller
+ * joined to that run sees the rejection (one run at a time, see below).
+ */
+export function abortDetection(): void {
+  abortCurrent?.();
+}
+
 /**
  * Run OCR over the (cropped region of the) image and return the text
  * lines as full-image-normalized boxes. One run at a time: a concurrent
@@ -179,6 +199,7 @@ export function detectTextLines(
 ): Promise<DetectedLine[]> {
   inflight ??= runDetection(imageUrl, intrinsic, crop).finally(() => {
     inflight = null;
+    abortCurrent = null;
   });
   return inflight;
 }
@@ -188,12 +209,21 @@ async function runDetection(
   intrinsic: Intrinsic,
   crop?: MediaCrop,
 ): Promise<DetectedLine[]> {
+  // tesseract.js's terminate() kills the Web Worker without settling a
+  // pending recognize(), so cancelling has to race every await against
+  // this signal; terminating alone would leave the caller hanging.
+  const aborted = new Promise<never>((_, reject) => {
+    abortCurrent = () => reject(new OcrAbortedError());
+  });
+  aborted.catch(() => {}); // only ever observed through guard()
+  const guard = <T,>(p: Promise<T>) => Promise.race([p, aborted]);
+
   // Draw the crop window at 1:1 intrinsic pixels, so result bboxes are in
   // intrinsic-pixel units offset by the rect origin.
   const rect = cropRectPx(intrinsic, crop);
   const img = new Image();
   img.src = imageUrl;
-  await img.decode();
+  await guard(img.decode());
   const canvas = document.createElement("canvas");
   canvas.width = rect.w;
   canvas.height = rect.h;
@@ -202,8 +232,8 @@ async function runDetection(
     .drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
 
   // Dynamic import: client-only, and only when detection actually runs.
-  const { createWorker, OEM, PSM } = await import("tesseract.js");
-  const worker = await createWorker("eng", OEM.LSTM_ONLY, {
+  const { createWorker, OEM, PSM } = await guard(import("tesseract.js"));
+  const workerReady = createWorker("eng", OEM.LSTM_ONLY, {
     workerPath: `${BASE_PATH}/ocr/worker.min.js`,
     corePath: `${BASE_PATH}/ocr/tesseract-core-simd-lstm.js`,
     langPath: `${BASE_PATH}/ocr/lang`,
@@ -211,17 +241,27 @@ async function runDetection(
     // the worker must run from the real /ocr/ path, not a blob: URL.
     workerBlobURL: false,
   });
+  let worker: Awaited<typeof workerReady>;
   try {
-    await worker.setParameters({
+    worker = await guard(workerReady);
+  } catch (err) {
+    // Aborted while the worker was still starting: reap it once it's up.
+    void workerReady.then((w) => w.terminate(), () => {});
+    throw err;
+  }
+  try {
+    await guard(worker.setParameters({
       // Full layout analysis — the library default (SINGLE_BLOCK) assumes
       // one uniform text block, which screenshots aren't.
       tessedit_pageseg_mode: PSM.AUTO,
       // Canvas images carry no DPI; silences "Invalid resolution 0 dpi".
       user_defined_dpi: "96",
-    });
+    }));
     // v6+ returns only `text` by default; structured lines live on
     // blocks → paragraphs → lines.
-    const { data } = await worker.recognize(canvas, {}, { blocks: true });
+    const { data } = await guard(
+      worker.recognize(canvas, {}, { blocks: true }),
+    );
     return (data.blocks ?? [])
       .flatMap((block) => block.paragraphs)
       .flatMap((para) => para.lines)

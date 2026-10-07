@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   batchLabel,
   cancelQueued,
+  dropScan,
   enqueueScans,
   finishScan,
   isBatchActive,
@@ -53,6 +54,24 @@ describe("startScan / finishScan", () => {
     expect(finishScan(queue, "a", false)).toEqual([
       { id: "a", status: "error" },
     ]);
+  });
+});
+
+describe("dropScan", () => {
+  test("removes only that entry, whatever its status", () => {
+    const queue: ScanQueueItem[] = [
+      { id: "a", status: "done" },
+      { id: "b", status: "running" },
+      { id: "c", status: "queued" },
+    ];
+    expect(dropScan(queue, "b")).toEqual([
+      { id: "a", status: "done" },
+      { id: "c", status: "queued" },
+    ]);
+  });
+  test("unknown id leaves the queue as it was", () => {
+    const queue: ScanQueueItem[] = [{ id: "a", status: "queued" }];
+    expect(dropScan(queue, "zzz")).toEqual(queue);
   });
 });
 

@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import {
   cancelQueued,
+  dropScan,
   enqueueScans,
   finishScan,
   nextQueued,
@@ -10,6 +11,7 @@ import {
   startScan,
   type ScanQueueItem,
 } from "@/lib/ocr-queue";
+import { abortDetection, OcrAbortedError } from "@/lib/ocr";
 import { detectTextForItem, scanFirstFrame } from "@/lib/scan-actions";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { keyframeAt } from "@/lib/scan-keyframes";
@@ -34,9 +36,8 @@ interface OcrQueueState {
   running: boolean;
   /** Queue newly imported items for auto-scan; starts the runner if idle. */
   enqueue: (ids: string[]) => void;
-  /** Drop every not-yet-started item. The in-flight scan finishes on its
-   * own — aborting it needs the worker reference, which lib/ocr.ts
-   * doesn't expose today (follow-up, not this task). */
+  /** Drop every not-yet-started item and abort the batch's in-flight
+   * scan; the runner removes that entry once the scan has stopped. */
   cancelRemaining: () => void;
 }
 
@@ -54,7 +55,13 @@ export const useOcrQueueStore = create<OcrQueueState>()((set) => ({
     void runLoop();
   },
 
-  cancelRemaining: () => set((s) => ({ queue: cancelQueued(s.queue) })),
+  cancelRemaining: () => {
+    const { queue } = useOcrQueueStore.getState();
+    set({ queue: cancelQueued(queue) });
+    // Only abort a scan this batch started: a manual scan running on its
+    // own (no RUNNING entry here) isn't the banner's to cancel.
+    if (queue.some((q) => q.status === "running")) abortDetection();
+  },
 }));
 
 /** Serial runner: pops the next queued id, scans it, records the
@@ -70,9 +77,12 @@ async function runLoop(): Promise<void> {
       const id = nextQueued(useOcrQueueStore.getState().queue);
       if (!id) break;
       useOcrQueueStore.setState((s) => ({ queue: startScan(s.queue, id) }));
-      const ok = await runOneScan(id);
+      const outcome = await runOneScan(id);
       useOcrQueueStore.setState((s) => ({
-        queue: finishScan(s.queue, id, ok),
+        queue:
+          outcome === "cancelled"
+            ? dropScan(s.queue, id)
+            : finishScan(s.queue, id, outcome === "done"),
       }));
     }
   } finally {
@@ -83,9 +93,11 @@ async function runLoop(): Promise<void> {
   }
 }
 
-async function runOneScan(id: string): Promise<boolean> {
+async function runOneScan(
+  id: string,
+): Promise<"done" | "error" | "cancelled"> {
   const item = useMediaStore.getState().items.find((i) => i.id === id);
-  if (!item) return false; // Removed from the library before its turn came up.
+  if (!item) return "error"; // Removed from the library before its turn came up.
   // Already scanned (e.g. the seeded gradient, or a re-enqueue race) —
   // per the requirement, don't rescan something already cached. For
   // timeline media that means specifically a t=0 keyframe WITH lines —
@@ -93,16 +105,17 @@ async function runOneScan(id: string): Promise<boolean> {
   const alreadyScanned = isAnimatedItem(item)
     ? !!keyframeAt(item.scanKeyframes ?? [], 0)?.lines
     : !!item.scan;
-  if (alreadyScanned) return true;
+  if (alreadyScanned) return "done";
   try {
     if (isAnimatedItem(item)) {
       await scanFirstFrame(id);
     } else {
       await detectTextForItem(id);
     }
-    return true;
+    return "done";
   } catch (err) {
+    if (err instanceof OcrAbortedError) return "cancelled";
     console.warn("Auto text detection failed:", err);
-    return false;
+    return "error";
   }
 }
