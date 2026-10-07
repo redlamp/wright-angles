@@ -1,11 +1,14 @@
-# Deploys the static export to GitHub Pages on every push to main.
+# Deploys the static export to GitHub Pages on every push to main or dev.
 # Two slots in one artifact: main at /wright-angles, dev at
 # /wright-angles/dev (best-effort — a broken dev never blocks production).
+# Every run rebuilds both slots from the branch heads, so a dev push
+# refreshes /dev and redeploys main unchanged; a newer run cancelling an
+# older one loses nothing.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +30,7 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
+          ref: main # a dev push must not build dev into the main slot
           fetch-depth: 0 # tags needed by `bun run check-version`
 
       - name: Setup Bun
