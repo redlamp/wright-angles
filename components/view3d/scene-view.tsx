@@ -6,19 +6,17 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, VideoTexture, type Group, type Texture, Raycaster, Ray, type Camera, type Object3D } from "three";
-import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
+import { type Group, Raycaster, Ray, type Camera, type Object3D } from "three";
+import { Canvas } from "@react-three/fiber";
 import { Line, OrbitControls } from "@react-three/drei";
-import { getEngine, isAnimatedItem, type GifEngine } from "@/lib/playback-engine";
+import { getEngine, isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import type { Device, MediaCrop } from "@/lib/types";
 import { formatDistance, physicalSizeCm } from "@/lib/display-math";
 import { boxInCrop, cropDims, cropOf, cropsEqual } from "@/lib/media-crop";
 import { deviceFitCrop } from "@/lib/fit";
 import { deviceViewScale } from "@/lib/view-scale";
-import { easeInOutCubic } from "@/lib/easing";
 import {
   centerYFor,
   heldGripFor,
@@ -28,32 +26,26 @@ import { activeKeyframe } from "@/lib/scan-keyframes";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
-import { useSettingsStore, type DisplayMode } from "@/stores/settings-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
-import { eyeHeightCm, useViewerStore, type Scenario } from "@/stores/viewer-store";
+import { eyeHeightCm, useViewerStore } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/components/use-theme";
-import DeviceRect, {
-  NAME_FONT_CM,
-  type ContentBox,
-  type LabelPlacement,
-} from "./device-rect";
+import DeviceRect, { type ContentBox } from "./device-rect";
 import ViewerFigure from "./viewer-figure";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
 import PivotOrbit from "./pivot-orbit";
 import { useScreenViewport } from "@/components/display-area";
-import SceneHud, { FPS_NODE_ID } from "./scene-hud";
+import SceneHud from "./scene-hud";
 import { SCENE_PALETTES } from "./scene-palette";
-
-/**
- * Every screen surface faces +Z, away from the viewer at -Z, who therefore
- * sees back faces. Mirror U once on the shared texture so content reads
- * correctly from the viewer's side (instead of rotating every screen).
- */
-/** Module-level so the react-compiler lint permits the mutation. */
-function markTextureDirty(tex: Texture) {
-  tex.needsUpdate = true;
-}
+import {
+  EngineGifScreens,
+  EngineVideoScreens,
+  ImageScreens,
+  type ScreenTextures,
+} from "./screen-textures";
+import { computeLabelPlacements, headOnFovDeg } from "./scene-layout";
+import { EyeTween, FpsProbe } from "./scene-frame";
 
 /** True when `target` is the first visible mesh along `ray` in its scene. */
 function isNearestHit(target: Object3D, ray: Ray, camera: Camera): boolean {
@@ -84,180 +76,6 @@ const MIN_POLAR_ANGLE = 0.05;
 const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05;
 
 /**
- * The crop composes with the U-mirror via repeat/offset (sampled uv' =
- * uv·repeat + offset). Three's UV origin is bottom-left while the crop is
- * y-down, so the crop's vertical window [y, y+h] sits at v ∈
- * [1−y−h, 1−y]: repeat.y = h, offset.y = 1−y−h. Mirrored U must run
- * right-to-left across the window [x, x+w]: u' = (x+w) − u·w, i.e.
- * repeat.x = −w, offset.x = x+w (no crop: −1 / 1, exactly today's mirror).
- */
-function initScreenTexture(tex: Texture, crop?: MediaCrop) {
-  const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
-  tex.colorSpace = SRGBColorSpace;
-  tex.wrapS = RepeatWrapping;
-  tex.repeat.set(-c.w, c.h);
-  tex.offset.set(c.x + c.w, 1 - c.y - c.h);
-  tex.needsUpdate = true;
-}
-
-function useScreenTexture(tex: Texture, crop?: MediaCrop) {
-  // useMemo, NOT useEffect: effects run after paint, so a freshly
-  // loaded/created texture could render a frame (or more, on a busy
-  // main thread) with default repeat/offset — i.e. WITHOUT the
-  // U-mirror, which reads as a flipped image from the front (Taylor's
-  // "sometimes backwards" bug). Applying during render guarantees the
-  // mirror is in place before the first frame samples the texture.
-  useMemo(() => initScreenTexture(tex, crop), [tex, crop]);
-}
-
-/**
- * Per-device screen textures. The base texture wears the plain media
- * (source) crop; each DISTINCT fit-derived crop gets ONE clone (clones
- * share the pixel upload via texture.source — only repeat/offset differ
- * per Texture object), so N devices on two crops cost two textures, not
- * N. Devices whose fit is a no-op resolve to the base.
- */
-interface ScreenTextures {
-  forDevice: (deviceId: string) => Texture;
-  /** Base + clones — engine-driven screens mark ALL of them dirty. */
-  all: Texture[];
-}
-
-function useCropTextures(
-  base: Texture,
-  mediaCrop: MediaCrop | undefined,
-  fitCrops: Record<string, MediaCrop> | undefined,
-): ScreenTextures {
-  useScreenTexture(base, mediaCrop);
-  const clones = useMemo(() => {
-    const byDevice = new Map<string, Texture>();
-    const made: Texture[] = [];
-    if (fitCrops) {
-      const byKey = new Map<string, Texture>();
-      for (const [devId, crop] of Object.entries(fitCrops)) {
-        const key = `${crop.x},${crop.y},${crop.w},${crop.h}`;
-        let t = byKey.get(key);
-        if (!t) {
-          t = base.clone();
-          initScreenTexture(t, crop);
-          byKey.set(key, t);
-          made.push(t);
-        }
-        byDevice.set(devId, t);
-      }
-    }
-    return { byDevice, made };
-  }, [base, fitCrops]);
-  useEffect(
-    () => () => {
-      for (const t of clones.made) t.dispose();
-    },
-    [clones],
-  );
-  return useMemo(
-    () => ({
-      forDevice: (deviceId: string) => clones.byDevice.get(deviceId) ?? base,
-      all: [base, ...clones.made],
-    }),
-    [base, clones],
-  );
-}
-
-function ImageScreens({
-  url,
-  crop,
-  fitCrops,
-  children,
-}: {
-  url: string;
-  crop?: MediaCrop;
-  fitCrops?: Record<string, MediaCrop>;
-  children: (texs: ScreenTextures) => ReactNode;
-}) {
-  const tex = useLoader(TextureLoader, url);
-  const texs = useCropTextures(tex, crop, fitCrops);
-  // useCropTextures already disposes its own clones; the BASE texture
-  // (r3f's cache, keyed by url) is this component's to dispose — on
-  // unmount, and again whenever url changes (the old texture's own
-  // cleanup, since `tex` and `url` change together). Clearing the r3f
-  // loader cache alongside the dispose stops a later re-visit to the
-  // same url handing back an already-disposed texture.
-  useEffect(() => {
-    return () => {
-      tex.dispose();
-      useLoader.clear(TextureLoader, url);
-    };
-  }, [tex, url]);
-  return <>{children(texs)}</>;
-}
-
-/** Screens driven by the playback engine's master video element. */
-function EngineVideoScreens({
-  video,
-  crop,
-  fitCrops,
-  children,
-}: {
-  video: HTMLVideoElement;
-  crop?: MediaCrop;
-  fitCrops?: Record<string, MediaCrop>;
-  children: (texs: ScreenTextures) => ReactNode;
-}) {
-  const tex = useMemo(() => new VideoTexture(video), [video]);
-  const texs = useCropTextures(tex, crop, fitCrops);
-  useEffect(() => () => tex.dispose(), [tex]);
-  // Demand frameloop: request a render per decoded video frame — no
-  // frames while paused, native cadence while playing. (VideoTexture
-  // clones each pull the current video frame when rendered, so the
-  // per-device textures stay in lockstep without extra marking.)
-  const invalidate = useThree((s) => s.invalidate);
-  useEffect(() => {
-    let handle = 0;
-    let alive = true;
-    const onFrame = () => {
-      if (!alive) return;
-      invalidate();
-      handle = video.requestVideoFrameCallback(onFrame);
-    };
-    handle = video.requestVideoFrameCallback(onFrame);
-    return () => {
-      alive = false;
-      video.cancelVideoFrameCallback(handle);
-    };
-  }, [video, invalidate]);
-  return <>{children(texs)}</>;
-}
-
-/** Screens mirroring the GIF engine's frame canvas. */
-function EngineGifScreens({
-  engine,
-  crop,
-  fitCrops,
-  children,
-}: {
-  engine: GifEngine;
-  crop?: MediaCrop;
-  fitCrops?: Record<string, MediaCrop>;
-  children: (texs: ScreenTextures) => ReactNode;
-}) {
-  const tex = useMemo(() => new CanvasTexture(engine.canvas), [engine]);
-  const texs = useCropTextures(tex, crop, fitCrops);
-  useEffect(() => () => tex.dispose(), [tex]);
-  // Demand frameloop: each decoded GIF frame marks every screen texture
-  // (base + per-device clones) dirty and requests exactly one render.
-  const invalidate = useThree((s) => s.invalidate);
-  useEffect(
-    () =>
-      engine.subscribe(() => {
-        for (const t of texs.all) markTextureDirty(t);
-        invalidate();
-      }),
-    [engine, texs, invalidate],
-  );
-  return <>{children(texs)}</>;
-}
-
-/**
  * Live window inner size. The head-on FOV/pose below read
  * window.innerWidth/innerHeight directly (outside any event this
  * component otherwise subscribes to), so without this they'd go stale
@@ -277,235 +95,6 @@ function useWindowSize() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   return size;
-}
-
-/**
- * Vertical fov that makes the head-on camera see exactly what the 2D view
- * shows in this window: the window height mapped through the 2D scale into
- * device pixels, then through the panel's pixel pitch into physical size,
- * subtended from the viewing distance. This is what makes the 2D↔3D swap
- * land without a visual jump.
- */
-function headOnFovDeg(
-  thisDevice: Device,
-  displayMode: DisplayMode,
-  winW: number,
-  winH: number,
-): number {
-  if (typeof window === "undefined" || winW <= 0 || winH <= 0) return 40;
-  const res = thisDevice.resolution;
-  const k = deviceViewScale(
-    res.w,
-    res.h,
-    winW,
-    winH,
-    displayMode === "viewport" ? window.screen.width : null,
-  );
-  if (!k) return 40;
-  const visibleDevicePx = winH / k;
-  const { heightCm } = physicalSizeCm(thisDevice.diagonalIn, thisDevice.aspect);
-  const physH = (visibleDevicePx / res.h) * heightCm;
-  const fov =
-    2 * Math.atan(physH / 2 / thisDevice.distanceCm) * (180 / Math.PI);
-  return Math.min(120, Math.max(5, fov));
-}
-
-/**
- * Deterministic de-overlap for the per-device text labels. Devices with
- * similar sizes/distances (nested handhelds at 36/40cm) land their name and
- * floor-distance labels on top of each other; this walks the visible set
- * sorted by distance, chain-clusters anchors that fall within roughly a
- * label height of each other, and hands each member a stable offset:
- * names alternate to the left/right rect edge (like the 2D view's corner
- * cycling) and stack upward past pairs; floor labels alternate sides of the
- * drop line and stagger height. Pure and order-stable — recomputed only
- * when devices/scenario/eye height change, never per frame.
- */
-function computeLabelPlacements(
-  visible: Device[],
-  scenario: Scenario,
-  eyeH: number,
-): Map<string, LabelPlacement> {
-  interface Info {
-    id: string;
-    z: number;
-    topY: number;
-    halfW: number;
-    nameSize: number;
-    /** Rough rendered width of the name, in scene cm. */
-    nameW: number;
-  }
-  const infos: Info[] = visible
-    .map((d) => {
-      const { widthCm, heightCm } = physicalSizeCm(d.diagonalIn, d.aspect);
-      const centerY = centerYFor(d, scenario, eyeH);
-      return {
-        id: d.id,
-        z: d.distanceCm,
-        // Name-label anchor height (rect top + 3), at the tween's target.
-        topY: centerY + heightCm / 2 + 3,
-        halfW: widthCm / 2,
-        nameSize: NAME_FONT_CM,
-        // Average glyph advance for this face is ~0.55em; close enough to
-        // decide overlap without measuring troika's laid-out geometry.
-        nameW: d.label.length * NAME_FONT_CM * 0.55,
-      };
-    })
-    .sort((a, b) => a.z - b.z);
-
-  const out = new Map<string, LabelPlacement>();
-  for (const i of infos)
-    out.set(i.id, { nameX: 0, nameLift: 0, distX: 0, distLift: 0 });
-
-  // Name labels: anchors near each other in the (y, z) plane collide.
-  // They separate by STACKING, not by sliding sideways. Parking a name
-  // on its own rect edge (±halfW) scaled the offset with panel width, so
-  // a 32:9 ultrawide threw its label ~60cm out — twice as far as a 16:9
-  // neighbour and visibly detached from the screen it names. Height is
-  // also the only stable axis here: every rect is centred on x=0, and
-  // the horizontal offset was modulated by camera side, so it collapsed
-  // to zero near edge-on and let the labels collide anyway. A lift is
-  // applied statically, so the ladder holds through a full orbit.
-  let cluster: Info[] = [];
-  const GAP = 2;
-  const flushNames = () => {
-    if (cluster.length > 1) {
-      // Need-based, like the floor-label ramp below: each name rises only
-      // far enough to clear the one under it, then stops. A fixed
-      // idx * step ladder compounded instead — a monitor whose rect
-      // already sits well above the handhelds still inherited two rungs
-      // of someone else's stack and floated away from its own screen.
-      // Cluster is depth-sorted, so the ladder climbs away from the
-      // viewer and each name stays centred over the rect it belongs to.
-      let prevTop = -Infinity;
-      for (const m of cluster) {
-        const p = out.get(m.id)!;
-        p.nameX = 0;
-        // Labels anchor at their BOTTOM on topY, so one occupies
-        // [topY + lift, topY + lift + nameSize].
-        const lift = Math.max(0, prevTop + GAP - m.topY);
-        p.nameLift = lift;
-        prevTop = m.topY + lift + m.nameSize;
-      }
-    }
-    cluster = [];
-  };
-  for (const info of infos) {
-    const prev = cluster[cluster.length - 1];
-    // Two names clash when their anchors are closer than the names are
-    // WIDE — a multiple of font size missed that, so "Steam Deck OLED"
-    // and "27″ 1440p Monitor" sat 28cm apart in z and still overlapped
-    // by half their length. Every rect is centred on x=0, so the anchor
-    // gap is all that keeps them apart.
-    if (
-      prev &&
-      Math.hypot(info.z - prev.z, info.topY - prev.topY) >
-        (prev.nameW + info.nameW) / 2
-    ) {
-      flushNames();
-    }
-    cluster.push(info);
-  }
-  flushNames();
-
-  // Floor labels all sit ~5cm above the floor on their drop lines, so only
-  // the distance separates them; a "360 cm" readout is ~18cm wide.
-  // Floor labels: need-based ramp. Each label sums pairwise pressure
-  // from neighbors within RANGE — zero when clear, growing linearly as
-  // the gap closes. Nearer-than-neighbor pushes down (negative),
-  // farther pushes up, so isolated labels sit exactly on their node
-  // and crowded ones separate only as much as they must. The sign is
-  // re-oriented per frame from the camera side (device-rect).
-  const RANGE = 25;
-  const MAX_LIFT = 4;
-  for (const a of infos) {
-    let need = 0;
-    for (const b of infos) {
-      if (a === b) continue;
-      const gap = Math.abs(a.z - b.z);
-      if (gap < RANGE) {
-        need += (a.z < b.z ? -1 : 1) * (1 - gap / RANGE);
-      }
-    }
-    const p = out.get(a.id)!;
-    p.distX = 0;
-    p.distLift = Math.max(-1.6, Math.min(1.6, need)) * MAX_LIFT;
-  }
-
-  return out;
-}
-
-/** Module-level so the react-compiler lint permits the mutation. */
-function applySightY(group: Group | null, y: number) {
-  if (group) group.position.y = y;
-}
-
-/**
- * Tweens the shared eye height toward its target in sync with the
- * figure's pose tween (same 0.5s ease), moving the sight line and
- * feeding every rect's projection origin via the shared ref.
- */
-function EyeTween({
-  target,
-  scenario,
-  eyeRef,
-  sightRef,
-}: {
-  target: number;
-  scenario: Scenario;
-  eyeRef: React.MutableRefObject<number>;
-  sightRef: React.RefObject<Group | null>;
-}) {
-  const anim = useRef<{ from: number; start: number | null } | null>(null);
-  const prev = useRef(target);
-  const prevScenario = useRef(scenario);
-  useEffect(() => {
-    if (prev.current !== target) {
-      // Tween on stance changes only; height-slider edits snap so the
-      // sight line and projections track the drag without lag.
-      if (prevScenario.current !== scenario) {
-        anim.current = { from: eyeRef.current, start: null };
-      } else {
-        anim.current = null;
-        eyeRef.current = target;
-      }
-      prev.current = target;
-    }
-    prevScenario.current = scenario;
-  }, [target, scenario, eyeRef]);
-  useFrame((state) => {
-    const a = anim.current;
-    if (a) {
-      if (a.start === null) a.start = state.clock.elapsedTime;
-      const t = Math.min(1, (state.clock.elapsedTime - a.start) / 0.5);
-      eyeRef.current =
-        t >= 1
-          ? target
-          : a.from + (target - a.from) * easeInOutCubic(t);
-      if (t >= 1) anim.current = null;
-      state.invalidate();
-    }
-    applySightY(sightRef.current, eyeRef.current);
-  });
-  return null;
-}
-
-/** Smoothed FPS, written to the HUD's DOM node at ~2Hz — no setState. */
-function FpsProbe() {
-  const ema = useRef(0);
-  const acc = useRef(1); // start "due" so the first frame writes immediately
-  useFrame((_, delta) => {
-    if (delta <= 0) return;
-    const inst = 1 / delta;
-    ema.current = ema.current === 0 ? inst : ema.current + (inst - ema.current) * 0.1;
-    acc.current += delta;
-    if (acc.current >= 0.5) {
-      acc.current = 0;
-      const el = document.getElementById(FPS_NODE_ID);
-      if (el) el.textContent = String(Math.round(ema.current));
-    }
-  });
-  return null;
 }
 
 /**
