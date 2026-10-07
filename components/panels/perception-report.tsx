@@ -27,6 +27,7 @@ import { legibilityColor } from "@/lib/legibility";
 import { formatTimecode } from "@/lib/units";
 import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import { activeKeyframe } from "@/lib/scan-keyframes";
+import { buildTextEntries, ratioNote } from "@/lib/perception-report";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -60,16 +61,6 @@ function LegibilityDot({ arcmin }: { arcmin: number }) {
       style={{ background: legibilityColor(arcmin) }}
     />
   );
-}
-
-function ratioNote(r: number): string {
-  if (r > 1.03)
-    return "designs will feel roomier there; check overwhelm at close range.";
-  if (r < 0.5)
-    return "half your working size or less — treat small text as invisible.";
-  if (r < 0.97)
-    return "everything shrinks; padding and hit targets tighten first.";
-  return "a near-1:1 reference for this setup.";
 }
 
 /**
@@ -116,48 +107,6 @@ function SpecLines({ d }: { d: Device }) {
       <StretchChip item={activeItem} d={d} />
     </div>
   );
-}
-
-/** One text entry for column 2 (measure box or keyframe line). */
-interface TextEntry {
-  id: string;
-  label: string;
-  /** Full-image normalized height used for verdicts (group-corrected). */
-  h: number;
-  srcH: number;
-  /** Keyframe timestamp for video lines; null = plain measure box. */
-  kfTime: number | null;
-  /** Removable only for real measure boxes. */
-  removable: boolean;
-  /** Full-image box rect, for per-device fit-crop visibility. */
-  box: { x: number; y: number; w: number; h: number };
-}
-
-function buildTextEntries(item: MediaItem): TextEntry[] {
-  const entries: TextEntry[] = [];
-  (item.boxes ?? []).forEach((b, idx) => {
-    entries.push({
-      id: b.id,
-      label: b.label?.trim() || `Box ${idx + 1}`,
-      h: b.h,
-      srcH: Math.round(b.h * item.height),
-      kfTime: null,
-      removable: true,
-      box: { x: b.x, y: b.y, w: b.w, h: b.h },
-    });
-  });
-  for (const k of item.scanKeyframes ?? [])
-    for (const l of k.lines ?? [])
-      entries.push({
-        id: l.id,
-        label: l.text,
-        h: l.sizePx ? l.sizePx / item.height : l.box.h,
-        srcH: Math.round(l.sizePx ?? l.box.h * item.height),
-        kfTime: k.timeSec,
-        removable: false,
-        box: l.box,
-      });
-  return entries;
 }
 
 /** Perception Report tab content (hosted by the workbench panel). */
