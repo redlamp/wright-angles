@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { displayLength } from "@/lib/units";
+import { zoomWarningPct } from "@/lib/browser-zoom";
 import {
   CARD_ASPECT,
   CARD_DIAGONAL_RATIO,
@@ -201,11 +202,9 @@ export function CalibrationPanel({
     // — see stageW/H vs viewportW/H below.
     const minPx = initial * 0.4;
     const maxPx = initial * 3;
-    // screen.width stays in zoom-independent CSS px while dpr scales
-    // with page zoom, so their product against the native width reads
-    // the zoom factor (same trick as the display-area chip, 11.1).
+    // Same check as the display-area chip; see lib/browser-zoom.
     const zoomSuspect =
-      Math.abs((dpr * window.screen.width) / resolution.w - 1) > 0.02;
+      zoomWarningPct(window.screen.width, dpr, resolution.w) !== null;
     // The stage CANVAS is fixed for the session so growing the card
     // never crowds the handles against its own wall. Dragging one edge
     // (or corner) pins the OPPOSITE one and leaves the box's starting

@@ -40,6 +40,7 @@ import { deviceViewScale } from "@/lib/view-scale";
 import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { groupColor } from "@/lib/text-groups";
+import { zoomWarningPct } from "@/lib/browser-zoom";
 import {
   FULL_CROP,
   boxInCrop,
@@ -823,20 +824,11 @@ export function DisplayArea() {
     [k, dpr],
   );
 
-  /**
-   * Browser-zoom estimate (plan 11.1). screen.width is in CSS px and
-   * ignores page zoom while devicePixelRatio scales with it, so with
-   * This Device set to this screen's real panel their product over the
-   * native width reads the zoom factor. >±2% off earns a warning —
-   * zoomed rendering breaks every physical-scale promise.
-   */
-  const zoomPct = useMemo(() => {
-    if (!vp) return null;
-    const pct = Math.round(
-      ((vp.screenW * dpr) / thisDevice.resolution.w) * 100,
-    );
-    return Math.abs(pct - 100) > 2 ? pct : null;
-  }, [vp, dpr, thisDevice.resolution.w]);
+  /** Browser zoom off 100%, as a percent — see lib/browser-zoom. */
+  const zoomPct = useMemo(
+    () => (vp ? zoomWarningPct(vp.screenW, dpr, thisDevice.resolution.w) : null),
+    [vp, dpr, thisDevice.resolution.w],
+  );
 
   // Snapshot the composition at This Device's native resolution — a
   // shareable reference PNG of the comparison (poster frame for videos).
