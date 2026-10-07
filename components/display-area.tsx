@@ -25,22 +25,18 @@ import { useHostArea } from "@/components/display-area/use-host-area";
 import { exportViewPng } from "@/components/display-area/export-view";
 import { BoxLayer, setDeviceHover } from "@/components/display-area/box-layer";
 import { useOverlayBoxes } from "@/components/display-area/use-overlay-boxes";
+import { AnnotationLayer } from "@/components/display-area/annotation-layer";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
 import { formatDistance, simulatedSizeOnHostPx } from "@/lib/display-math";
-import { deviceFitCrop, fitBox, fitModeOf } from "@/lib/fit";
+import { deviceFitCrop, fitModeOf } from "@/lib/fit";
 import { deviceViewScale } from "@/lib/view-scale";
 import { zoomWarningPct } from "@/lib/browser-zoom";
-import {
-  boxInCrop,
-  cropDims,
-  isFullFrame,
-  viewBoxOf,
-} from "@/lib/media-crop";
-import type { Device, HighlightBox } from "@/lib/types";
+import { cropDims, isFullFrame, viewBoxOf } from "@/lib/media-crop";
+import type { Device } from "@/lib/types";
 
 export { useScreenViewport };
 
@@ -100,8 +96,6 @@ export function DisplayArea() {
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const addBox = useMediaStore((s) => s.addBox);
   const removeBox = useMediaStore((s) => s.removeBox);
-  const [draft, setDraft] = useState<HighlightBox | null>(null);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
 
   const { overlayBoxes, groupById, worstByBox } = useOverlayBoxes(
     activeItem,
@@ -522,110 +516,17 @@ export function DisplayArea() {
 
       {/* Host annotation layer sits above every device rect so drawing
           and box selection are never blocked by nested rects. */}
-      {(() => {
-        const hostRect = rects.find((r) => r.device.isThis);
-        if (!activeItem || !eff || !crop || !hostRect) return null;
-        // The layer overlays This Device's rect, so it maps through
-        // This Device's fit — same geometry its BoxLayer uses.
-        const hostMode = fitModeOf(thisDevice);
-        const area = fitBox(
-          hostMode,
-          eff.width,
-          eff.height,
-          hostRect.w,
-          hostRect.h,
-        );
-        // Draft is kept in full-image coords like persisted boxes; render
-        // it through the crop window like BoxLayer does.
-        const draftCb = draft ? boxInCrop(draft, crop) : null;
-        return (
-          <div
-            // Above every device rect (z 1..n), below the app chrome
-            // (sidebar z-30, panels z-40+), so UI stays clickable while
-            // drawing.
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: center.x,
-              top: center.y,
-              width: hostRect.w,
-              height: hostRect.h,
-            }}
-          >
-            {draftCb ? (
-              <div
-                className="pointer-events-none absolute border border-dashed border-white/80"
-                style={{
-                  left: area.x + draftCb.x * area.w,
-                  top: area.y + draftCb.y * area.h,
-                  width: draftCb.w * area.w,
-                  height: draftCb.h * area.h,
-                }}
-              />
-            ) : null}
-            {drawMode ? (
-              <div
-                className="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
-                onPointerDown={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const a = fitBox(
-                    hostMode,
-                    eff.width,
-                    eff.height,
-                    r.width,
-                    r.height,
-                  );
-                  if (!a.w) return;
-                  // Screen → crop space → full-image coords (boxes are
-                  // stored against the full intrinsic image).
-                  dragStart.current = {
-                    x: crop.x + ((e.clientX - r.left - a.x) / a.w) * crop.w,
-                    y: crop.y + ((e.clientY - r.top - a.y) / a.h) * crop.h,
-                  };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (!dragStart.current) return;
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const a = fitBox(
-                    hostMode,
-                    eff.width,
-                    eff.height,
-                    r.width,
-                    r.height,
-                  );
-                  if (!a.w) return;
-                  const clamp = (v: number) => Math.min(1, Math.max(0, v));
-                  const nx =
-                    crop.x + clamp((e.clientX - r.left - a.x) / a.w) * crop.w;
-                  const ny =
-                    crop.y + clamp((e.clientY - r.top - a.y) / a.h) * crop.h;
-                  const s = dragStart.current;
-                  setDraft({
-                    id: "draft",
-                    x: Math.min(s.x, nx),
-                    y: Math.min(s.y, ny),
-                    w: Math.abs(nx - s.x),
-                    h: Math.abs(ny - s.y),
-                  });
-                }}
-                onPointerUp={() => {
-                  const d = draft;
-                  dragStart.current = null;
-                  setDraft(null);
-                  if (d && d.w > 0.004 && d.h > 0.004) {
-                    const id =
-                      typeof crypto !== "undefined" && "randomUUID" in crypto
-                        ? crypto.randomUUID()
-                        : Math.random().toString(36).slice(2);
-                    addBox(activeItem.id, { ...d, id });
-                    selectBox(id);
-                  }
-                }}
-              />
-            ) : null}
-          </div>
-        );
-      })()}
+      <AnnotationLayer
+        rects={rects}
+        activeItem={activeItem}
+        eff={eff}
+        crop={crop}
+        thisDevice={thisDevice}
+        center={center}
+        drawMode={drawMode}
+        addBox={addBox}
+        selectBox={selectBox}
+      />
 
       {rects.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center text-base text-white/40">
