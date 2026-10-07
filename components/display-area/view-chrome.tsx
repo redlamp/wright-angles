@@ -101,6 +101,8 @@ export function ViewActions({
         <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
         <button
           type="button"
+          aria-label="Lock content to the monitor's center"
+          aria-pressed={displayCenter === "screen"}
           title={
             displayCenter === "screen"
               ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
@@ -120,6 +122,8 @@ export function ViewActions({
         </button>
         <button
           type="button"
+          aria-label="True-scale viewport"
+          aria-pressed={viewportActive}
           title={
             viewportActive
               ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."

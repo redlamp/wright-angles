@@ -222,6 +222,7 @@ export function TransportControls() {
       </button>
       <div className="relative min-w-0 flex-1">
         <Slider
+          thumbLabel="Playhead"
           min={0}
           max={Math.max(0.1, durationSec ?? 0.1)}
           step={0.05}

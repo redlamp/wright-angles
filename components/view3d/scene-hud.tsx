@@ -113,6 +113,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
             Height
           </span>
           <Slider
+            thumbLabel="Viewer height"
             value={heightCm}
             min={120}
             max={220}

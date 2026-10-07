@@ -139,6 +139,7 @@ export function OffsetControls({
       {/* Not disabled at zero: dragging IS the intent to set an offset,
           so it takes effect rather than making you flip the switch. */}
       <Slider
+        thumbLabel={`${label} screen height offset`}
         min={-OFFSET_LIMIT_CM}
         max={OFFSET_LIMIT_CM}
         step={1}

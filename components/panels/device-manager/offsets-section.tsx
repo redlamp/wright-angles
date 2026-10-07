@@ -87,6 +87,7 @@ export function OffsetsSection({
           return (
             <StanceRow key={s.id} label={s.label} active={s.id === scenario}>
               <Slider
+                thumbLabel={`${s.label} screen tilt`}
                 min={-TILT_LIMIT_DEG}
                 max={TILT_LIMIT_DEG}
                 step={1}

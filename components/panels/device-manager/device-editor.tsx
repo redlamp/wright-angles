@@ -21,6 +21,7 @@ import {
   CM_PER_IN,
   aspectFromResolution,
   distToSlider,
+  formatDistance,
   sliderToDist,
 } from "@/lib/display-math";
 import { useMediaStore } from "@/stores/media-store";
@@ -61,6 +62,7 @@ export function DeviceEditor({
   onDuplicate?: () => void;
 }) {
   const sizeUnit = useSettingsStore((s) => s.sizeUnit);
+  const distanceUnit = useSettingsStore((s) => s.unit);
   const setSizeUnit = useSettingsStore((s) => s.setSizeUnit);
   const scenario = useViewerStore((s) => s.scenario);
   const heightCm = useViewerStore((s) => s.heightCm);
@@ -141,6 +143,13 @@ export function DeviceEditor({
               travel as TV/projector ones. Distances past the slider
               max (stepper goes to 9999) pin the thumb at 1. */}
           <Slider
+            thumbLabel="Viewing distance"
+            thumbValueText={(t) =>
+              formatDistance(
+                sliderToDist(t, DIST_MIN_CM, DIST_SLIDER_MAX_CM),
+                distanceUnit,
+              )
+            }
             min={0}
             max={1}
             step={0.001}
@@ -178,6 +187,7 @@ export function DeviceEditor({
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-2">
           <Slider
+            thumbLabel="Display size, diagonal"
             min={3}
             max={150}
             step={0.1}
@@ -241,7 +251,7 @@ export function DeviceEditor({
               if (found) onPatch({ aspect: { w: found.w, h: found.h } });
             }}
           >
-            <SelectTrigger className="w-22 shrink-0">
+            <SelectTrigger className="w-22 shrink-0" aria-label="Aspect ratio">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -319,7 +329,7 @@ export function DeviceEditor({
               onPatch({ curvatureR: Number(v) || undefined })
             }
           >
-            <SelectTrigger className="w-36 shrink-0">
+            <SelectTrigger className="w-36 shrink-0" aria-label="Screen curvature">
               <SelectValue>
                 {device.curvatureR ? `${device.curvatureR}R` : "Flat"}
               </SelectValue>

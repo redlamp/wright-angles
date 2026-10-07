@@ -216,6 +216,7 @@ export function CalibrationPanel({
       {/* Coarse control alongside the edges/corners — a big misjudged
           seed is faster to fix in one slider drag than several. */}
       <Slider
+        thumbLabel="card size, coarse"
         min={env.minPx}
         max={env.maxPx}
         step={0.25}

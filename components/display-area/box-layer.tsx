@@ -73,6 +73,10 @@ export function BoxLayer({
           <div
             key={b.id}
             role={isHost ? "button" : undefined}
+            aria-label={
+              isHost ? `Measure box: ${b.label || "unlabeled"}` : undefined
+            }
+            aria-pressed={isHost ? selected : undefined}
             className="absolute"
             style={{
               left: area.x + cb.x * area.w,
