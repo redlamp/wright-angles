@@ -1,31 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlignCenterVerticalIcon,
-  DownloadIcon,
-  ImageIcon,
-  PencilRulerIcon,
-  PictureInPicture2Icon,
-  WallpaperIcon,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CvdChip } from "@/components/cvd-filters";
 import { GifView, VideoMirror } from "@/components/media-view";
 import {
   useScreenViewport,
 } from "@/components/display-area/use-screen-viewport";
-import {
-  CropFrame,
-  OverlaysChip,
-  SafeAreas,
-} from "@/components/display-area/overlays";
+import { CropFrame, SafeAreas } from "@/components/display-area/overlays";
 import { PixelLoupe } from "@/components/display-area/pixel-loupe";
 import { useHostArea } from "@/components/display-area/use-host-area";
 import { exportViewPng } from "@/components/display-area/export-view";
 import { BoxLayer, setDeviceHover } from "@/components/display-area/box-layer";
 import { useOverlayBoxes } from "@/components/display-area/use-overlay-boxes";
 import { AnnotationLayer } from "@/components/display-area/annotation-layer";
+import {
+  ScaleReadouts,
+  ViewActions,
+} from "@/components/display-area/view-chrome";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -558,100 +549,25 @@ export function DisplayArea() {
 
 
       {/* Readouts stay bottom-right; action buttons live top-right. */}
-      <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
-        {zoomPct !== null ? (
-          <div
-            className="rounded-md bg-[#f5a524]/90 px-2 py-1 font-mono text-sm text-black"
-            title="Browser zoom (or a This Device resolution that doesn't match this screen) breaks the 1:1 physical-scale promise. Set zoom to 100% — or fix This Device — for true sizes."
-          >
-            ⚠ browser zoom ≈ {zoomPct}% — sizes are not true
-          </div>
-        ) : null}
-        {scalePct !== null ? (
-          <div className="rounded-md bg-black/50 px-2 py-1 font-mono text-sm text-white/60">
-            {viewportActive
-              ? scalePct >= 99 && scalePct <= 101
-                ? "1:1 physical scale · drag to pan"
-                : `${scalePct}% — This Device res ≠ this screen's native res`
-              : scalePct === 100
-                ? "1:1 physical scale"
-                : `${scalePct}% scale — viewport mode for 1:1`}
-          </div>
-        ) : null}
-      </div>
+      <ScaleReadouts
+        zoomPct={zoomPct}
+        scalePct={scalePct}
+        viewportActive={viewportActive}
+      />
       {/* data-ui-chrome: pan/select gestures must never start here —
           select/menu triggers aren't <button>s, so the generic guard
           can't see them (the click-through device-select bug). */}
-      <div
-        data-ui-chrome
-        className="absolute top-2 right-2 z-40 flex items-center gap-1.5"
-      >
-          {activeItem ? (
-            <button
-              type="button"
-              title={
-                drawMode
-                  ? "Done drawing boxes (Esc)"
-                  : "Draw measurement boxes on the image"
-              }
-              className={cn(
-                "flex h-7 w-28 items-center justify-center gap-1 rounded-md font-mono text-sm transition-colors",
-                drawMode
-                  ? "bg-white/25 text-white"
-                  : "bg-black/50 text-white/60 hover:text-white",
-              )}
-              onClick={() => setDrawMode(!drawMode)}
-            >
-              <PencilRulerIcon className="size-3" />
-              {drawMode ? "done" : "measure"}
-            </button>
-          ) : null}
-          <OverlaysChip />
-          <CvdChip className="rounded-md border-0 bg-black/50 font-mono text-sm text-white/60 hover:text-white dark:bg-black/50 dark:hover:bg-black/50" />
-          <button
-            type="button"
-            title={
-              displayCenter === "screen"
-                ? "Locked to your monitor: content anchors to the physical screen's center, so moving the window pans across it. Click to center in the window instead."
-                : "Centered in this window. Click to lock the content to your monitor's physical center instead."
-            }
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
-            onClick={() => {
-              setDisplayCenter(displayCenter === "screen" ? "window" : "screen");
-              setPanOffset({ x: 0, y: 0 });
-            }}
-          >
-            {displayCenter === "screen" ? (
-              <PictureInPicture2Icon className="size-3.5" />
-            ) : (
-              <AlignCenterVerticalIcon className="size-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            title={
-              viewportActive
-                ? "Window is a true-scale viewport into This Device's screen. Click for fit-to-window."
-                : "Whole composition shrunk to fit the window. Click for the true-scale viewport."
-            }
-            className="flex h-7 w-9 items-center justify-center rounded-md bg-black/50 text-white/60 transition-colors hover:text-white"
-            onClick={() => setDisplayMode(viewportActive ? "fit" : "viewport")}
-          >
-            {viewportActive ? (
-              <ImageIcon className="size-3.5" />
-            ) : (
-              <WallpaperIcon className="size-3.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            title="Export this view as a PNG reference image"
-            className="flex h-7 w-32 items-center justify-center gap-1 rounded-md bg-black/50 font-mono text-sm text-white/60 transition-colors hover:text-white"
-            onClick={() => void exportView()}
-          >
-            <DownloadIcon className="size-3" /> export view
-          </button>
-      </div>
+      <ViewActions
+        activeItem={activeItem}
+        drawMode={drawMode}
+        setDrawMode={setDrawMode}
+        displayCenter={displayCenter}
+        setDisplayCenter={setDisplayCenter}
+        setPanOffset={setPanOffset}
+        viewportActive={viewportActive}
+        setDisplayMode={setDisplayMode}
+        exportView={exportView}
+      />
     </div>
   );
 }
