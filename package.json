@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack -p 7841",
-    "build": "next build",
+    "build": "next build && node scripts/ensure-sample-manifest.mjs",
     "start": "next start -p 7841",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",

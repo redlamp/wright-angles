@@ -66,9 +66,6 @@ async function openPage({ onboarded }) {
     }
   });
   page.on("response", (r) => {
-    // The sample-image manifest is an optional, gitignored dev file; the
-    // media library treats its 404 as "no samples".
-    if (r.url().endsWith("/reference/manifest.json")) return;
     if (r.status() >= 400) problems.push(`HTTP ${r.status()}: ${r.url()}`);
   });
   page.on("request", (r) => {
