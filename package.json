@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "bun test",
+    "smoke": "bun scripts/smoke.mjs",
     "check-version": "node scripts/check-version.mjs"
   },
   "dependencies": {
@@ -39,6 +40,7 @@
     "@types/three": "^0.185.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

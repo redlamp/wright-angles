@@ -33,8 +33,13 @@ conflict before coding.
 - `bun run dev`: dev server on port 7841 (pinned)
 - `bun test`: unit tests (math lib)
 - `bun run typecheck` / `bun run lint` / `bun run build`
-- CI (`.github/workflows/ci.yml`) runs typecheck, lint, test and the
-  export build on pushes to `dev` and on PRs.
+- `bun run smoke`: headless-Chromium smoke test of an export build (`out/`);
+  fails on page errors and on any request leaving localhost. Run after
+  `NEXT_OUTPUT_EXPORT=1 bun run build`; cloud sessions set
+  `SMOKE_CHROMIUM=/opt/pw-browsers/chromium`. First local run needs
+  `bunx playwright install chromium`.
+- CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, the export
+  build and the smoke test on pushes to `dev` and on PRs.
 
 ## Architectural rules
 
