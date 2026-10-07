@@ -8,7 +8,7 @@ import {
   type Texture,
 } from "three";
 import { useFrame } from "@react-three/fiber";
-import { Billboard, Line, RoundedBox, Text } from "@react-three/drei";
+import { Line, RoundedBox } from "@react-three/drei";
 import type { Device } from "@/lib/types";
 import type { DisplayFill } from "@/stores/settings-store";
 import { physicalSizeCm } from "@/lib/display-math";
@@ -19,15 +19,10 @@ import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
 import type { ScenePalette } from "./scene-palette";
 import {
-  SHOW_LABELS,
   setDeviceHover,
-  FONT_URL,
   TWEEN_S,
-  dropLen,
   updateProjection,
   applyLabelLift,
-  raiseDistLabel,
-  raiseNameLabel,
   applyNameOffset,
   applyCenterY,
   NAME_FONT_CM,
@@ -35,6 +30,7 @@ import {
 import DeviceContentBoxes from "./device-rect-content-boxes";
 import DeviceScreen from "./device-rect-screen";
 import { useDistanceDrag } from "./use-distance-drag";
+import { DeviceFloorMarker, DeviceNameLabel } from "./device-rect-labels";
 
 export { NAME_FONT_CM };
 
@@ -347,8 +343,6 @@ export default function DeviceRect({
       ? HANDHELD_BODIES[device.deviceName]
       : undefined;
 
-  const nameSize = NAME_FONT_CM;
-
   return (
     <group
       ref={rectRef}
@@ -449,103 +443,24 @@ export default function DeviceRect({
         </lineSegments>
       ) : null}
 
-      {SHOW_LABELS ? (
-        <Billboard position={[0, heightCm / 2 + 3 + lp.nameLift, 0]}>
-          {/* Registration-point clip (same model as the distance
-              labels): the horizontal de-collision offset lives on this
-              inner group and flips with the camera side per frame, so
-              nested rects' names keep a stable side relative to the
-              viewer instead of crossing over. */}
-          <group ref={nameOffsetRef} position={[lp.nameX, 0, 0]}>
-            <Text
-              font={FONT_URL}
-              fontSize={nameSize}
-              color={device.color}
-              anchorX="center"
-              anchorY="bottom"
-              outlineColor="#000000"
-              outlineOpacity={0.5}
-              outlineOffsetX="3%"
-              outlineOffsetY="3%"
-              onSync={raiseNameLabel}
-            >
-              {device.label}
-            </Text>
-          </group>
-        </Billboard>
-      ) : null}
+      <DeviceNameLabel
+        device={device}
+        heightCm={heightCm}
+        lp={lp}
+        nameOffsetRef={nameOffsetRef}
+      />
 
-      {/* Unit-length drop line anchored at the rect bottom; applyCenterY
-          scales it down to the floor as the rect animates. lineWidth is in
-          screen px, so scale.y doesn't fatten it. */}
-      <group
-        ref={dropRef}
-        position={[0, -heightCm / 2, 0]}
-        scale={[1, dropLen(centerY, heightCm), 1]}
-      >
-        <Line
-          points={[
-            [0, 0, 0],
-            [0, -1, 0],
-          ]}
-          color={device.color}
-          lineWidth={1}
-          transparent
-          opacity={0.45}
-        />
-      </group>
-      {SHOW_LABELS ? (
-        /* Floor marker: a small node where the drop line lands, with the
-           distance laid flat on the ground at 45° (spreadsheet-header
-           style) — parallel diagonals never collide. */
-        <group ref={labelRef} position={[0, -centerY + 0.12, 0]}>
-          <mesh position={[0, 1.2, 0]}>
-            <sphereGeometry args={[1.4, 16, 12]} />
-            <meshBasicMaterial color={device.color} />
-          </mesh>
-          {/* Oversized invisible hit target: the node doubles as a drag
-              handle for the viewing distance along the sight line. */}
-          {dragHandlers ? (
-            <mesh position={[0, 1.2, 0]} {...dragHandlers}>
-              <sphereGeometry args={[5, 8, 6]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
-          ) : null}
-          {/* Per Taylor's markup (2026-08-15 screenshots): the label
-              hangs just below-right of the node, sloping 30° south-east
-              in screen space, text reading along the slope. Parallel
-              diagonals keep neighbors legible; static offsets only. */}
-          {/* Flash model: a clip whose registration point (text left
-              edge, vertical center) anchors ON the node; the 30° slope
-              rotates about that point. De-collision moves the text's
-              local Y inside the rotated clip, so neighboring parallel
-              labels separate perpendicular to the slope with an even
-              buffer. */}
-          <Billboard position={[0, 1.2, 0]}>
-            <group rotation={[0, 0, -Math.PI / 6]}>
-              {/* Inner clip: per-frame camera-aware lift (applyLabelLift). */}
-              <group ref={distLiftRef} position={[0, lp.distLift, 0]}>
-                <Text
-                  font={FONT_URL}
-                  fontSize={5}
-                  color={device.color}
-                  anchorX="left"
-                  anchorY="middle"
-                  position={[6, 0, 0]}
-                  outlineColor="#000000"
-                  outlineOpacity={0.5}
-                  outlineOffsetX="3%"
-                  outlineOffsetY="3%"
-                  onSync={raiseDistLabel}
-                  {...(dragHandlers ?? {})}
-                >
-                  {shownDistLabel}
-                </Text>
-              </group>
-            </group>
-          </Billboard>
-        </group>
-      ) : null}
+      <DeviceFloorMarker
+        device={device}
+        centerY={centerY}
+        heightCm={heightCm}
+        lp={lp}
+        shownDistLabel={shownDistLabel}
+        dragHandlers={dragHandlers}
+        dropRef={dropRef}
+        labelRef={labelRef}
+        distLiftRef={distLiftRef}
+      />
     </group>
   );
 }
