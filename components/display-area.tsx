@@ -21,6 +21,8 @@ import {
   SafeAreas,
 } from "@/components/display-area/overlays";
 import { PixelLoupe } from "@/components/display-area/pixel-loupe";
+import { useHostArea } from "@/components/display-area/use-host-area";
+import { exportViewPng } from "@/components/display-area/export-view";
 import { BoxLayer, setDeviceHover } from "@/components/display-area/box-layer";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -36,7 +38,6 @@ import { isAnimatedItem } from "@/lib/playback-engine";
 import { activeKeyframe } from "@/lib/scan-keyframes";
 import { zoomWarningPct } from "@/lib/browser-zoom";
 import {
-  FULL_CROP,
   boxInCrop,
   cropDims,
   isFullFrame,
@@ -75,45 +76,7 @@ export function DisplayArea() {
   const displayFill = useSettingsStore((s) => s.displayFill);
   const unit = useSettingsStore((s) => s.unit);
 
-  const ref = useRef<HTMLDivElement>(null);
-  const [area, setArea] = useState({ w: 0, h: 0 });
-  const [dpr, setDpr] = useState(1);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setArea({
-        w: entry.contentRect.width,
-        h: entry.contentRect.height,
-      });
-    });
-    ro.observe(el);
-    const updateDpr = () => setDpr(window.devicePixelRatio || 1);
-    updateDpr();
-    // `resize` alone misses a DPR change with no size change — dragging
-    // the window to a different-DPI monitor, most commonly. A
-    // matchMedia query on the CURRENT ratio fires once that ratio no
-    // longer matches; re-arm it on the new ratio each time so it keeps
-    // tracking indefinitely, not just the first crossing.
-    let mq: MediaQueryList | null = null;
-    const onDprChange = () => {
-      updateDpr();
-      armDprWatch();
-    };
-    const armDprWatch = () => {
-      mq?.removeEventListener("change", onDprChange);
-      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      mq.addEventListener("change", onDprChange);
-    };
-    armDprWatch();
-    window.addEventListener("resize", updateDpr);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", updateDpr);
-      mq?.removeEventListener("change", onDprChange);
-    };
-  }, []);
+  const { ref, area, dpr } = useHostArea();
 
   const activeItem = items.find((i) => i.id === activeId) ?? null;
   const activeUrl = activeItem ? objectUrls[activeItem.id] : null;
@@ -323,103 +286,18 @@ export function DisplayArea() {
     [vp, dpr, thisDevice.resolution.w],
   );
 
-  // Snapshot the composition at This Device's native resolution — a
-  // shareable reference PNG of the comparison (poster frame for videos).
-  const exportView = useCallback(async () => {
-    const host = thisDevice;
-    const W = host.resolution.w;
-    const H = host.resolution.h;
-    const c = document.createElement("canvas");
-    c.width = W;
-    c.height = H;
-    const g = c.getContext("2d")!;
-    g.fillStyle = "#161616";
-    g.fillRect(0, 0, W, H);
-
-    const all: (Device & { isThis?: boolean })[] = [
-      ...(host.visible ? [{ ...host, isThis: true }] : []),
-      ...devices.filter((d) => d.visible),
-    ];
-    const rectList = all
-      .map((d) => {
-        const sim = d.isThis
-          ? { widthPx: W, heightPx: H }
-          : simulatedSizeOnHostPx(d, host);
-        return { d, w: sim.widthPx, h: sim.heightPx };
-      })
-      .sort((a, b) => b.w * b.h - a.w * a.h);
-
-    let img: HTMLImageElement | null = null;
-    if (activeUrl) {
-      img = new Image();
-      img.src = activeUrl;
-      await new Promise((res) => {
-        img!.onload = res;
-        img!.onerror = res;
-      });
-      if (!img.naturalWidth) img = null;
-    }
-
-    for (const { d, w, h } of rectList) {
-      const x = (W - w) / 2;
-      const y = (H - h) / 2;
-      if (img) {
-        g.fillStyle = "#000";
-        g.fillRect(x, y, w, h);
-        // Draw only this device's rendered crop window (source crop
-        // reframed by its fit mode; full frame when neither applies).
-        const c = activeItem ? deviceFitCrop(activeItem, d) : FULL_CROP;
-        const sw = c.w * img.naturalWidth;
-        const sh = c.h * img.naturalHeight;
-        // Same fitBox the on-screen rect uses, so the export is the
-        // screenshot it claims to be — a stretched device fills its rect.
-        const a = fitBox(fitModeOf(d), sw, sh, w, h);
-        g.drawImage(
-          img,
-          c.x * img.naturalWidth,
-          c.y * img.naturalHeight,
-          sw,
-          sh,
-          x + a.x,
-          y + a.y,
-          a.w,
-          a.h,
-        );
-      } else {
-        g.fillStyle =
-          displayFill === "device-color" ? d.color : "rgba(0,0,0,0.5)";
-        g.fillRect(x, y, w, h);
-      }
-      g.strokeStyle = d.color;
-      g.lineWidth = Math.max(2, W / 800);
-      g.strokeRect(x, y, w, h);
-      g.fillStyle = d.color;
-      g.font = `${Math.max(16, Math.round(W / 90))}px monospace`;
-      const label = `${d.label} · ${formatDistance(d.distanceCm, unit)}`;
-      g.fillText(label, x + 8, y > 30 ? y - 8 : y + 26);
-    }
-
-    g.fillStyle = "rgba(255,255,255,0.55)";
-    g.font = `${Math.max(13, Math.round(W / 110))}px monospace`;
-    g.fillText(
-      `Wright Angles — host: ${host.label} ${W}×${H} @ ${formatDistance(host.distanceCm, unit)}`,
-      16,
-      H - 16,
-    );
-
-    const blob = await new Promise<Blob | null>((r) =>
-      c.toBlob(r, "image/png"),
-    );
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `wright-angles-view-${new Date().toISOString().slice(0, 10)}.png`;
-    a.click();
-    // Deferred: revoking synchronously after click() can beat Firefox/
-    // Safari to actually starting the download.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [thisDevice, devices, activeUrl, activeItem, displayFill, unit]);
+  const exportView = useCallback(
+    () =>
+      exportViewPng({
+        thisDevice,
+        devices,
+        activeUrl,
+        activeItem,
+        displayFill,
+        unit,
+      }),
+    [thisDevice, devices, activeUrl, activeItem, displayFill, unit],
+  );
 
   /**
    * Topmost device rect (highest z = last in draw order) under a point.
