@@ -12,7 +12,6 @@ import {
   idbClearMedia,
   idbDeleteMedia,
   idbGetAllMedia,
-  idbGetMedia,
   idbPutMedia,
 } from "@/lib/idb";
 import { stripImageMetadata } from "@/lib/strip-metadata";
@@ -38,6 +37,11 @@ import {
   setItemScanKeyframes,
   updateItemBox,
 } from "@/lib/media-items";
+import {
+  editItem,
+  persistItemMeta,
+  registerMediaUndo,
+} from "@/stores/media-edit";
 
 export { GENERATED_KINDS, type GeneratedKind } from "@/lib/generated-media";
 
@@ -45,20 +49,6 @@ const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
-
-/** Re-write one item's metadata beside its stored blob(s), by id — a
- * single-record read/write, not a scan of the whole library. */
-function persistItemMeta(item: MediaItem) {
-  void idbGetMedia(item.id).then((rec) => {
-    if (rec) void idbPutMedia(item.id, { ...rec, meta: item });
-  });
-}
-
-/** Re-write an item's metadata beside its stored blob(s). */
-function persistMeta(get: () => { items: MediaItem[] }, id: string) {
-  const item = get().items.find((i) => i.id === id);
-  if (item) persistItemMeta(item);
-}
 
 interface MediaState {
   items: MediaItem[];
@@ -333,24 +323,30 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   rename: (id, name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    set((s) => ({ items: renameItem(s.items, id, trimmed) }));
-    persistMeta(get, id);
+    editItem(set, get, id, "Rename media", (items) =>
+      renameItem(items, id, trimmed),
+    );
   },
 
-  addBox: (mediaId, box) => {
-    set((s) => ({ items: addItemBox(s.items, mediaId, box) }));
-    persistMeta(get, mediaId);
-  },
+  addBox: (mediaId, box) =>
+    editItem(set, get, mediaId, "Add box", (items) =>
+      addItemBox(items, mediaId, box),
+    ),
 
-  updateBox: (mediaId, boxId, patch) => {
-    set((s) => ({ items: updateItemBox(s.items, mediaId, boxId, patch) }));
-    persistMeta(get, mediaId);
-  },
+  updateBox: (mediaId, boxId, patch) =>
+    editItem(
+      set,
+      get,
+      mediaId,
+      "Edit box",
+      (items) => updateItemBox(items, mediaId, boxId, patch),
+      `box:${boxId}`,
+    ),
 
-  removeBox: (mediaId, boxId) => {
-    set((s) => ({ items: removeItemBox(s.items, mediaId, boxId) }));
-    persistMeta(get, mediaId);
-  },
+  removeBox: (mediaId, boxId) =>
+    editItem(set, get, mediaId, "Delete box", (items) =>
+      removeItemBox(items, mediaId, boxId),
+    ),
 
   remove: async (id) => {
     await idbDeleteMedia(id);
@@ -371,18 +367,21 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set({ activeId: id });
   },
 
-  setReferenceHeight: (id, referenceHeight) => {
-    set((s) => ({
-      items: setItemReferenceHeight(s.items, id, referenceHeight),
-    }));
-    persistMeta(get, id);
-  },
+  setReferenceHeight: (id, referenceHeight) =>
+    editItem(
+      set,
+      get,
+      id,
+      "Reference height",
+      (items) => setItemReferenceHeight(items, id, referenceHeight),
+      "reference-height",
+    ),
 
-  setCrop: (id, crop) => {
-    // A cleared crop drops the key so the item persists crop-free.
-    set((s) => ({ items: setItemCrop(s.items, id, crop) }));
-    persistMeta(get, id);
-  },
+  // A cleared crop drops the key so the item persists crop-free.
+  setCrop: (id, crop) =>
+    editItem(set, get, id, crop ? "Crop" : "Clear crop", (items) =>
+      setItemCrop(items, id, crop),
+    ),
 
   reorderItem: (id, toIndex) => {
     // Captured from the set() updater so the persist pass below reuses
@@ -400,20 +399,19 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     for (const item of reordered) persistItemMeta(item);
   },
 
-  clearDetection: (id) => {
-    set((s) => ({ items: clearItemDetection(s.items, id) }));
-    persistMeta(get, id);
-  },
+  clearDetection: (id) =>
+    editItem(set, get, id, "Clear detection", (items) =>
+      clearItemDetection(items, id),
+    ),
 
-  setScan: (id, scan) => {
-    set((s) => ({ items: setItemScan(s.items, id, scan) }));
-    persistMeta(get, id);
-  },
+  // Scan results are machine output: not undo steps (see editItem).
+  setScan: (id, scan) =>
+    editItem(set, get, id, null, (items) => setItemScan(items, id, scan)),
 
-  setScanKeyframes: (id, scanKeyframes) => {
-    set((s) => ({ items: setItemScanKeyframes(s.items, id, scanKeyframes) }));
-    persistMeta(get, id);
-  },
+  setScanKeyframes: (id, scanKeyframes) =>
+    editItem(set, get, id, null, (items) =>
+      setItemScanKeyframes(items, id, scanKeyframes),
+    ),
 
   wipeAll: async () => {
     await idbClearMedia();
@@ -433,3 +431,5 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
     set({ items: [], objectUrls: {}, videoUrls: {}, activeId: null });
   },
 }));
+
+registerMediaUndo(useMediaStore);

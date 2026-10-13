@@ -7,6 +7,7 @@ import { groupTextLines } from "./text-groups";
 import type { KeyframeLine, MediaItem } from "./types";
 import { useMediaStore } from "@/stores/media-store";
 import { usePlaybackStore } from "@/stores/playback-store";
+import { withoutHistory } from "@/stores/history-store";
 
 /**
  * Store-driven text detection, callable from any panel (Media Library,
@@ -113,10 +114,13 @@ export async function detectTextForItem(itemId: string): Promise<void> {
   const url = media.objectUrls[itemId];
   if (!url) throw new Error("media blob not loaded");
   const { lines, medianPx } = await ocrUrl(url, item);
-  for (const old of item.scan?.lines ?? []) media.removeBox(itemId, old.id);
-  for (const line of lines)
-    media.addBox(itemId, { id: line.id, label: line.text, ...line.box });
-  media.setScan(itemId, { lines, medianPx });
+  // Machine output, not undo steps: it invalidates the item's older ones.
+  withoutHistory(() => {
+    for (const old of item.scan?.lines ?? []) media.removeBox(itemId, old.id);
+    for (const line of lines)
+      media.addBox(itemId, { id: line.id, label: line.text, ...line.box });
+    media.setScan(itemId, { lines, medianPx });
+  });
 }
 
 type CapturedFrame = { url: string; revoke: () => void };
