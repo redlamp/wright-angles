@@ -11,7 +11,7 @@ const newId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-const defaultThisDevice: Device = {
+export const defaultThisDevice: Device = {
   id: "this-device",
   label: "My Monitor",
   category: "monitor",
