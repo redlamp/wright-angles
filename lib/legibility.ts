@@ -1,6 +1,8 @@
 /**
  * The ISO 16'/20' legibility verdict band, as a color — copied
  * identically into four view components before this. One definition.
+ * Also the band as a named verdict, for UI that carries it as an icon
+ * plus words rather than color alone.
  */
 
 import { ACUITY } from "./display-math";
@@ -25,3 +27,19 @@ export function legibilityColor(arcmin: number | null): string {
   if (arcmin >= ACUITY.minCriticalTextArcmin) return LEGIBILITY_COLORS.warn;
   return LEGIBILITY_COLORS.bad;
 }
+
+/** The same three bands, named: pass ≥20′, tight 16–20′, fail <16′. */
+export type LegibilityVerdict = "pass" | "tight" | "fail";
+
+export function legibilityVerdict(arcmin: number): LegibilityVerdict {
+  if (arcmin >= ACUITY.comfortableTextArcmin) return "pass";
+  if (arcmin >= ACUITY.minCriticalTextArcmin) return "tight";
+  return "fail";
+}
+
+/** Plain-language verdict words (screen-reader text and tooltips). */
+export const VERDICT_LABELS: Record<LegibilityVerdict, string> = {
+  pass: "readable",
+  tight: "tight",
+  fail: "too small",
+};
