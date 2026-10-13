@@ -34,8 +34,9 @@ export function ScreenStep({
 }: {
   draft: Device;
   setDraft: (update: (d: Device) => Device) => void;
-  /** Resolution prefilled from the browser on a fresh setup, if any. */
-  detected: { w: number; h: number } | null;
+  /** Resolution read from the browser on a fresh setup, if any; only a
+   * confident one was prefilled, the rest is offered as a suggestion. */
+  detected: { w: number; h: number; confident: boolean } | null;
   onCalibrate: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -49,10 +50,13 @@ export function ScreenStep({
   );
   const angles = deviceAngles(draft);
   // The note only holds while the numbers are still the detected ones.
-  const showDetected =
+  const matchesDetected =
     detected !== null &&
     detected.w === draft.resolution.w &&
     detected.h === draft.resolution.h;
+  const showDetected = matchesDetected && detected.confident;
+  // An unsure reading (page zoom skews it) is offered, never applied.
+  const suggestion = detected && !detected.confident && !matchesDetected ? detected : null;
 
   const setResolution = (axis: "w" | "h", v: number) =>
     setDraft((d) => {
@@ -101,7 +105,7 @@ export function ScreenStep({
             }
           }}
         >
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="w-full" aria-label="Screen preset">
             <SelectValue placeholder="Choose a preset…" />
           </SelectTrigger>
           <SelectContent>
@@ -149,6 +153,20 @@ export function ScreenStep({
             {showDetected ? (
               <span className="text-sm text-muted-foreground">
                 Detected from your browser
+              </span>
+            ) : suggestion ? (
+              <span className="text-sm text-muted-foreground">
+                Your browser suggests {suggestion.w}×{suggestion.h}{" "}
+                <button
+                  type="button"
+                  className="rounded-sm text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setResolution("w", suggestion.w);
+                    setResolution("h", suggestion.h);
+                  }}
+                >
+                  Use it
+                </button>
               </span>
             ) : null}
           </div>
