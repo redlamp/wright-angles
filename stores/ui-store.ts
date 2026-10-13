@@ -81,8 +81,8 @@ export const useUiStore = create<UiState>()(
         info: false,
         settings: false,
       },
-      // Default to the leftmost tab (media, report, devices order).
-      workbenchTab: "media",
+      // Default to the leftmost tab (devices, media, report order).
+      workbenchTab: "devices",
       openWorkbenchTab: (tab) =>
         set((s) => ({
           workbenchTab: tab,
