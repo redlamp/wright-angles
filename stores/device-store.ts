@@ -5,6 +5,16 @@ import { persist } from "zustand/middleware";
 import type { Device, DevicePreset } from "@/lib/types";
 import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
 import { migrateDevices } from "@/lib/device-migrations";
+import {
+  describeDeviceChange,
+  sameDeviceSnapshot,
+  type DeviceSnapshot,
+} from "@/lib/device-history";
+import {
+  isRestoringHistory,
+  recordChange,
+  registerHistoryDomain,
+} from "@/stores/history-store";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -154,6 +164,31 @@ export const useDeviceStore = create<DeviceState>()(
     },
   ),
 );
+
+// Undo/redo (stores/history-store.ts). Every device change is recorded
+// from the outside, as a before/after snapshot named by its diff, so
+// the actions above stay untouched. Restores go through setState, which
+// persist wraps: an undone edit is saved like any other.
+const deviceSnapshot = (s: DeviceState): DeviceSnapshot => ({
+  thisDevice: s.thisDevice,
+  devices: s.devices,
+  colorCursor: s.colorCursor,
+});
+registerHistoryDomain("devices", {
+  restore: (_scope, snap) => {
+    useDeviceStore.setState(snap as DeviceSnapshot);
+    return true;
+  },
+  same: (a, b) => sameDeviceSnapshot(a as DeviceSnapshot, b as DeviceSnapshot),
+});
+useDeviceStore.subscribe((state, prev) => {
+  // Rehydration from localStorage is a load, not an edit.
+  if (isRestoringHistory() || !useDeviceStore.persist.hasHydrated()) return;
+  const before = deviceSnapshot(prev);
+  const after = deviceSnapshot(state);
+  const change = describeDeviceChange(before, after);
+  if (change) recordChange({ scope: "devices", ...change, before, after });
+});
 
 /**
  * Body height from the viewer store's persisted blob; 175cm default.
