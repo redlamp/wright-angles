@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { XIcon, type LucideIcon } from "lucide-react";
+import {
+  PANEL_MARGIN,
+  fitPanelRect,
+  maxContentHeight,
+} from "@/lib/panel-geometry";
 import { useUiStore, type PanelId } from "@/stores/ui-store";
+import { useViewportSize } from "@/components/use-viewport-size";
 
 /**
  * Shared z-order: the most recently touched panel floats to the top.
@@ -15,6 +21,9 @@ export const nextZ = () => (zCursor = Math.min(Z_CAP, zCursor + 1));
 
 const MIN_W = 260;
 const MAX_W = 640;
+const MIN_H = 200;
+/** Title bar (h-8) plus the content's top border. */
+const HEADER_H = 33;
 
 interface FloatingPanelProps {
   id: PanelId;
@@ -61,20 +70,33 @@ export function FloatingPanel({
   const setPanelHeight = useUiStore((s) => s.setPanelHeight);
   const togglePanel = useUiStore((s) => s.togglePanel);
 
-  const width = storedWidth ?? defaultWidth;
-  const height = resizableHeight
-    ? (storedHeight ??
-      (defaultHeight !== undefined
-        ? Math.min(defaultHeight, window.innerHeight - 120)
-        : undefined))
-    : undefined;
+  // Rendered size is the stored size capped to the viewport (Reflow,
+  // WCAG 1.4.10: at 200% zoom the viewport is ~640x400). The store keeps
+  // the uncapped value, so a big window gets its persisted size back.
+  const vp = useViewportSize();
+  const { width } = fitPanelRect(
+    { x: 0, y: 0, width: storedWidth ?? defaultWidth },
+    vp,
+    { minWidth: MIN_W },
+  );
   // Un-dragged panels open top-center, just under the rail (Taylor
-  // 2026-08-18). Client-only render, so window is available here.
+  // 2026-08-18).
   const pos = stored ??
     defaultPosition ?? {
-      x: Math.max(8, Math.round((window.innerWidth - width) / 2)),
+      x: Math.max(PANEL_MARGIN, Math.round((vp.width - width) / 2)),
       y: 56,
     };
+  // Content never runs past the bottom edge: height-resizable panels
+  // shrink to fit, the rest scroll inside the cap.
+  const maxContentH = maxContentHeight(pos.y, vp.height, HEADER_H);
+  const wantedH = resizableHeight
+    ? (storedHeight ??
+      (defaultHeight !== undefined
+        ? Math.min(defaultHeight, vp.height - 120)
+        : undefined))
+    : undefined;
+  const height =
+    wantedH === undefined ? undefined : Math.min(maxContentH, wantedH);
   const resize = useRef<{
     edge: "left" | "right" | "bottom" | "corner";
     startX: number;
@@ -84,15 +106,16 @@ export function FloatingPanel({
     startPosX: number;
   } | null>(null);
 
-  const clampW = (w: number) => {
+  /** `room`: px left toward the viewport edge being dragged. */
+  const clampW = (w: number, room: number) => {
     const cap =
       maxWidth === "none"
-        ? window.innerWidth - 16
+        ? window.innerWidth - 2 * PANEL_MARGIN
         : (maxWidth ?? MAX_W);
-    return Math.min(cap, Math.max(MIN_W, w));
+    // A panel dragged past the edge still gets its minimum width.
+    return Math.min(cap, Math.max(MIN_W, room), Math.max(MIN_W, w));
   };
 
-  const MIN_H = 200;
   const clampH = (h: number) =>
     Math.min(window.innerHeight - pos.y - 48, Math.max(MIN_H, h));
 
@@ -122,14 +145,17 @@ export function FloatingPanel({
     const dx = e.clientX - r.startX;
     const dy = e.clientY - r.startY;
     if (r.edge === "right" || r.edge === "corner") {
-      setPanelWidth(id, clampW(r.startW + dx));
+      // Grow only up to the right margin, so the viewport fit never
+      // shoves the panel left mid-drag.
+      const room = window.innerWidth - PANEL_MARGIN - r.startPosX;
+      setPanelWidth(id, clampW(r.startW + dx, room));
     }
     if (r.edge === "bottom" || r.edge === "corner") {
       setPanelHeight(id, clampH(r.startH + dy));
     }
     if (r.edge === "left") {
       // Left edge: right edge stays put, so x shifts with the size change.
-      const w = clampW(r.startW - dx);
+      const w = clampW(r.startW - dx, r.startPosX + r.startW - PANEL_MARGIN);
       setPanelWidth(id, w);
       setPanelPosition(id, { x: r.startPosX + (r.startW - w), y: pos.y });
     }
@@ -188,28 +214,33 @@ export function FloatingPanel({
     drag.current = null;
   }, []);
 
-  // Keep panels reachable: at least min(240, width) of the panel must
-  // stay horizontally inside the viewport — checked at mount (a stored
-  // position can come from a much wider monitor) and on window resize.
-  // NOT on every position change: a deliberate drag past the edge is
-  // allowed its looser drag clamp and must not snap back.
-  useEffect(() => {
+  // Keep the whole panel inside the viewport (Reflow): a stored position
+  // can come from a much wider monitor or a 100%-zoom session. Checked
+  // on open, on window resize, after a store rehydrate and when the
+  // rendered width changes — NOT on every position change: a deliberate
+  // drag past the edge keeps its looser drag clamp and must not snap
+  // back mid-drag. Layout effect, so the fix lands before first paint.
+  useLayoutEffect(() => {
+    if (!open) return;
     const clamp = () => {
       const cur = useUiStore.getState().panelPositions[id];
       if (!cur) return;
-      const w = ref.current?.offsetWidth ?? width;
-      const visible = Math.min(240, w);
-      const x = Math.min(
-        Math.max(cur.x, visible - w),
-        window.innerWidth - visible,
+      // Slide only as far as needed to show the title bar plus a usable
+      // strip of content; the content height cap handles the rest.
+      const content =
+        ref.current?.querySelector("[data-panel-content]")?.scrollHeight ??
+        0;
+      const f = fitPanelRect(
+        { ...cur, width, height: HEADER_H + Math.min(content, MIN_H) },
+        vp,
       );
-      const y = Math.min(Math.max(cur.y, 8), window.innerHeight - 40);
-      if (x !== cur.x || y !== cur.y) setPanelPosition(id, { x, y });
+      if (f.x !== cur.x || f.y !== cur.y) {
+        setPanelPosition(id, { x: f.x, y: f.y });
+      }
     };
     clamp();
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, [id, setPanelPosition, width]);
+    return useUiStore.persist.onFinishHydration(clamp);
+  }, [id, open, vp, width, setPanelPosition]);
 
   if (!open) return null;
 
@@ -248,8 +279,12 @@ export function FloatingPanel({
       </div>
       <div
         data-panel-content
-        className="overflow-hidden border-t border-border"
-        style={height !== undefined ? { height } : undefined}
+        className={
+          height !== undefined
+            ? "overflow-hidden border-t border-border"
+            : "overflow-y-auto border-t border-border"
+        }
+        style={height !== undefined ? { height } : { maxHeight: maxContentH }}
       >
         {children}
       </div>
