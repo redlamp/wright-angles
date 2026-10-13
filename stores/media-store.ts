@@ -82,8 +82,9 @@ interface MediaState {
   /** Load persisted media from IndexedDB. Call once on mount. */
   hydrate: () => Promise<void>;
   /** Imports every decodable file, then queues the whole batch for
-   * auto-OCR (stores/ocr-queue-store.ts) once it's done. */
-  addFiles: (files: FileList | File[]) => Promise<void>;
+   * auto-OCR (stores/ocr-queue-store.ts) once it's done. Resolves to
+   * the ids that made it in, in import order. */
+  addFiles: (files: FileList | File[]) => Promise<string[]>;
   /** Create a built-in test image (rendered to canvas, stored like any import). */
   addGenerated: (kind: GeneratedKind) => Promise<void>;
   rename: (id: string, name: string) => void;
@@ -303,6 +304,7 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
       const { useOcrQueueStore } = await import("./ocr-queue-store");
       useOcrQueueStore.getState().enqueue(addedIds);
     }
+    return addedIds;
   },
 
   addGenerated: async (kind) => {

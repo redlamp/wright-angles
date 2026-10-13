@@ -57,7 +57,8 @@ function useSampleManifest(): string[] | null {
 
 /**
  * One slim row: import, generated test images, samples. Dropping files
- * anywhere on the app window already imports them, so no dropzone.
+ * anywhere on the app window already imports them, as does pasting an
+ * image (components/paste-import.tsx), so no dropzone.
  */
 export function Toolbar() {
   const addFiles = useMediaStore((s) => s.addFiles);
@@ -97,7 +98,7 @@ export function Toolbar() {
         variant="secondary"
         size="sm"
         className="flex-1"
-        title="Import images or videos (or drop them anywhere in the window)"
+        title="Import images or videos (or drop them anywhere in the window, or paste a screenshot: Ctrl/Cmd+V)"
         onClick={() => inputRef.current?.click()}
       >
         <UploadIcon className="size-4" /> Import

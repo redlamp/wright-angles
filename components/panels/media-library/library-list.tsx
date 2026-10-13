@@ -210,7 +210,8 @@ export function LibraryList() {
 
       {items.length === 0 ? (
         <p className="px-2.5 pb-2.5 text-base text-muted-foreground">
-          No media yet. Drop images or videos anywhere in the window.
+          No media yet. Drop images or videos anywhere in the window, or
+          paste a screenshot (Ctrl/Cmd+V).
         </p>
       ) : view === "grid" ? (
         <div className="grid grid-cols-3 gap-1.5 px-2.5 pb-2.5">
