@@ -1,13 +1,17 @@
 /**
  * Native-resolution guess from what the browser reports, used to prefill
  * This Device's resolution on a fresh setup. Pure: the caller passes
- * `screen.width`, `screen.height` and `devicePixelRatio`.
+ * `screen.width`, `screen.height` and `devicePixelRatio` (and, when it
+ * has one, a page-zoom hint).
  *
  * Chrome and Safari keep `screen.*` in 100%-zoom CSS px while
  * `devicePixelRatio` scales with page zoom, so the product is only the
  * panel's native size at 100% zoom (see lib/browser-zoom.ts); Firefox
- * reports differently. It's a starting value the user can edit, never
- * a measurement.
+ * reports differently. A zoomed page therefore yields a zoom-scaled
+ * "native" size, and sometimes one that snaps neatly to a real panel
+ * (1440p at 150% reads as 4K). So the result carries a confidence, and
+ * only a confident one may be applied without asking. It's a starting
+ * value the user can edit, never a measurement.
  */
 
 /** Common panel sizes (landscape) the raw product snaps to. */
@@ -43,11 +47,50 @@ export const COMMON_PANEL_SIZES: readonly { w: number; h: number }[] = [
 /** Snap when both axes are within this fraction of a common size. */
 export const SNAP_TOLERANCE = 0.02;
 
+/**
+ * Device pixel ratios an OS display-scaling setting produces on its own.
+ * Anything else (1.1, 0.9, 2.2…) is OS scaling times a browser zoom
+ * level, which means the product is zoom-scaled.
+ */
+export const OS_SCALE_FACTORS: readonly number[] = [
+  1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4,
+];
+
+/** A page-zoom hint further than this from 1 counts as zoomed. */
+export const ZOOM_HINT_TOLERANCE = 0.05;
+
 export interface DetectedResolution {
   w: number;
   h: number;
   /** True when the raw product was snapped to a common panel size. */
   snapped: boolean;
+  /**
+   * Snapped, AND nothing hints at page zoom (a standard OS scale factor,
+   * and the zoom hint, if any, reads ~100%). Only a confident result may
+   * be prefilled or offered as a one-click fix; anything else is a
+   * suggestion the user confirms.
+   */
+  confident: boolean;
+}
+
+/**
+ * Page-zoom hint from window sizes: Chrome reports `outerWidth` in
+ * unzoomed px and `innerWidth` in zoomed CSS px, so their ratio reads the
+ * zoom. A side panel or docked devtools skews it, which only ever makes
+ * detection LESS confident, never more. Null when unusable.
+ */
+export function zoomHintFromWindow(
+  outerWidth: number,
+  innerWidth: number,
+): number | null {
+  if (!(outerWidth > 0) || !(innerWidth > 0)) return null;
+  const r = outerWidth / innerWidth;
+  return Number.isFinite(r) ? r : null;
+}
+
+/** True when a zoom hint reads as zoomed (not ~100%). */
+export function hintsZoom(zoomHint: number | null): boolean {
+  return zoomHint !== null && Math.abs(zoomHint - 1) > ZOOM_HINT_TOLERANCE;
 }
 
 /**
@@ -58,6 +101,7 @@ export function detectNativeResolution(
   screenWidthCss: number,
   screenHeightCss: number,
   dpr: number,
+  zoomHint: number | null = null,
 ): DetectedResolution | null {
   if (
     !(screenWidthCss > 0) ||
@@ -76,8 +120,10 @@ export function detectNativeResolution(
   const hit = COMMON_PANEL_SIZES.find(
     (p) => near(long, p.w) && near(short, p.h),
   );
-  if (!hit) return { w, h, snapped: false };
+  if (!hit) return { w, h, snapped: false, confident: false };
+  const osScale = OS_SCALE_FACTORS.some((f) => Math.abs(f - dpr) < 0.01);
+  const confident = osScale && !hintsZoom(zoomHint);
   return portrait
-    ? { w: hit.h, h: hit.w, snapped: true }
-    : { w: hit.w, h: hit.h, snapped: true };
+    ? { w: hit.h, h: hit.w, snapped: true, confident }
+    : { w: hit.w, h: hit.h, snapped: true, confident };
 }
