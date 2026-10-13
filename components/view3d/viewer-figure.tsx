@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, MeshStandardMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
-import { tweenProgress } from "@/lib/motion";
+import { tweenProgress, tweenStep } from "@/lib/motion";
 import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { HeldGrip } from "@/lib/viewing-geometry";
@@ -395,7 +395,7 @@ export default function ViewerFigure({
     const fadeTarget =
       state.camera.position.distanceTo(_headCenter) < HEAD_CLEAR_CM ? 0 : 1;
     if (opacity.current !== fadeTarget) {
-      const step = Math.min(delta, 1 / 30) / FADE_S;
+      const step = tweenStep(delta, FADE_S, reduced);
       opacity.current =
         fadeTarget > opacity.current
           ? Math.min(fadeTarget, opacity.current + step)
