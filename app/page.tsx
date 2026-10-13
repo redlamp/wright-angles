@@ -222,13 +222,16 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
+      {/* The toolbar leads the DOM so the first Tab lands on it, not on
+          the view's overlay buttons (it's fixed + z-30, so painting
+          order is unaffected). */}
+      {mounted ? <Sidebar /> : null}
       {mounted && uiHydrated ? <ViewStack /> : null}
 
       {mounted ? (
         <>
           <Hotkeys />
           <UndoHotkeys />
-          <Sidebar />
           <WorkbenchPanel />
           <DeviceInspector />
           <HoverTextCard />

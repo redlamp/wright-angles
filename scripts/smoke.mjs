@@ -103,11 +103,29 @@ async function step(name, fn) {
   await step("app renders", () =>
     page.locator("canvas").first().waitFor({ timeout: 15_000 }),
   );
-  await step("2D/3D toggle (Tab)", async () => {
-    await page.keyboard.press("Tab");
+  await step("2D/3D toggle (V)", async () => {
+    const pressed = () =>
+      page
+        .getByRole("group", { name: "View" })
+        .getByRole("button", { pressed: true })
+        .textContent();
+    const before = await pressed();
+    await page.keyboard.press("v");
     await page.waitForTimeout(500);
-    await page.keyboard.press("Tab");
+    if ((await pressed()) === before) throw new Error("V did not flip the view");
+    await page.keyboard.press("v");
     await page.waitForTimeout(500);
+    if ((await pressed()) !== before) throw new Error("V did not flip back");
+  });
+  await step("Tab moves focus to a toolbar control", async () => {
+    await page.locator("body").focus();
+    await page.keyboard.press("Tab");
+    const inToolbar = await page.evaluate(
+      () =>
+        document.activeElement !== document.body &&
+        !!document.activeElement?.closest('[role="toolbar"]'),
+    );
+    if (!inToolbar) throw new Error("focus did not land in the toolbar");
   });
   for (const [key, label] of [
     ["d", "devices tab (D)"],

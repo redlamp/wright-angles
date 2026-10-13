@@ -121,13 +121,16 @@ notes nothing is uploaded or tracked.
 
 ### Hotkeys
 `D`/`M`/`P` switch Workbench tabs; `C`/`S` toggle the Comparison table
-and Settings; `Tab` flips 2D/3D; `1`/`2`/`3` set stance, `Q`/`W`/`E` set
-input type; drag pans the 2D composition (click still selects),
+and Settings; `V` flips 2D/3D; `Ctrl`/`Cmd`+`\` hides the toolbar, HUD
+and panels for a clean presentation view; `1`/`2`/`3` set stance,
+`Q`/`W`/`E` set input type; drag pans the 2D composition (click still selects),
 double-click recenters; `←`/`→` walk the media library, `↑`/`↓` cycle
 the focused visible device; `Space` plays/pauses timeline media,
 `<`/`>` jump between OCR keyframes; `X` toggles a crop on the active
-media; `Esc` deselects or closes the cheat sheet; `?` opens it. Hotkeys
-are suppressed while typing in a field or inside an open menu/dialog.
+media; `Esc` deselects, closes the cheat sheet, or brings a hidden UI
+back; `?` opens it. Hotkeys are suppressed while typing in a field or
+inside an open menu/dialog. `Tab` is never captured: it moves keyboard
+focus through the toolbar, HUD and panels, with a visible focus ring.
 
 ### Flagged features
 `lib/flags.ts` parks work that exists in code but isn't shipping yet:

@@ -26,7 +26,7 @@ export function ScaleReadouts({
   viewportActive: boolean;
 }) {
   return (
-    <div className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
+    <div data-chrome className="absolute right-2 bottom-2 z-40 flex flex-col items-end gap-1">
       {zoomPct !== null ? (
         <div
           className="rounded-md bg-[#f5a524]/90 px-2 py-1 font-mono text-sm text-black"

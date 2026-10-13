@@ -65,6 +65,12 @@ interface UiState {
    */
   selectedDeviceId: string | null;
   selectDevice: (id: string | null) => void;
+  /**
+   * Presentation view (Ctrl/Cmd+\): toolbar, HUD, and panels hidden.
+   * Session-only, like the selection, so a reload never boots blank.
+   */
+  chromeHidden: boolean;
+  setChromeHidden: (hidden: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -153,6 +159,8 @@ export const useUiStore = create<UiState>()(
         })),
       selectedDeviceId: null,
       selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
+      chromeHidden: false,
+      setChromeHidden: (chromeHidden) => set({ chromeHidden }),
     }),
     {
       name: "wright-angles:ui",
@@ -177,10 +185,13 @@ export const useUiStore = create<UiState>()(
         }
         return s;
       },
-      // Selection is per-session; everything else persists as before.
+      // Selection and the hidden-UI view are per-session; everything
+      // else persists as before.
       partialize: (s) =>
         Object.fromEntries(
-          Object.entries(s).filter(([key]) => key !== "selectedDeviceId"),
+          Object.entries(s).filter(
+            ([key]) => key !== "selectedDeviceId" && key !== "chromeHidden",
+          ),
         ),
     },
   ),
