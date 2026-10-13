@@ -14,6 +14,8 @@ import type { DisplayFill } from "@/stores/settings-store";
 import { physicalSizeCm } from "@/lib/display-math";
 import { fitBox, fitModeOf } from "@/lib/fit";
 import { easeInOutCubic } from "@/lib/easing";
+import { tweenProgress } from "@/lib/motion";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 import { degToRad } from "@/lib/viewing-geometry";
 import { FEATURE_3D_DEVICE_BODY } from "@/lib/flags";
 import { HANDHELD_BODIES } from "@/lib/presets";
@@ -240,6 +242,7 @@ export default function DeviceRect({
   // Height tween state, same pattern as viewer-figure's pose tween: the
   // live value in a ref, an anim record capturing where the flight started.
   const curY = useRef(centerY);
+  const reduced = useReducedMotion();
   const anim = useRef<{ from: number; start: number | null } | null>(null);
   const prevTarget = useRef(centerY);
   const prevPoseKey = useRef(poseKey);
@@ -264,7 +267,11 @@ export default function DeviceRect({
     const a = anim.current;
     if (a) {
       if (a.start === null) a.start = state.clock.elapsedTime;
-      const t = Math.min(1, (state.clock.elapsedTime - a.start) / TWEEN_S);
+      const t = tweenProgress(
+        state.clock.elapsedTime - a.start,
+        TWEEN_S,
+        reduced,
+      );
       curY.current =
         t >= 1 ? centerY : MathUtils.lerp(a.from, centerY, easeInOutCubic(t));
       if (t >= 1) anim.current = null;

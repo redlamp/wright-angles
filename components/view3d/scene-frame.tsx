@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import type { Group } from "three";
 import { useFrame } from "@react-three/fiber";
 import { easeInOutCubic } from "@/lib/easing";
+import { tweenProgress } from "@/lib/motion";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { Scenario } from "@/stores/viewer-store";
 import { FPS_NODE_ID } from "./scene-hud";
 
@@ -28,6 +30,7 @@ export function EyeTween({
   eyeRef: React.MutableRefObject<number>;
   sightRef: React.RefObject<Group | null>;
 }) {
+  const reduced = useReducedMotion();
   const anim = useRef<{ from: number; start: number | null } | null>(null);
   const prev = useRef(target);
   const prevScenario = useRef(scenario);
@@ -49,7 +52,7 @@ export function EyeTween({
     const a = anim.current;
     if (a) {
       if (a.start === null) a.start = state.clock.elapsedTime;
-      const t = Math.min(1, (state.clock.elapsedTime - a.start) / 0.5);
+      const t = tweenProgress(state.clock.elapsedTime - a.start, 0.5, reduced);
       eyeRef.current =
         t >= 1
           ? target

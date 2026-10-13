@@ -46,6 +46,7 @@ import {
 } from "./screen-textures";
 import { computeLabelPlacements, headOnFovDeg } from "./scene-layout";
 import { EyeTween, FpsProbe } from "./scene-frame";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 
 /** True when `target` is the first visible mesh along `ray` in its scene. */
 function isNearestHit(target: Object3D, ray: Ray, camera: Camera): boolean {
@@ -319,6 +320,7 @@ export default function SceneView({
   // (Taylor 2026-09-02) — the 3D counterpart of 2D's double-click
   // recenter. A counter, so every double-click is a fresh request.
   const [recenter, setRecenter] = useState(0);
+  const reducedMotion = useReducedMotion();
   // App-wide selection (shared with the comparison table and 2D view).
   const selectedId = useUiStore((s) => s.selectedDeviceId);
   const selectDevice = useUiStore((s) => s.selectDevice);
@@ -550,7 +552,8 @@ export default function SceneView({
           <>
             <OrbitControls
               makeDefault
-              enableDamping
+              // Inertia is motion too: off when reduced motion is preferred.
+              enableDamping={!reducedMotion}
               enabled={!nodeDragging}
               target={orbitPose.target}
               minPolarAngle={MIN_POLAR_ANGLE}

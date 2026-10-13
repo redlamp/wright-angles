@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { Vector3, type PerspectiveCamera } from "three";
 import { useFrame, useThree } from "@react-three/fiber";
+import { tweenProgress } from "@/lib/motion";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 
 export interface CameraPose {
   position: [number, number, number];
@@ -65,6 +67,9 @@ export default function CameraRig({
 }) {
   const camera = useThree((s) => s.camera);
   const get = useThree((s) => s.get);
+  // Reduced motion: every flight (entry, exit, recenter) lands on its
+  // first frame.
+  const reduced = useReducedMotion();
 
   const poses = useRef({ orbitPose, headOnPose });
   useEffect(() => {
@@ -176,7 +181,11 @@ export default function CameraRig({
     // Keep frames coming while the camera flies (demand frameloop).
     state.invalidate();
     if (a.start === null) a.start = state.clock.elapsedTime;
-    const t = Math.min(1, (state.clock.elapsedTime - a.start) / a.duration);
+    const t = tweenProgress(
+      state.clock.elapsedTime - a.start,
+      a.duration,
+      reduced,
+    );
     const e = easeInOutCubic(t);
     camera.position.lerpVectors(a.fromPos, a.toPos, e);
     lookTarget.current.lerpVectors(a.fromTarget, a.toTarget, e);
