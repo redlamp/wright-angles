@@ -3,7 +3,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Device, DevicePreset } from "@/lib/types";
-import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
+import {
+  DEVICE_COLORS,
+  DEVICE_PRESETS,
+  THIS_DEVICE_COLOR,
+} from "@/lib/presets";
 import { migrateDevices } from "@/lib/device-migrations";
 import {
   describeDeviceChange,
@@ -29,7 +33,7 @@ export const defaultThisDevice: Device = {
   distanceCm: 70,
   resolution: { w: 2560, h: 1440 },
   aspect: { w: 16, h: 9 },
-  color: "#46a758",
+  color: THIS_DEVICE_COLOR,
   visible: true,
 };
 
@@ -74,15 +78,15 @@ export const useDeviceStore = create<DeviceState>()(
       thisDevice: defaultThisDevice,
       // Starter set (Taylor 2026-08-19): a spread from handheld to
       // projector so the first launch demonstrates the range; freely
-      // deletable. Green is skipped — it's This Device's key color.
+      // deletable. This Device's cyan sits outside the cycle.
       devices: [
         seedDevice("switch-2", DEVICE_COLORS[0]),
         { ...seedDevice("steam-deck", DEVICE_COLORS[1]), distanceCm: 36 },
-        seedDevice("monitor-27-1440", DEVICE_COLORS[3]),
-        seedDevice("tv-49-4k", DEVICE_COLORS[4]),
-        seedDevice("projector-120", DEVICE_COLORS[5]),
+        seedDevice("monitor-27-1440", DEVICE_COLORS[2]),
+        seedDevice("tv-49-4k", DEVICE_COLORS[3]),
+        seedDevice("projector-120", DEVICE_COLORS[4]),
       ],
-      colorCursor: 6,
+      colorCursor: 5,
       updateThisDevice: (patch) =>
         set((s) => ({ thisDevice: { ...s.thisDevice, ...patch } })),
       addFromPreset: (preset) =>
