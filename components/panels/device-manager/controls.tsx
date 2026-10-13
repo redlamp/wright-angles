@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Device } from "@/lib/types";
-import { CM_PER_IN, deviceAngles } from "@/lib/display-math";
+import { CM_PER_IN } from "@/lib/display-math";
 import { useSettingsStore } from "@/stores/settings-store";
 import { NumberStepper } from "@/components/number-stepper";
 import { Slider } from "@/components/ui/slider";
@@ -204,36 +203,4 @@ export function UnitFlip({
   );
 }
 
-/** Live angular readout — the arcmin rosetta stone, plus px guidance. */
-export function AngleReadout({ device }: { device: Device }) {
-  const showBands = useSettingsStore((s) => s.showLegibilityBands);
-  const a = useMemo(() => deviceAngles(device), [device]);
-  const pxFor = (arcmin: number) =>
-    a.arcminPerPx > 0 ? Math.ceil(arcmin / a.arcminPerPx) : 0;
-  return (
-    <div className="panel-inset space-y-0.5 rounded-md px-2.5 py-2 font-mono text-sm leading-5 text-muted-foreground">
-      <div>
-        {a.horizontalArcmin.toFixed(0)}′ × {a.verticalArcmin.toFixed(0)}′ (
-        {a.horizontalDeg.toFixed(1)}° × {a.verticalDeg.toFixed(1)}°)
-      </div>
-      <div>
-        {a.ppd.toFixed(1)} px/° · {a.arcminPerPx.toFixed(2)}′/px ·{" "}
-        {a.ppi.toFixed(0)} ppi
-        {a.ppd < 60 ? (
-          <span
-            className="text-[#f5a524]"
-            title="Below the ~60 PPD retina threshold — pixels are resolvable at this distance"
-          >
-            {" "}
-            · sub-retina
-          </span>
-        ) : null}
-      </div>
-      {showBands ? (
-        <div className="border-t border-border pt-1">
-          text: ≥{pxFor(16)} px min (16′) · ≥{pxFor(20)} px comfy (20′)
-        </div>
-      ) : null}
-    </div>
-  );
-}
+export { AngleReadout } from "./angle-readout";
