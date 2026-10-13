@@ -17,11 +17,17 @@ function Slider({
   /** Spoken value, for tracks whose raw value isn't the real one. */
   thumbValueText?: (value: number) => string
 }) {
+  // A scalar value is ONE thumb; falling through to [min, max] for it
+  // rendered a phantom second thumb (an extra, unlabeled Tab stop).
   const _values = Array.isArray(value)
     ? value
-    : Array.isArray(defaultValue)
-      ? defaultValue
-      : [min, max]
+    : typeof value === "number"
+      ? [value]
+      : Array.isArray(defaultValue)
+        ? defaultValue
+        : typeof defaultValue === "number"
+          ? [defaultValue]
+          : [min, max]
 
   return (
     <SliderPrimitive.Root
