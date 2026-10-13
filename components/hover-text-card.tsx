@@ -98,18 +98,20 @@ export function HoverTextCard() {
       </div>
       <div className="font-mono text-sm leading-5 text-muted-foreground">
         <div>
-          <span style={{ color: device.color }}>{device.label}</span> @{" "}
+          <span
+            aria-hidden
+            className="mr-1.5 inline-block size-2 rounded-full"
+            style={{ background: device.color }}
+          />
+          <span className="text-foreground">{device.label}</span> @{" "}
           {formatDistance(device.distanceCm, unit)}
         </div>
         <div>
           {box.srcPx} px (on source), {Math.round(m.devicePx)} px (on display)
         </div>
         <div className="flex items-center gap-1.5">
-          <span
-            className="flex items-center gap-1"
-            style={{ color: band }}
-          >
-            <DraftingCompassIcon className="size-3.5" />
+          <span className="flex items-center gap-1 text-foreground">
+            <DraftingCompassIcon className="size-3.5" style={{ color: band }} />
             {m.arcmin.toFixed(1)}
           </span>
           ,

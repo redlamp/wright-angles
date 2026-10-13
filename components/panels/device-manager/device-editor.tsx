@@ -376,8 +376,8 @@ export function DeviceEditor({
           much, and that the reported arc minutes are the height. Its own
           row now that Fit shares one with Curve. */}
       {stretchNote ? (
-        <span className="inline-flex items-center gap-1 self-start rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]">
-          <TriangleAlertIcon className="size-3 shrink-0" />
+        <span className="inline-flex items-center gap-1 self-start rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-foreground">
+          <TriangleAlertIcon className="size-3 shrink-0 text-[#ab6400] dark:text-[#ffca16]" />
           {stretchNote}
         </span>
       ) : null}

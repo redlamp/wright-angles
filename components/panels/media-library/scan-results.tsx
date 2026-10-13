@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { TriangleAlertIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Device, MediaItem } from "@/lib/types";
 import { strokesSubAcuity } from "@/lib/display-math";
@@ -9,6 +8,7 @@ import { boxMetricsInCrop } from "@/lib/box-metrics";
 import { legibilityColor } from "@/lib/legibility";
 import { AA_LARGE, AA_NORMAL, type ContrastEstimate } from "@/lib/contrast";
 import { useContrastMap } from "@/components/use-contrast-map";
+import { CautionIcon, VerdictIcon } from "@/components/legibility-ui";
 import { useDeviceStore } from "@/stores/device-store";
 import { useMediaStore } from "@/stores/media-store";
 import { groupColor } from "@/lib/text-groups";
@@ -107,7 +107,7 @@ function ContrastBadge({ est }: { est?: ContrastEstimate | null }) {
   if (est === undefined || est === null) {
     return (
       <span
-        className="shrink-0 font-mono text-sm text-muted-foreground/50"
+        className="shrink-0 font-mono text-sm text-muted-foreground"
         title={
           est === null
             ? "No text/background split found in this box"
@@ -126,10 +126,14 @@ function ContrastBadge({ est }: { est?: ContrastEstimate | null }) {
         : "#e5484d";
   return (
     <span
-      className="shrink-0 font-mono text-sm"
-      style={{ color }}
+      className="flex shrink-0 items-center gap-1 font-mono text-sm"
       title="Estimated text/background contrast (WCAG): AA needs 4.5:1, or 3:1 for large text"
     >
+      <span
+        aria-hidden
+        className="inline-block size-1.5 rounded-full"
+        style={{ background: color }}
+      />
       {est.ratio.toFixed(1)}:1
     </span>
   );
@@ -250,10 +254,10 @@ export function ScanResults({
               <ContrastBadge est={contrastMap.get(line.id)} />
             ) : null}
             <span
-              className="shrink-0 font-mono text-sm"
-              style={{ color: legibilityColor(metrics.arcmin) }}
+              className="flex shrink-0 items-center gap-1 font-mono text-sm"
               title="Arc minutes on This Device (cap height, ISO bands 16'/20')"
             >
+              <VerdictIcon arcmin={metrics.arcmin} className="size-3" />
               {metrics.arcmin.toFixed(0)}′
             </span>
             {strokesSubAcuity(metrics.arcmin) ? (
@@ -261,7 +265,7 @@ export function ScanResults({
                 className="shrink-0"
                 title="Strokes render below 1′ on This Device — letterforms lose their detail at this distance"
               >
-                <TriangleAlertIcon className="size-3 text-[#e5484d]" />
+                <CautionIcon />
               </span>
             ) : null}
           </button>
