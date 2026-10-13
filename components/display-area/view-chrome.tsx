@@ -75,7 +75,7 @@ export function ViewActions({
   return (
     <div
       data-ui-chrome
-      className="absolute top-2 right-2 z-40 flex items-center gap-1.5"
+      className="absolute top-2 right-2 z-40 flex max-w-[calc(100%-22rem)] flex-wrap items-center justify-end gap-1.5"
     >
         {activeItem ? (
           <button

@@ -173,7 +173,7 @@ export function Sidebar() {
       <div
         role="toolbar"
         aria-label="Main"
-        className="panel-frame fixed top-2 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border p-1"
+        className="panel-frame fixed top-2 left-1/2 z-30 flex -translate-x-1/2 max-2xl:left-2 max-2xl:translate-x-0 items-center gap-1 rounded-lg border border-border p-1"
       >
         <ViewToggle />
         <div className="mx-1 h-6 w-px bg-border" />

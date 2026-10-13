@@ -30,7 +30,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
       <div data-chrome className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-sm tabular-nums text-muted-foreground">
         <span id={FPS_NODE_ID} /> fps
       </div>
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+      <div className="absolute right-3 top-3 z-10 flex max-w-[calc(100%-22rem)] flex-wrap items-center justify-end gap-1.5">
         <CvdChip className="panel-frame rounded-md border border-border font-mono text-sm text-muted-foreground" />
         {onExport ? (
           // Same treatment and height as the color-vision chip beside it.
