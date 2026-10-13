@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { KeyframeLine, MediaItem } from "./types";
-import { buildTextEntries, ratioNote } from "./perception-report";
+import { buildTextEntries, lineThumb, ratioNote } from "./perception-report";
 
 const item = (over: Partial<MediaItem> = {}): MediaItem => ({
   id: "m1",
@@ -146,5 +146,38 @@ describe("buildTextEntries", () => {
     expect(
       buildTextEntries(item({ scan: { lines: [line()], medianPx: 20 } })),
     ).toEqual([]);
+  });
+});
+
+describe("lineThumb", () => {
+  test("scales the padded region to the max height and maps it to the origin", () => {
+    // A 400×40 px line at (100, 200) in a 1920×1080 image.
+    const box = { x: 100 / 1920, y: 200 / 1080, w: 400 / 1920, h: 40 / 1080 };
+    const t = lineThumb(box, 1920, 1080, 960, 24, 0.25)!;
+    // Padded region: 420 × 60 px starting at (90, 190) — height-limited.
+    const s = 24 / 60;
+    expect(t.height).toBeCloseTo(24);
+    expect(t.width).toBeCloseTo(420 * s);
+    expect(t.bgWidth).toBeCloseTo(1920 * s);
+    expect(t.bgHeight).toBeCloseTo(1080 * s);
+    expect(t.bgX).toBeCloseTo(-90 * s);
+    expect(t.bgY).toBeCloseTo(-190 * s);
+  });
+
+  test("long lines are clipped at the max width, not shrunk", () => {
+    const t = lineThumb({ x: 0.1, y: 0.5, w: 0.8, h: 0.02 }, 1920, 1080, 96, 24)!;
+    expect(t.width).toBeCloseTo(96);
+    expect(t.height).toBeCloseTo(24);
+  });
+
+  test("padding clamps at the image edge", () => {
+    const t = lineThumb({ x: 0, y: 0, w: 0.5, h: 0.1 }, 1000, 1000, 1000, 1000)!;
+    expect(t.bgX).toBeCloseTo(0);
+    expect(t.bgY).toBeCloseTo(0);
+  });
+
+  test("degenerate input returns null", () => {
+    expect(lineThumb({ x: 0, y: 0, w: 0, h: 0.1 }, 100, 100, 10, 10)).toBeNull();
+    expect(lineThumb({ x: 0, y: 0, w: 0.1, h: 0.1 }, 0, 100, 10, 10)).toBeNull();
   });
 });
