@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
+import { UndoHotkeys } from "@/components/undo-hotkeys";
 import { DisplayArea } from "@/components/display-area";
 import { CvdFilters, cvdFilter } from "@/components/cvd-filters";
 import { WorkbenchPanel } from "@/components/panels/workbench";
@@ -226,6 +227,7 @@ export default function Home() {
       {mounted ? (
         <>
           <Hotkeys />
+          <UndoHotkeys />
           <Sidebar />
           <WorkbenchPanel />
           <DeviceInspector />

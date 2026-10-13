@@ -119,6 +119,28 @@ async function step(name, fn) {
       await page.waitForTimeout(400);
     });
   }
+  await step("undo/redo a device edit (Ctrl+Z / Ctrl+Shift+Z)", async () => {
+    const dist = () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("wright-angles:devices") ?? "null")
+            ?.state.thisDevice.distanceCm,
+      );
+    await page.keyboard.press("d");
+    await page
+      .getByRole("button", { name: "Increase viewing distance" })
+      .first()
+      .click();
+    const edited = await dist();
+    await page.keyboard.press("Control+z");
+    const undone = await dist();
+    await page.keyboard.press("Control+Shift+z");
+    const redone = await dist();
+    await page.keyboard.press("m"); // back to the media tab for the import
+    if (undone !== edited - 1 || redone !== edited) {
+      throw new Error(`distance ${edited} → undo ${undone} → redo ${redone}`);
+    }
+  });
   await step("import an image", async () => {
     // A generated PNG with text in it, so auto-OCR has a line to find.
     const b64 = await page.evaluate(() => {
