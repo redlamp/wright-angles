@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { aspectFromResolution } from "@/lib/display-math";
-import { detectNativeResolution } from "@/lib/screen-detect";
+import { detectNativeResolution, zoomHintFromWindow } from "@/lib/screen-detect";
 import type { Device } from "@/lib/types";
 import { defaultThisDevice, useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -43,13 +43,15 @@ function isUnsetDevice(d: Device): boolean {
 
 interface Opening {
   draft: Device;
-  /** Resolution prefilled from the browser, if any. */
-  detected: { w: number; h: number } | null;
+  /** Resolution read from the browser, if any; prefilled only when
+   * `confident`, otherwise offered as a suggestion. */
+  detected: { w: number; h: number; confident: boolean } | null;
 }
 
 /**
  * The draft the dialog opens with: the current This Device, with the
- * resolution prefilled from the browser when the user hasn't set one.
+ * resolution prefilled from the browser when the user hasn't set one
+ * and the detection is confident (page zoom can skew it).
  */
 function openingDraft(device: Device): Opening {
   if (!isUnsetDevice(device)) return { draft: device, detected: null };
@@ -57,12 +59,15 @@ function openingDraft(device: Device): Opening {
     window.screen.width,
     window.screen.height,
     window.devicePixelRatio,
+    zoomHintFromWindow(window.outerWidth, window.innerWidth),
   );
   if (!found) return { draft: device, detected: null };
   const resolution = { w: found.w, h: found.h };
+  const detected = { ...resolution, confident: found.confident };
+  if (!found.confident) return { draft: device, detected };
   return {
     draft: { ...device, resolution, aspect: aspectFromResolution(resolution) },
-    detected: resolution,
+    detected,
   };
 }
 
@@ -184,13 +189,22 @@ export function Onboarding() {
         >
           {calibrating ? (
             <CalibrationPanel
-              aspect={draft.aspect}
               resolution={draft.resolution}
               diagonalIn={draft.diagonalIn}
               cancelLabel="Back"
               onCancel={() => setCalibrating(false)}
-              onApply={(diagonalIn) => {
-                setDraft((d) => ({ ...d, diagonalIn }));
+              onApply={(diagonalIn, resolution) => {
+                setDraft((d) =>
+                  resolution.w === d.resolution.w &&
+                  resolution.h === d.resolution.h
+                    ? { ...d, diagonalIn }
+                    : {
+                        ...d,
+                        diagonalIn,
+                        resolution,
+                        aspect: aspectFromResolution(resolution),
+                      },
+                );
                 setCalibrating(false);
               }}
             />
