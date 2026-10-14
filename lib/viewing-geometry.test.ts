@@ -33,7 +33,7 @@ describe("auto-orient defaults by category", () => {
   });
 
   test("furniture does not", () => {
-    for (const c of ["monitor", "tv", "projector", "custom"] as DeviceCategory[])
+    for (const c of ["laptop", "monitor", "tv", "projector", "custom"] as DeviceCategory[])
       expect(autoOrientOf(dev({ category: c }), "desk")).toBe(false);
   });
 

@@ -36,6 +36,7 @@ const AUTO_ORIENT_BY_CATEGORY: Record<DeviceCategory, boolean> = {
   handheld: true,
   phone: true,
   tablet: true,
+  laptop: false,
   monitor: false,
   tv: false,
   projector: false,
