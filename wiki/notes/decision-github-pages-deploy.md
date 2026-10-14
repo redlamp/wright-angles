@@ -24,6 +24,13 @@ workflow on push to `main`.
   `.nojekyll`, uploads one artifact, deploys. Both slots build from
   their branch heads on every run, so a dev push leaves production's
   content as it was.
+- Preview slot (added 2026-10-14) at `/wright-angles/preview`: a push
+  to a work branch (`claude/*`, `feature-*`, `fix-*`) builds that
+  branch there; a main or dev push rebuilds it from the most recently
+  updated open PR into dev. `preview/BRANCH.txt` names the branch. Work
+  branches must be allowed on the `github-pages` environment's
+  deployment-branch rules or their deploy job is rejected. All slots
+  share one origin, so they share localStorage and IndexedDB.
 - Branch flow: `main` ← `dev` ← `feature/*`. `main` is the deploy source;
   dev → main promotion only on Taylor's explicit go-ahead.
 
