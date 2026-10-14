@@ -23,11 +23,15 @@ this 27″/70cm design when it's a Switch 2 at 40cm?"
   2D | 3D toggle. "Run setup assistant again" and a standalone
   "Calibrate screen size…" live in Settings afterward. The resolution
   is prefilled from the browser only when the detection is confident.
-  Screen size calibration starts with a choice of method: **measure
+  The screen step groups presets as All / TV / Monitors / Laptop /
+  Handheld and lets diagonal and distance be entered in inches or
+  centimeters. Screen size calibration starts with a choice of method: **measure
   with a card** (an ID-1 card pushed into a fixed corner guide, one
   edge dragged to match, fine-adjust buttons and keys), **measure with
   a ruler** (a bar matched to 10/15 cm or 4/6 in), or **I know my
-  screen size** (common sizes or a typed diagonal). A pre-check flags a
+  screen size** (common sizes grouped as laptop, monitor and TV, the
+  aspect ratio read from the pixel resolution, and a typed diagonal in
+  inches or centimeters). A pre-check flags a
   resolution mismatch (with a one-click fix) or browser zoom before
   measuring, and the result screen offers the measured value or the
   nearest common size, plus a 5 cm check line.

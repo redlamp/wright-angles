@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   DownloadIcon,
+  Link2Icon,
+  MoonIcon,
   RulerIcon,
   SettingsIcon,
   ShieldCheckIcon,
   SparklesIcon,
+  SunIcon,
+  SunMoonIcon,
   UploadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,7 +40,8 @@ export function SegmentedToggle<T extends string>({
   onFill = false,
 }: {
   value: T;
-  options: { value: T; label: string }[];
+  /** With an icon, the button shows only the icon; label names it. */
+  options: { value: T; label: string; icon?: React.ReactNode }[];
   onChange: (v: T) => void;
   /**
    * Legible sitting on a SOLID bg-foreground fill (the calibration
@@ -69,9 +74,18 @@ export function SegmentedToggle<T extends string>({
                 ? "text-background/70 hover:text-background"
                 : "text-muted-foreground hover:text-foreground",
           )}
+          aria-pressed={o.value === value}
+          aria-label={o.icon ? o.label : undefined}
+          title={o.icon ? o.label : undefined}
           onClick={() => onChange(o.value)}
         >
-          {o.label}
+          {o.icon ? (
+            <span className="flex items-center justify-center" aria-hidden>
+              {o.icon}
+            </span>
+          ) : (
+            o.label
+          )}
         </button>
       ))}
     </div>
@@ -211,9 +225,13 @@ export function SettingsPanel() {
           <SegmentedToggle
             value={theme}
             options={[
-              { value: "system", label: "System" },
-              { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
+              {
+                value: "system",
+                label: "Match system",
+                icon: <SunMoonIcon className="size-4" />,
+              },
+              { value: "dark", label: "Dark", icon: <MoonIcon className="size-4" /> },
+              { value: "light", label: "Light", icon: <SunIcon className="size-4" /> },
             ]}
             onChange={setTheme}
           />
@@ -223,9 +241,13 @@ export function SettingsPanel() {
           <SegmentedToggle
             value={sceneTheme}
             options={[
-              { value: "follow", label: "Match UI" },
-              { value: "dark", label: "Dark" },
-              { value: "light", label: "Light" },
+              {
+                value: "follow",
+                label: "Match the UI theme",
+                icon: <Link2Icon className="size-4" />,
+              },
+              { value: "dark", label: "Dark", icon: <MoonIcon className="size-4" /> },
+              { value: "light", label: "Light", icon: <SunIcon className="size-4" /> },
             ]}
             onChange={setSceneTheme}
           />

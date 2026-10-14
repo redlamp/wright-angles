@@ -1,18 +1,24 @@
-# Deploys the static export to GitHub Pages on every push to main or dev.
-# Two slots in one artifact: main at /wright-angles, dev at
-# /wright-angles/dev (best-effort — a broken dev never blocks production).
-# Every run rebuilds both slots from the branch heads, so a dev push
-# refreshes /dev and redeploys main unchanged; a newer run cancelling an
-# older one loses nothing.
+# Deploys the static export to GitHub Pages. Three slots in one artifact:
+#   /wright-angles          main (production)
+#   /wright-angles/dev      dev (best-effort — a broken dev never blocks main)
+#   /wright-angles/preview  a work branch, for checking work before it merges
+# Every run rebuilds all three from branch heads, so any run redeploys
+# main unchanged and a newer run cancelling an older one loses nothing.
+# The preview is the pushed branch when a work branch (claude/*,
+# feature-*, fix-*) triggers the run; otherwise it is the head of the
+# most recently updated open PR into dev, so a dev or main push keeps the
+# preview instead of wiping it. Work-branch runs need those patterns
+# allowed on the github-pages environment (Settings → Environments).
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, "claude/**", "feature-*", "fix-*"]
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read # to find the newest open PR for the preview slot
   pages: write
   id-token: write
 
@@ -82,6 +88,45 @@ jobs:
           NEXT_OUTPUT_EXPORT=1 NEXT_PUBLIC_BASE_PATH=/wright-angles/dev bun run build
           mkdir -p ../site/dev
           cp -r out/* ../site/dev/
+
+      - name: Pick preview branch
+        id: preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSHED: ${{ github.ref_name }}
+        run: |
+          case "$PUSHED" in
+            main|dev)
+              branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --base dev \
+                --state open --json headRefName,updatedAt \
+                --jq 'sort_by(.updatedAt) | last | .headRefName // ""')
+              ;;
+            *) branch="$PUSHED" ;;
+          esac
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "Preview slot: ${branch:-none}"
+
+      - name: Checkout preview
+        id: preview-checkout
+        if: steps.preview.outputs.branch != ''
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.preview.outputs.branch }}
+          path: preview-src
+
+      - name: Build preview slot
+        continue-on-error: true
+        if: steps.preview-checkout.outcome == 'success'
+        working-directory: preview-src
+        env:
+          PREVIEW_BRANCH: ${{ steps.preview.outputs.branch }}
+        run: |
+          bun install --frozen-lockfile
+          NEXT_OUTPUT_EXPORT=1 NEXT_PUBLIC_BASE_PATH=/wright-angles/preview bun run build
+          mkdir -p ../site/preview
+          cp -r out/* ../site/preview/
+          printf '%s\n' "$PREVIEW_BRANCH" > ../site/preview/BRANCH.txt
 
       - name: Finalize artifact
         run: touch site/.nojekyll

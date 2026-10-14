@@ -168,39 +168,5 @@ export function OffsetControls({
 }
 
 /** Inline flip for the global distance unit. */
-export function DistanceUnitFlip() {
-  const unit = useSettingsStore((s) => s.unit);
-  const setUnit = useSettingsStore((s) => s.setUnit);
-  return <UnitFlip value={unit} onChange={setUnit} />;
-}
-
-/** Tiny in/cm switcher inline with a section label. */
-export function UnitFlip({
-  value,
-  onChange,
-}: {
-  value: "in" | "cm";
-  onChange: (u: "in" | "cm") => void;
-}) {
-  return (
-    <span className="flex items-center gap-0.5">
-      {(["in", "cm"] as const).map((u) => (
-        <button
-          key={u}
-          type="button"
-          className={cn(
-            "rounded px-1.5 py-0.5 text-sm transition-colors",
-            u === value
-              ? "bg-foreground text-background"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-          onClick={() => onChange(u)}
-        >
-          {u}
-        </button>
-      ))}
-    </span>
-  );
-}
-
+export { DistanceUnitFlip, UnitFlip } from "@/components/unit-flip";
 export { AngleReadout } from "./angle-readout";

@@ -34,6 +34,7 @@ export type DeviceCategory =
   | "handheld"
   | "phone"
   | "tablet"
+  | "laptop"
   | "monitor"
   | "tv"
   | "projector"

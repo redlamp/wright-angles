@@ -106,6 +106,7 @@ export function CalibrationPanel({
       ) : step === "known" ? (
         <KnownStep
           diagonalIn={diagonalIn}
+          resolution={resolution}
           onBack={() => setStep("method")}
           onApply={(d) => onApply(d, resolution)}
         />
