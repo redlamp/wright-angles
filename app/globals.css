@@ -178,6 +178,39 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Keyboard focus is always visible, in the foreground color (--ring is
+     too faint against the light background for a 3:1 indicator).
+     Controls that style their own ring (shadcn's outline-none +
+     focus-visible:ring-*) win: utilities outrank this base layer. */
+  :where(button, a[href], [role="button"], [role="tab"], [tabindex]):focus-visible {
+    outline: 2px solid var(--foreground);
+    outline-offset: 2px;
+  }
+  /* Presentation view (Ctrl/Cmd+\, components/hotkeys.tsx): every
+     framed surface (toolbar, panels, HUD) plus the marked overlay chrome
+     goes invisible. visibility rather than display keeps panel sizes
+     measurable, and hidden controls drop out of the Tab order. */
+  html[data-chrome-hidden]
+    :is(.panel-frame, [data-ui-chrome], [data-chrome]):not([data-chrome-keep]),
+  html[data-chrome-hidden]
+    :is(.panel-frame, [data-ui-chrome], [data-chrome]):not([data-chrome-keep])
+    * {
+    visibility: hidden !important;
+  }
+  /* Reduced motion: CSS transitions and animations jump to their end
+     state. The 3D scene's JS tweens read the same preference via
+     components/use-reduced-motion.ts. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
   html {
     @apply font-sans;
     font-size: 16px;

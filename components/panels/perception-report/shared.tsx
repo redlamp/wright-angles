@@ -1,25 +1,15 @@
 "use client";
 
-import { TriangleAlertIcon } from "lucide-react";
 import {
   deviceAngles,
   formatDistance,
   physicalSizeCm,
 } from "@/lib/display-math";
-import { legibilityColor } from "@/lib/legibility";
 import { fitLabel, fitModeOf, fitStretchNote } from "@/lib/fit";
 import type { Device, MediaItem } from "@/lib/types";
 import { useMediaStore } from "@/stores/media-store";
 import { useSettingsStore } from "@/stores/settings-store";
-
-export function LegibilityDot({ arcmin }: { arcmin: number }) {
-  return (
-    <span
-      className="inline-block size-2 rounded-full"
-      style={{ background: legibilityColor(arcmin) }}
-    />
-  );
-}
+import { CautionIcon, HelpTip } from "@/components/legibility-ui";
 
 /**
  * The "this reading is vertical only" chip. `stretch` is the one fit
@@ -31,10 +21,10 @@ function StretchChip({ item, d }: { item: MediaItem | null; d: Device }) {
   if (!note) return null;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-[#f5a524]"
+      className="inline-flex items-center gap-1 rounded-md bg-[#f5a524]/15 px-1.5 py-0.5 font-mono text-sm text-foreground"
       title={`"${fitLabel(fitModeOf(d))}" scales width and height independently on ${d.label}: the image is distorted, and the arc-minute figures here measure its HEIGHT.`}
     >
-      <TriangleAlertIcon className="size-3 shrink-0" />
+      <CautionIcon />
       {note}
     </span>
   );
@@ -58,9 +48,10 @@ export function SpecLines({ d }: { d: Device }) {
         {size.widthCm.toFixed(1)} × {size.heightCm.toFixed(1)} cm panel
       </div>
       <div>viewed at {formatDistance(d.distanceCm, unit)}</div>
-      <div>
+      <div className="flex items-center gap-1">
         {a.horizontalDeg.toFixed(0)}° × {a.verticalDeg.toFixed(0)}° ·{" "}
         {a.ppd.toFixed(0)} PPD
+        <HelpTip term="ppd" />
       </div>
       <StretchChip item={activeItem} d={d} />
     </div>

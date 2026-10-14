@@ -47,6 +47,11 @@ interface SettingsState {
   showLegibilityBands: boolean;
   /** Onboarding completed (or explicitly skipped). */
   onboarded: boolean;
+  /**
+   * The one-time "2D | 3D" coach mark has been shown and dismissed.
+   * Stores persisted before this field existed merge in the default.
+   */
+  viewToggleCoachSeen: boolean;
   /** Color-vision simulation over the views (debug overlay, plan 10.5). */
   cvdMode: CvdMode;
   setCvdMode: (mode: CvdMode) => void;
@@ -59,6 +64,7 @@ interface SettingsState {
   setSizeUnit: (unit: LengthUnit) => void;
   setShowLegibilityBands: (v: boolean) => void;
   setOnboarded: (v: boolean) => void;
+  setViewToggleCoachSeen: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -75,6 +81,7 @@ export const useSettingsStore = create<SettingsState>()(
       sizeUnit: "in",
       showLegibilityBands: true,
       onboarded: false,
+      viewToggleCoachSeen: false,
       // Simulation is a session tool, but remembering it across reloads
       // matches every other view setting here.
       cvdMode: "none",
@@ -89,6 +96,8 @@ export const useSettingsStore = create<SettingsState>()(
       setShowLegibilityBands: (showLegibilityBands) =>
         set({ showLegibilityBands }),
       setOnboarded: (onboarded) => set({ onboarded }),
+      setViewToggleCoachSeen: (viewToggleCoachSeen) =>
+        set({ viewToggleCoachSeen }),
     }),
     { name: "wright-angles:settings" },
   ),

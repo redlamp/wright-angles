@@ -103,11 +103,29 @@ async function step(name, fn) {
   await step("app renders", () =>
     page.locator("canvas").first().waitFor({ timeout: 15_000 }),
   );
-  await step("2D/3D toggle (Tab)", async () => {
-    await page.keyboard.press("Tab");
+  await step("2D/3D toggle (V)", async () => {
+    const pressed = () =>
+      page
+        .getByRole("group", { name: "View" })
+        .getByRole("button", { pressed: true })
+        .textContent();
+    const before = await pressed();
+    await page.keyboard.press("v");
     await page.waitForTimeout(500);
-    await page.keyboard.press("Tab");
+    if ((await pressed()) === before) throw new Error("V did not flip the view");
+    await page.keyboard.press("v");
     await page.waitForTimeout(500);
+    if ((await pressed()) !== before) throw new Error("V did not flip back");
+  });
+  await step("Tab moves focus to a toolbar control", async () => {
+    await page.locator("body").focus();
+    await page.keyboard.press("Tab");
+    const inToolbar = await page.evaluate(
+      () =>
+        document.activeElement !== document.body &&
+        !!document.activeElement?.closest('[role="toolbar"]'),
+    );
+    if (!inToolbar) throw new Error("focus did not land in the toolbar");
   });
   for (const [key, label] of [
     ["d", "devices tab (D)"],
@@ -119,6 +137,28 @@ async function step(name, fn) {
       await page.waitForTimeout(400);
     });
   }
+  await step("undo/redo a device edit (Ctrl+Z / Ctrl+Shift+Z)", async () => {
+    const dist = () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("wright-angles:devices") ?? "null")
+            ?.state.thisDevice.distanceCm,
+      );
+    await page.keyboard.press("d");
+    await page
+      .getByRole("button", { name: "Increase viewing distance" })
+      .first()
+      .click();
+    const edited = await dist();
+    await page.keyboard.press("Control+z");
+    const undone = await dist();
+    await page.keyboard.press("Control+Shift+z");
+    const redone = await dist();
+    await page.keyboard.press("m"); // back to the media tab for the import
+    if (undone !== edited - 1 || redone !== edited) {
+      throw new Error(`distance ${edited} → undo ${undone} → redo ${redone}`);
+    }
+  });
   await step("import an image", async () => {
     // A generated PNG with text in it, so auto-OCR has a line to find.
     const b64 = await page.evaluate(() => {

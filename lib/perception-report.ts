@@ -57,3 +57,54 @@ export function buildTextEntries(item: MediaItem): TextEntry[] {
       });
   return entries;
 }
+
+/** CSS box for a background-image crop of one text line's region. */
+export interface LineThumb {
+  /** Thumbnail size, CSS px. */
+  width: number;
+  height: number;
+  /** background-size, CSS px. */
+  bgWidth: number;
+  bgHeight: number;
+  /** background-position, CSS px (≤ 0). */
+  bgX: number;
+  bgY: number;
+}
+
+/**
+ * Crop a normalized box (full-image 0–1 coords) out of a `imgW`×`imgH`
+ * image as a CSS background: the region (padded by `padFrac` of the
+ * box height on every side, clamped to the image) scaled to `maxH`
+ * tall, and clipped on the right at `maxW` — a long line keeps legible
+ * glyphs and shows its start rather than shrinking to a smear. Lets a
+ * report row show the pixels the OCR read, so a misread label ("47px"
+ * for "17px") can be caught at a glance — with no canvas and no copy of
+ * the image. Null for an empty box or image.
+ */
+export function lineThumb(
+  box: { x: number; y: number; w: number; h: number },
+  imgW: number,
+  imgH: number,
+  maxW: number,
+  maxH: number,
+  padFrac = 0.25,
+): LineThumb | null {
+  if (!(imgW > 0 && imgH > 0 && box.w > 0 && box.h > 0)) return null;
+  const pad = box.h * imgH * padFrac;
+  const x0 = Math.max(0, box.x * imgW - pad);
+  const y0 = Math.max(0, box.y * imgH - pad);
+  const x1 = Math.min(imgW, (box.x + box.w) * imgW + pad);
+  const y1 = Math.min(imgH, (box.y + box.h) * imgH + pad);
+  const rw = x1 - x0;
+  const rh = y1 - y0;
+  if (!(rw > 0 && rh > 0)) return null;
+  const s = maxH / rh;
+  return {
+    width: Math.min(rw * s, maxW),
+    height: rh * s,
+    bgWidth: imgW * s,
+    bgHeight: imgH * s,
+    bgX: -x0 * s,
+    bgY: -y0 * s,
+  };
+}

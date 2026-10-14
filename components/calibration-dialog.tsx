@@ -4,6 +4,7 @@ import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
+import { aspectFromResolution } from "@/lib/display-math";
 import { useDeviceStore } from "@/stores/device-store";
 import { CalibrationPanel } from "@/components/calibration-panel";
 
@@ -31,11 +32,24 @@ export function CalibrationDialog({
       {open ? (
         <DialogContent className="max-h-[calc(100vh-2rem)] w-auto max-w-none overflow-y-auto sm:max-w-none">
           <CalibrationPanel
-            aspect={thisDevice.aspect}
             resolution={thisDevice.resolution}
             diagonalIn={thisDevice.diagonalIn}
-            onApply={(diagonalIn) => {
-              updateThisDevice({ diagonalIn });
+            onApply={(diagonalIn, resolution) => {
+              // Resolution (and the aspect derived from it) only change
+              // when the pre-check corrected it; an untouched spec keeps
+              // its own aspect.
+              const changed =
+                resolution.w !== thisDevice.resolution.w ||
+                resolution.h !== thisDevice.resolution.h;
+              updateThisDevice(
+                changed
+                  ? {
+                      diagonalIn,
+                      resolution,
+                      aspect: aspectFromResolution(resolution),
+                    }
+                  : { diagonalIn },
+              );
               close();
             }}
             onCancel={close}

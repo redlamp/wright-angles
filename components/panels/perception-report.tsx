@@ -47,16 +47,22 @@ export function PerceptionReportContent() {
     [fontPx, refH, thisDevice],
   );
 
-  /** Which devices annotate each text entry's verdict row. */
+  /** The verdict matrix's columns: the picked device, This Device,
+   * or (All Devices) This Device plus every VISIBLE device — hidden
+   * ones are a click away in column 1. */
   const verdictDevices = useMemo(
     () =>
       mode === "device" && pickedDevice
         ? [pickedDevice]
         : mode === "mine"
           ? [thisDevice]
-          : [thisDevice, ...devices],
+          : [thisDevice, ...devices.filter((d) => d.visible)],
     [mode, pickedDevice, thisDevice, devices],
   );
+
+  /** Authoring resolution the min-text px are quoted at: the active
+   * media's reference height, else the probe's. */
+  const guideRefH = activeItem?.referenceHeight || refH;
 
   const { textEntries, entryVerdicts } = useEntryVerdicts(
     activeItem,
@@ -76,6 +82,7 @@ export function PerceptionReportContent() {
           pickedDevice={pickedDevice}
           fontPx={fontPx}
           refH={refH}
+          guideRefH={guideRefH}
         />
       }
       // Column 2: the scanned text for the active media.
@@ -86,6 +93,7 @@ export function PerceptionReportContent() {
             activeItem={activeItem}
             textEntries={textEntries}
             entryVerdicts={entryVerdicts}
+            devices={verdictDevices}
           />
 
           {showBands ? (

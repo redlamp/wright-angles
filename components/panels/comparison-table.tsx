@@ -14,6 +14,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useUiStore } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
 import { Button } from "@/components/ui/button";
+import { CautionIcon, VERDICT_ICON_CLASS } from "@/components/legibility-ui";
 
 /**
  * The live version of the arc-minute spreadsheet: every device's angular
@@ -60,11 +61,6 @@ const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: "ratio", label: "vs This", title: "Apparent width vs This Device" },
 ];
 
-function ppdClass(ppd: number): string {
-  if (ppd < 45) return "text-[#e5484d]";
-  if (ppd < 60) return "text-[#f5a524]";
-  return "";
-}
 
 export function ComparisonTablePanel() {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
@@ -238,15 +234,24 @@ export function ComparisonTablePanel() {
                 <td className="px-1 py-1.5">{r.hDeg.toFixed(1)}</td>
                 <td className="px-1 py-1.5">{r.vDeg.toFixed(1)}</td>
                 <td
-                  className={cn("px-1 py-1.5", ppdClass(r.ppd))}
+                  className="px-1 py-1.5 whitespace-nowrap"
                   title={
                     r.ppd < 60
                       ? "Below the ~60 PPD retina threshold — pixels are resolvable at this distance"
                       : undefined
                   }
                 >
-                  {r.ppd.toFixed(1)}
-                  {r.ppd < 60 ? "*" : ""}
+                  <span className="inline-flex items-center gap-1">
+                    {r.ppd.toFixed(1)}
+                    {r.ppd < 60 ? "*" : ""}
+                    {r.ppd < 60 ? (
+                      <CautionIcon
+                        className={
+                          r.ppd < 45 ? VERDICT_ICON_CLASS.fail : undefined
+                        }
+                      />
+                    ) : null}
+                  </span>
                 </td>
                 <td className="px-1 py-1.5">{r.arcminPerPx.toFixed(2)}</td>
                 <td className="px-1 py-1.5">{Math.round(r.ppi)}</td>

@@ -1,152 +1,178 @@
 "use client";
 
-import {
-  CornerDownRightIcon,
-  Trash2Icon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { CornerDownRightIcon, Trash2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { strokesSubAcuity } from "@/lib/display-math";
-import { legibilityColor } from "@/lib/legibility";
 import { formatTimecode } from "@/lib/units";
-import { fitLabel, fitModeOf } from "@/lib/fit";
 import type { TextEntry } from "@/lib/perception-report";
-import type { MediaItem } from "@/lib/types";
+import type { Device, MediaItem } from "@/lib/types";
 import { useMediaStore } from "@/stores/media-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useUiStore } from "@/stores/ui-store";
+import { DeviceSwatch } from "@/components/legibility-ui";
 import type { EntryVerdict } from "./use-entry-verdicts";
+import { LineThumb } from "./line-thumb";
+import { VerdictCell } from "./verdict-cell";
 
 /**
- * Column 2's body: the active media's text entries, each with its
- * per-device verdict row — or the no-media / nothing-measured notes.
+ * Column 2's body: the active media's text entries as a verdict
+ * matrix — one row per text line (thumbnail of the real pixels, the
+ * OCR'd label, its source size), one column per device NAMED in the
+ * header — or the no-media / nothing-measured notes. The matrix
+ * scrolls sideways inside its own box; the line column stays pinned.
  */
 export function TextEntryList({
   activeItem,
   textEntries,
   entryVerdicts,
+  devices,
 }: {
   activeItem: MediaItem | null;
   textEntries: TextEntry[];
   entryVerdicts: Map<string, Array<EntryVerdict>>;
+  /** The matrix columns, in the same order as each verdict row. */
+  devices: Device[];
 }) {
   const removeBox = useMediaStore((s) => s.removeBox);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
   const openWorkbenchTab = useUiStore((s) => s.openWorkbenchTab);
 
-  return !activeItem ? (
-    <p className="panel-inset flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-muted-foreground">
-      No active media.
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
-        onClick={() => openWorkbenchTab("media")}
-      >
-        <CornerDownRightIcon className="size-3.5" />
-        Media Library
-      </button>
-    </p>
-  ) : textEntries.length === 0 ? (
-    <p className="panel-inset rounded-md px-2.5 py-2 text-sm text-muted-foreground">
-      Nothing measured yet — run Detect Text Size or draw measure
-      boxes in the 2D view.
-    </p>
-  ) : (
-    <ul className="space-y-1.5">
-      {textEntries.map((e) => (
-        <li
-          key={e.id}
-          className={cn(
-            "panel-inset cursor-pointer rounded-md px-2.5 py-1.5 text-sm transition-shadow",
-            e.id === selectedBoxId && "ring-1 ring-ring",
-          )}
-          onClick={() =>
-            selectBox(e.id === selectedBoxId ? null : e.id)
-          }
+  if (!activeItem)
+    return (
+      <p className="panel-inset flex items-center gap-1 rounded-md px-2.5 py-2 text-sm text-muted-foreground">
+        No active media.
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
+          onClick={() => openWorkbenchTab("media")}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span
-              className="min-w-0 flex-1 truncate font-medium"
-              title={e.label}
+          <CornerDownRightIcon className="size-3.5" />
+          Media Library
+        </button>
+      </p>
+    );
+  if (textEntries.length === 0)
+    return (
+      <p className="panel-inset rounded-md px-2.5 py-2 text-sm text-muted-foreground">
+        Nothing measured yet — run Detect Text Size or draw measure
+        boxes in the 2D view.
+      </p>
+    );
+
+  const anyRemovable = textEntries.some((e) => e.removable);
+  return (
+    <div className="panel-inset overflow-x-auto rounded-md">
+      <table className="w-full border-collapse text-sm">
+        <caption className="sr-only">
+          Legibility of each scanned text line on each device: readable
+          (20′ or more), tight (16–20′) or too small (under 16′).
+        </caption>
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground">
+            <th
+              scope="col"
+              className="sticky left-0 z-10 bg-surface-inset px-2.5 py-1.5 font-medium"
             >
-              {e.label}
-            </span>
-            <span className="shrink-0 font-mono text-sm text-muted-foreground">
-              {e.kfTime !== null ? `@ ${formatTimecode(e.kfTime)} · ` : ""}
-              {e.srcH} px
-            </span>
-            {e.removable && activeItem ? (
-              <button
-                type="button"
-                aria-label={`Remove ${e.label}`}
-                className="text-muted-foreground transition-colors hover:text-destructive"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  removeBox(activeItem.id, e.id);
-                  if (e.id === selectedBoxId) selectBox(null);
-                }}
+              Text line
+            </th>
+            {devices.map((d) => (
+              <th
+                key={d.id}
+                scope="col"
+                className="px-2 py-1.5 font-medium"
+                title={d.deviceName || d.label}
               >
-                <Trash2Icon className="size-3" />
-              </button>
+                <span className="flex max-w-28 items-center gap-1.5">
+                  <DeviceSwatch color={d.color} />
+                  <span className="truncate text-foreground">{d.label}</span>
+                </span>
+              </th>
+            ))}
+            {anyRemovable ? (
+              <th scope="col" className="w-7 px-1">
+                <span className="sr-only">Remove</span>
+              </th>
             ) : null}
-          </div>
-          {/* Row 2 (Taylor 2026-08-18): compact dot·arcmin
-              pairs — the dot is the device's key color, the
-              arcmin number wears the verdict band, the hover
-              title names the device with mm/px. */}
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-            {(entryVerdicts.get(e.id) ?? []).map((row) => {
-              const d = row.device;
-              // Fit modes crop: a box the device's fit trims
-              // away isn't on that screen at all — show a muted
-              // dash instead of a verdict. Measuring through the
-              // device's actual rendered crop (not the intrinsic
-              // image) also means a cropped-in box reads its
-              // true, bigger size on that screen.
-              if (row.kind === "cropped") {
-                return (
-                  <span
-                    key={d.id}
-                    className="flex items-center gap-1.5 font-mono text-sm"
-                    title={`${d.label}: cropped out by "${fitLabel(fitModeOf(d))}" — not shown on this screen`}
+          </tr>
+        </thead>
+        <tbody>
+          {textEntries.map((e) => {
+            const selected = e.id === selectedBoxId;
+            const rows = entryVerdicts.get(e.id) ?? [];
+            return (
+              <tr
+                key={e.id}
+                className={cn(
+                  "group cursor-pointer border-b border-border/60 last:border-b-0",
+                  selected ? "bg-muted" : "hover:bg-muted/50",
+                )}
+                onClick={() => selectBox(selected ? null : e.id)}
+              >
+                <th
+                  scope="row"
+                  className={cn(
+                    "sticky left-0 z-10 max-w-56 min-w-36 px-2.5 py-1.5 text-left font-normal",
+                    selected ? "bg-muted" : "bg-surface-inset group-hover:bg-muted",
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    className="block w-full min-w-0 rounded-sm text-left focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      selectBox(selected ? null : e.id);
+                    }}
                   >
                     <span
-                      className="inline-block size-2 rounded-full opacity-35"
-                      style={{ background: d.color }}
-                    />
-                    <span className="text-muted-foreground/60">—</span>
-                  </span>
-                );
-              }
-              // A stretched panel distorts: the figure is the
-              // HEIGHT one, and the chip says so on hover.
-              const { m, stretch } = row;
-              return (
-                <span
-                  key={d.id}
-                  className="flex items-center gap-1.5 font-mono text-sm"
-                  title={`${d.label}: ${m.arcmin.toFixed(1)}′ · ${m.mm.toFixed(1)} mm tall · ${Math.round(m.devicePx)} px${stretch ? ` — ${stretch}` : ""}`}
-                >
-                  <span
-                    className="inline-block size-2 rounded-full"
-                    style={{ background: d.color }}
-                  />
-                  <span style={{ color: legibilityColor(m.arcmin) }}>
-                    {m.arcmin.toFixed(0)}′
-                  </span>
-                  {strokesSubAcuity(m.arcmin) ? (
-                    <TriangleAlertIcon
-                      className="size-3 text-[#e5484d]"
-                      aria-label="Sub-acuity strokes"
-                    />
-                  ) : null}
-                </span>
-              );
-            })}
-          </div>
-        </li>
-      ))}
-    </ul>
+                      className="block truncate font-medium"
+                      title={e.label}
+                    >
+                      {e.label}
+                    </span>
+                    {/* The real pixels beside the OCR'd label: a misread
+                        ("47" for "17") shows at a glance. */}
+                    <span className="mt-0.5 flex items-center gap-2 font-mono text-muted-foreground">
+                      <LineThumb
+                        item={activeItem}
+                        box={e.box}
+                        isKeyframe={e.kfTime !== null}
+                      />
+                      <span className="shrink-0">
+                        {e.kfTime !== null
+                          ? `@ ${formatTimecode(e.kfTime)} · `
+                          : ""}
+                        {e.srcH} px
+                      </span>
+                    </span>
+                  </button>
+                </th>
+                {devices.map((d, i) => (
+                  <VerdictCell key={d.id} row={rows[i]} />
+                ))}
+                {anyRemovable ? (
+                  <td className="px-1 py-1.5">
+                    {e.removable ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${e.label}`}
+                        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-destructive"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          removeBox(activeItem.id, e.id);
+                          if (selected) selectBox(null);
+                        }}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

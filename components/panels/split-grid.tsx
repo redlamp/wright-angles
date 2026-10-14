@@ -13,6 +13,12 @@ import { useUiStore } from "@/stores/ui-store";
  * it everywhere — parity across tabs, like the rest of the workbench
  * state. The divider carries a collapse toggle that folds the first
  * column away entirely.
+ *
+ * Reflow (WCAG 1.4.10): below a 640 px panel width (200% zoom, small
+ * windows) the columns stack into one and the whole body scrolls
+ * vertically; the divider and the collapse state step aside until the
+ * panel is wide again. A container query, so it follows the PANEL's
+ * width, not the window's.
  */
 export function SplitGrid({
   left,
@@ -33,63 +39,73 @@ export function SplitGrid({
   const hostRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div
-      ref={hostRef}
-      className={cn("grid h-full min-h-0 overflow-x-clip", className)}
-      style={{
-        gridTemplateColumns: `${collapsed ? 0 : splitPx}px 5px minmax(0, 1fr)`,
-      }}
-    >
-      {/* Single-cell grid so the tab's own column root stretches to the
-          full panel height (flex/scroll chains depend on it). */}
+    <div className="@container h-full min-h-0">
       <div
+        ref={hostRef}
         className={cn(
-          "grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden",
-          collapsed && "invisible",
+          "grid h-full min-h-0 grid-cols-(--split-cols) overflow-x-clip",
+          "@max-[640px]:grid-cols-[minmax(0,1fr)] @max-[640px]:auto-rows-max @max-[640px]:overflow-y-auto",
+          className,
         )}
+        style={
+          {
+            "--split-cols": `${collapsed ? 0 : splitPx}px 5px minmax(0, 1fr)`,
+          } as React.CSSProperties
+        }
       >
-        {left}
+        {/* Single-cell grid so the tab's own column root stretches to the
+            full panel height (flex/scroll chains depend on it). Stacked,
+            it sizes to its content instead. */}
+        <div
+          className={cn(
+            "grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden",
+            "@max-[640px]:grid-rows-[auto] @max-[640px]:overflow-visible @max-[640px]:border-b @max-[640px]:border-border",
+            collapsed && "invisible @max-[640px]:visible",
+          )}
+        >
+          {left}
+        </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize columns"
+          className={cn(
+            "relative touch-none border-x border-border bg-transparent transition-colors @max-[640px]:hidden",
+            !collapsed && "cursor-col-resize hover:bg-ring/40",
+          )}
+          onPointerDown={(e) => {
+            if (collapsed) return;
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId))
+              return;
+            const host = hostRef.current;
+            if (!host) return;
+            const r = host.getBoundingClientRect();
+            // Store clamp holds the floor; keep a usable second column too.
+            setSplitPx(Math.min(e.clientX - r.left, r.width - 200));
+          }}
+        >
+          {FEATURE_COLLAPSE_FIRST_COLUMN ? (
+            <button
+              type="button"
+              aria-label={collapsed ? "Show first column" : "Hide first column"}
+              title={collapsed ? "Show first column" : "Hide first column"}
+              className="panel-frame absolute top-1.5 left-1/2 z-10 flex size-5 -translate-x-1/2 cursor-pointer items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={toggleCollapsed}
+            >
+              {collapsed ? (
+                <PanelLeftOpenIcon className="size-3.5" />
+              ) : (
+                <PanelLeftCloseIcon className="size-3.5" />
+              )}
+            </button>
+          ) : null}
+        </div>
+        {right}
       </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize columns"
-        className={cn(
-          "relative touch-none border-x border-border bg-transparent transition-colors",
-          !collapsed && "cursor-col-resize hover:bg-ring/40",
-        )}
-        onPointerDown={(e) => {
-          if (collapsed) return;
-          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId))
-            return;
-          const host = hostRef.current;
-          if (!host) return;
-          const r = host.getBoundingClientRect();
-          // Store clamp holds the floor; keep a usable second column too.
-          setSplitPx(Math.min(e.clientX - r.left, r.width - 200));
-        }}
-      >
-        {FEATURE_COLLAPSE_FIRST_COLUMN ? (
-          <button
-            type="button"
-            aria-label={collapsed ? "Show first column" : "Hide first column"}
-            title={collapsed ? "Show first column" : "Hide first column"}
-            className="panel-frame absolute top-1.5 left-1/2 z-10 flex size-5 -translate-x-1/2 cursor-pointer items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={toggleCollapsed}
-          >
-            {collapsed ? (
-              <PanelLeftOpenIcon className="size-3.5" />
-            ) : (
-              <PanelLeftCloseIcon className="size-3.5" />
-            )}
-          </button>
-        ) : null}
-      </div>
-      {right}
     </div>
   );
 }

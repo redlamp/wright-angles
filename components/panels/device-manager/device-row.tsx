@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 import type { Device } from "@/lib/types";
 import { useUiStore } from "@/stores/ui-store";
 import { Button } from "@/components/ui/button";
+import { DeviceSwatch } from "@/components/legibility-ui";
 
-/** Shared collapsed-row grid: eye | name (in the device's key color). */
+/** Shared collapsed-row grid: eye | swatch + name. */
 const ROW_GRID =
   "grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-1.5";
 
@@ -97,17 +98,21 @@ export function DeviceRow({
               : undefined
           }
           className={cn(
-            "min-w-0 truncate text-left text-base",
-            // The name wears the device's key color (Taylor 2026-08-19);
-            // hidden devices dim rather than losing their identity.
-            !device.visible && "opacity-50",
+            "flex min-w-0 items-center gap-2 text-left text-base",
+            // The key color rides a swatch (Taylor 2026-08-19 put it
+            // on the name; as text it failed contrast on both themes).
+            // Hidden devices go muted rather than losing identity.
+            !device.visible && "text-muted-foreground",
             reorder && "cursor-grab active:cursor-grabbing",
           )}
-          style={{ color: device.color }}
           onClick={toggleDetail}
           title={device.deviceName || device.label}
         >
-          {device.label}
+          <DeviceSwatch
+            color={device.color}
+            className={cn("size-2.5", !device.visible && "opacity-50")}
+          />
+          <span className="truncate">{device.label}</span>
         </button>
       </div>
     </div>

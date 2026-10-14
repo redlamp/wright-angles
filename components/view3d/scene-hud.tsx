@@ -27,10 +27,10 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
 
   return (
     <>
-      <div className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-sm tabular-nums text-muted-foreground">
+      <div data-chrome className="pointer-events-none absolute bottom-3 right-3 z-10 select-none font-mono text-sm tabular-nums text-muted-foreground">
         <span id={FPS_NODE_ID} /> fps
       </div>
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+      <div className="absolute right-3 top-3 z-10 flex max-w-[calc(100%-22rem)] flex-wrap items-center justify-end gap-1.5">
         <CvdChip className="panel-frame rounded-md border border-border font-mono text-sm text-muted-foreground" />
         {onExport ? (
           // Same treatment and height as the color-vision chip beside it.
@@ -55,6 +55,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                 <button
                   key={o.id}
                   type="button"
+                  aria-pressed={o.id === scenario}
                   className={cn(
                     "h-full flex-1 rounded-[5px] text-sm transition-colors",
                     o.id === scenario
@@ -72,6 +73,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                 <button
                   key={o.id}
                   type="button"
+                  aria-pressed={o.id === inputType}
                   className={cn(
                     "h-full flex-1 rounded-[5px] text-sm transition-colors",
                     o.id === inputType
@@ -92,6 +94,7 @@ export default function SceneHud({ onExport }: { onExport?: () => void }) {
                 ? "Unlink setting from input type"
                 : "Link setting with input type"
             }
+            aria-label="Link setting with input type"
             aria-pressed={linkInput}
             className={cn(
               "panel-inset flex w-7 items-center justify-center rounded-md transition-colors",

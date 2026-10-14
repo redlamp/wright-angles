@@ -8,10 +8,16 @@ import {
   formatDistance,
 } from "@/lib/display-math";
 import { ratioNote } from "@/lib/perception-report";
+import { formatReferenceHeight, textSizeGuide } from "@/lib/text-size";
 import type { Device } from "@/lib/types";
 import { useDeviceStore } from "@/stores/device-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { LegibilityDot, SpecLines } from "./shared";
+import {
+  DeviceSwatch,
+  HelpTip,
+  VerdictIcon,
+} from "@/components/legibility-ui";
+import { SpecLines } from "./shared";
 
 /**
  * Column 1: device details — All Devices, My Device (in the list, per
@@ -25,6 +31,7 @@ export function DeviceColumn({
   pickedDevice,
   fontPx,
   refH,
+  guideRefH,
 }: {
   column: "all" | "mine" | string;
   setColumn: (column: "all" | "mine" | string) => void;
@@ -32,6 +39,8 @@ export function DeviceColumn({
   pickedDevice: Device | null;
   fontPx: number;
   refH: number;
+  /** Authoring resolution the min-text px are quoted at. */
+  guideRefH: number;
 }) {
   const thisDevice = useDeviceStore((s) => s.thisDevice);
   const devices = useDeviceStore((s) => s.devices);
@@ -44,6 +53,7 @@ export function DeviceColumn({
     const selected = column === key;
     const r = apparentWidthRatio(d, thisDevice);
     const arcmin = contentPxToArcmin(fontPx, refH, d);
+    const guide = textSizeGuide(guideRefH, d);
     return (
       <button
         key={key}
@@ -55,18 +65,25 @@ export function DeviceColumn({
         title={blessed ? undefined : ratioNote(r)}
         onClick={() => setColumn(key)}
       >
-        <div className="flex items-baseline justify-between gap-2">
-          <span
-            className="min-w-0 flex-1 truncate font-medium"
-            style={{ color: d.color }}
-          >
+        <div className="flex items-center justify-between gap-2">
+          <DeviceSwatch color={d.color} />
+          <span className="min-w-0 flex-1 truncate font-medium">
             {d.label}
           </span>
           <span className="shrink-0 font-mono text-muted-foreground">
             {formatDistance(d.distanceCm, unit)}
           </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 font-mono text-muted-foreground">
+        {/* Designer units first: the smallest text that reads here,
+            in px at the authoring resolution. */}
+        <div className="mt-0.5 pl-3.5">
+          Text ≥ {guide.comfortablePx} px
+          <span className="text-muted-foreground">
+            {" "}
+            · min {guide.minPx} px
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 pl-3.5 font-mono text-muted-foreground">
           {blessed ? (
             <>This Device · baseline</>
           ) : (
@@ -75,7 +92,13 @@ export function DeviceColumn({
               {showBands ? (
                 <>
                   {" · "}
-                  <LegibilityDot arcmin={arcmin} /> {arcmin.toFixed(0)}′
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={`Probe: ${fontPx} px @ ${formatReferenceHeight(refH)}`}
+                  >
+                    <VerdictIcon arcmin={arcmin} className="size-3" />
+                    {arcmin.toFixed(0)}′
+                  </span>
                 </>
               ) : null}
               {!d.visible ? (
@@ -110,6 +133,10 @@ export function DeviceColumn({
           <LayoutGridIcon className="size-3.5 text-muted-foreground" />
           All Devices
         </button>
+        <p className="flex items-center gap-1 px-2 pb-0.5 text-sm text-muted-foreground">
+          Smallest text, in px at {formatReferenceHeight(guideRefH)}
+          <HelpTip term="minText" />
+        </p>
         {deviceEntry(thisDevice, true)}
         {devices.map((d) => deviceEntry(d, false))}
         {mode === "all" ? (
@@ -132,20 +159,16 @@ export function DeviceColumn({
         >
           {detailsDevice.id !== thisDevice.id ? (
             <div className="min-w-0 px-2.5 py-2">
-              <span
-                className="font-medium"
-                style={{ color: thisDevice.color }}
-              >
+              <span className="flex items-center gap-1.5 font-medium">
+                <DeviceSwatch color={thisDevice.color} />
                 {thisDevice.label}
               </span>
               <SpecLines d={thisDevice} />
             </div>
           ) : null}
           <div className="min-w-0 px-2.5 py-2">
-            <span
-              className="font-medium"
-              style={{ color: detailsDevice.color }}
-            >
+            <span className="flex items-center gap-1.5 font-medium">
+              <DeviceSwatch color={detailsDevice.color} />
               {detailsDevice.label}
             </span>
             <SpecLines d={detailsDevice} />

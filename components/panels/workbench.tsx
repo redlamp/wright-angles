@@ -1,6 +1,11 @@
 "use client";
 
-import { GaugeIcon, ImageIcon, MonitorIcon } from "lucide-react";
+import {
+  GaugeIcon,
+  ImageIcon,
+  MonitorIcon,
+  PanelsTopLeftIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUiStore, type WorkbenchTab } from "@/stores/ui-store";
 import { FloatingPanel } from "./floating-panel";
@@ -13,25 +18,31 @@ import { PerceptionReportContent } from "./perception-report";
  * Library, and Perception Report as tabs of ONE popup, so cross-links
  * between them are tab switches instead of window juggling. All three
  * tabs stay mounted (hidden via CSS) so scroll positions, flyouts, and
- * in-flight scans survive tab flips.
+ * in-flight scans survive tab flips. Tab order follows the workflow and
+ * the D/M/P hotkeys; the panel keeps one neutral title so the active
+ * tab's name isn't repeated in the header.
  */
 
-const TABS: { id: WorkbenchTab; label: string; icon: typeof MonitorIcon }[] = [
-  { id: "media", label: "Media Library", icon: ImageIcon },
-  { id: "report", label: "Perception Report", icon: GaugeIcon },
-  { id: "devices", label: "Device Manager", icon: MonitorIcon },
+const TABS: {
+  id: WorkbenchTab;
+  label: string;
+  icon: typeof MonitorIcon;
+  key: string;
+}[] = [
+  { id: "devices", label: "Device Manager", icon: MonitorIcon, key: "D" },
+  { id: "media", label: "Media Library", icon: ImageIcon, key: "M" },
+  { id: "report", label: "Perception Report", icon: GaugeIcon, key: "P" },
 ];
 
 export function WorkbenchPanel() {
   const tab = useUiStore((s) => s.workbenchTab);
   const openWorkbenchTab = useUiStore((s) => s.openWorkbenchTab);
-  const active = TABS.find((t) => t.id === tab) ?? TABS[0];
 
   return (
     <FloatingPanel
       id="workbench"
-      title={active.label}
-      icon={active.icon}
+      title="Workbench"
+      icon={PanelsTopLeftIcon}
       width={860}
       maxWidth="none"
       resizableHeight
@@ -43,12 +54,17 @@ export function WorkbenchPanel() {
       }
     >
       <div className="flex h-full max-h-[calc(100vh-8rem)] flex-col">
-        <div className="flex shrink-0 gap-0.5 border-b border-border p-1">
+        <div
+          role="group"
+          aria-label="Workbench sections"
+          className="flex shrink-0 gap-0.5 border-b border-border p-1"
+        >
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               aria-pressed={t.id === tab}
+              aria-keyshortcuts={t.key}
               className={cn(
                 "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-sm transition-colors",
                 t.id === tab
@@ -59,6 +75,9 @@ export function WorkbenchPanel() {
             >
               <t.icon className="size-3.5" />
               {t.label}
+              <span aria-hidden className="font-mono text-muted-foreground/70">
+                {t.key}
+              </span>
             </button>
           ))}
         </div>

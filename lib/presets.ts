@@ -260,17 +260,26 @@ export const HANDHELD_BODIES: Record<
 /**
  * Key-color cycle auto-assigned to new devices (user-adjustable). Saturated
  * against the neutral chrome; sequenced for adjacent contrast.
+ *
+ * No green, amber, orange or red: those hues mean pass / tight / fail
+ * in every legibility verdict (lib/legibility.ts), and a device keyed
+ * in one would read as a verdict. Cyan is reserved for This Device
+ * (stores/device-store.ts). Colors already saved on devices are left
+ * as they are; only new devices draw from this list.
  */
 export const DEVICE_COLORS = [
   "#4f8ef7", // blue
-  "#e5484d", // red
-  "#46a758", // green
-  "#f5a524", // amber
+  "#d6409f", // pink
   "#8e4ef7", // violet
-  "#12a594", // teal
-  "#e93d82", // pink
-  "#f76b15", // orange
+  "#7c8cff", // periwinkle
+  "#ab4aba", // plum
+  "#3e63dd", // indigo
+  "#c08cff", // lilac
+  "#e879c6", // orchid
 ] as const;
+
+/** This Device's default key color (kept out of the cycle above). */
+export const THIS_DEVICE_COLOR = "#00a2c7"; // cyan
 
 export const COMMON_ASPECTS: { label: string; w: number; h: number }[] = [
   { label: "16:9", w: 16, h: 9 },

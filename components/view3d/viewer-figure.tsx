@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { MathUtils, MeshStandardMaterial, Vector3, type Group, type Mesh } from "three";
 import { useFrame } from "@react-three/fiber";
+import { tweenProgress, tweenStep } from "@/lib/motion";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { HeldGrip } from "@/lib/viewing-geometry";
 import type { ScenePalette } from "./scene-palette";
@@ -337,6 +339,7 @@ export default function ViewerFigure({
   useEffect(() => {
     FIGURE_MAT.color.set(palette.figure);
   }, [palette]);
+  const reduced = useReducedMotion();
 
   const target = useMemo(
     () => makePose(scenario, inputType, heightCm, held),
@@ -376,7 +379,11 @@ export default function ViewerFigure({
     const a = anim.current;
     if (a) {
       if (a.start === null) a.start = state.clock.elapsedTime;
-      const t = Math.min(1, (state.clock.elapsedTime - a.start) / TWEEN_S);
+      const t = tweenProgress(
+        state.clock.elapsedTime - a.start,
+        TWEEN_S,
+        reduced,
+      );
       cur.current = t >= 1 ? target : lerpPose(a.from, target, easeInOutCubic(t));
       if (t >= 1) anim.current = null;
       // Keep frames coming while tweening (demand frameloop).
@@ -388,7 +395,7 @@ export default function ViewerFigure({
     const fadeTarget =
       state.camera.position.distanceTo(_headCenter) < HEAD_CLEAR_CM ? 0 : 1;
     if (opacity.current !== fadeTarget) {
-      const step = Math.min(delta, 1 / 30) / FADE_S;
+      const step = tweenStep(delta, FADE_S, reduced);
       opacity.current =
         fadeTarget > opacity.current
           ? Math.min(fadeTarget, opacity.current + step)

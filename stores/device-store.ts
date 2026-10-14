@@ -3,15 +3,29 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Device, DevicePreset } from "@/lib/types";
-import { DEVICE_COLORS, DEVICE_PRESETS } from "@/lib/presets";
+import {
+  DEVICE_COLORS,
+  DEVICE_PRESETS,
+  THIS_DEVICE_COLOR,
+} from "@/lib/presets";
 import { migrateDevices } from "@/lib/device-migrations";
+import {
+  describeDeviceChange,
+  sameDeviceSnapshot,
+  type DeviceSnapshot,
+} from "@/lib/device-history";
+import {
+  isRestoringHistory,
+  recordChange,
+  registerHistoryDomain,
+} from "@/stores/history-store";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-const defaultThisDevice: Device = {
+export const defaultThisDevice: Device = {
   id: "this-device",
   label: "My Monitor",
   category: "monitor",
@@ -19,7 +33,7 @@ const defaultThisDevice: Device = {
   distanceCm: 70,
   resolution: { w: 2560, h: 1440 },
   aspect: { w: 16, h: 9 },
-  color: "#46a758",
+  color: THIS_DEVICE_COLOR,
   visible: true,
 };
 
@@ -64,15 +78,15 @@ export const useDeviceStore = create<DeviceState>()(
       thisDevice: defaultThisDevice,
       // Starter set (Taylor 2026-08-19): a spread from handheld to
       // projector so the first launch demonstrates the range; freely
-      // deletable. Green is skipped — it's This Device's key color.
+      // deletable. This Device's cyan sits outside the cycle.
       devices: [
         seedDevice("switch-2", DEVICE_COLORS[0]),
         { ...seedDevice("steam-deck", DEVICE_COLORS[1]), distanceCm: 36 },
-        seedDevice("monitor-27-1440", DEVICE_COLORS[3]),
-        seedDevice("tv-49-4k", DEVICE_COLORS[4]),
-        seedDevice("projector-120", DEVICE_COLORS[5]),
+        seedDevice("monitor-27-1440", DEVICE_COLORS[2]),
+        seedDevice("tv-49-4k", DEVICE_COLORS[3]),
+        seedDevice("projector-120", DEVICE_COLORS[4]),
       ],
-      colorCursor: 6,
+      colorCursor: 5,
       updateThisDevice: (patch) =>
         set((s) => ({ thisDevice: { ...s.thisDevice, ...patch } })),
       addFromPreset: (preset) =>
@@ -154,6 +168,31 @@ export const useDeviceStore = create<DeviceState>()(
     },
   ),
 );
+
+// Undo/redo (stores/history-store.ts). Every device change is recorded
+// from the outside, as a before/after snapshot named by its diff, so
+// the actions above stay untouched. Restores go through setState, which
+// persist wraps: an undone edit is saved like any other.
+const deviceSnapshot = (s: DeviceState): DeviceSnapshot => ({
+  thisDevice: s.thisDevice,
+  devices: s.devices,
+  colorCursor: s.colorCursor,
+});
+registerHistoryDomain("devices", {
+  restore: (_scope, snap) => {
+    useDeviceStore.setState(snap as DeviceSnapshot);
+    return true;
+  },
+  same: (a, b) => sameDeviceSnapshot(a as DeviceSnapshot, b as DeviceSnapshot),
+});
+useDeviceStore.subscribe((state, prev) => {
+  // Rehydration from localStorage is a load, not an edit.
+  if (isRestoringHistory() || !useDeviceStore.persist.hasHydrated()) return;
+  const before = deviceSnapshot(prev);
+  const after = deviceSnapshot(state);
+  const change = describeDeviceChange(before, after);
+  if (change) recordChange({ scope: "devices", ...change, before, after });
+});
 
 /**
  * Body height from the viewer store's persisted blob; 175cm default.

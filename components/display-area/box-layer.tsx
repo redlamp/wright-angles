@@ -69,6 +69,37 @@ export function BoxLayer({
             ? groupColor(gid)
             : legibilityColor(worstByBox.get(b.id) ?? null);
         const selected = b.id === selectedBoxId;
+        const toggle = () => selectBox(selected ? null : b.id);
+        // Hover and keyboard focus feed the inspector the same details.
+        const showDetails = (el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          const s = el.parentElement?.getBoundingClientRect();
+          setDeviceHover({
+            deviceId,
+            box: {
+              id: b.id,
+              label: b.label,
+              srcPx: Math.round(b.h * media.height),
+              hFull: b.h,
+              groupId: groupById.get(b.id),
+              bounds: {
+                left: r.left,
+                top: r.top,
+                right: r.right,
+                bottom: r.bottom,
+              },
+              screen: s
+                ? {
+                    left: s.left,
+                    top: s.top,
+                    right: s.right,
+                    bottom: s.bottom,
+                  }
+                : undefined,
+            },
+          });
+        };
+        const hideDetails = () => setDeviceHover({ deviceId, box: null });
         return (
           <div
             key={b.id}
@@ -77,7 +108,10 @@ export function BoxLayer({
               isHost ? `Measure box: ${b.label || "unlabeled"}` : undefined
             }
             aria-pressed={isHost ? selected : undefined}
-            className="absolute"
+            tabIndex={isHost ? 0 : undefined}
+            // Two-tone focus ring (white outline, black inner ring) so
+            // it reads over any image.
+            className="absolute focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-white focus-visible:ring-2 focus-visible:ring-black"
             style={{
               left: area.x + cb.x * area.w,
               top: area.y + cb.y * area.h,
@@ -94,39 +128,26 @@ export function BoxLayer({
               isHost
                 ? (e) => {
                     e.stopPropagation();
-                    selectBox(selected ? null : b.id);
+                    toggle();
                   }
                 : undefined
             }
-            onPointerEnter={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              const s = e.currentTarget.parentElement?.getBoundingClientRect();
-              setDeviceHover({
-                deviceId,
-                box: {
-                  id: b.id,
-                  label: b.label,
-                  srcPx: Math.round(b.h * media.height),
-                  hFull: b.h,
-                  groupId: groupById.get(b.id),
-                  bounds: {
-                    left: r.left,
-                    top: r.top,
-                    right: r.right,
-                    bottom: r.bottom,
-                  },
-                  screen: s
-                    ? {
-                        left: s.left,
-                        top: s.top,
-                        right: s.right,
-                        bottom: s.bottom,
-                      }
-                    : undefined,
-                },
-              });
-            }}
-            onPointerLeave={() => setDeviceHover({ deviceId, box: null })}
+            onKeyDown={
+              isHost
+                ? (e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    // Keep Space from also reaching the global
+                    // play/pause hotkey.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggle();
+                  }
+                : undefined
+            }
+            onFocus={isHost ? (e) => showDetails(e.currentTarget) : undefined}
+            onBlur={isHost ? hideDetails : undefined}
+            onPointerEnter={(e) => showDetails(e.currentTarget)}
+            onPointerLeave={hideDetails}
           />
         );
       })}

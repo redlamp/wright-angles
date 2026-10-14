@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { MathUtils, MeshBasicMaterial, type Group } from "three";
 import { useFrame } from "@react-three/fiber";
+import { tweenStep } from "@/lib/motion";
+import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
@@ -223,6 +225,7 @@ export default function ScenarioProps({
     }
   }, [palette]);
 
+  const reduced = useReducedMotion();
   const active = furnitureFor(scenario, inputType);
   const deskRef = useRef<Group>(null);
   const couchRef = useRef<Group>(null);
@@ -237,11 +240,12 @@ export default function ScenarioProps({
   useFrame((state, delta) => {
     // Demand frameloop: the first frame after idle carries a huge delta
     // (time since the last render), which would snap the crossfade to
-    // its end in one step. Clamp to a normal frame's worth.
+    // its end in one step. tweenStep clamps it to a normal frame's worth
+    // (or, with reduced motion, deliberately snaps).
     const moving = stepFurniture(
       progress.current,
       active,
-      Math.min(delta, 1 / 30) / TWEEN_S,
+      tweenStep(delta, TWEEN_S, reduced),
       deskRef.current,
       couchRef.current,
       standRef.current,

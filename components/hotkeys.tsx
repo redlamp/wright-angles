@@ -15,8 +15,8 @@ import { useViewerStore } from "@/stores/viewer-store";
 /**
  * Global hotkeys (plan 4.x, keys confirmed by Taylor 2026-08-17).
  * Suppressed while typing in any form field so panels never toggle
- * mid-rename. Tab intentionally repurposes focus-traversal for the
- * 2D/3D flip — the app is pointer-first and Taylor chose the tradeoff.
+ * mid-rename. Tab is left alone so focus traversal works (it used to
+ * flip 2D/3D; that moved to V after an outside UX review, 2026-10).
  */
 
 /** d/m/p drive the workbench tabs; c/s stay standalone panels. */
@@ -65,30 +65,54 @@ const OVERLAY_SLOTS = [
 const isInOverlay = (t: EventTarget | null) =>
   t instanceof Element && t.closest(OVERLAY_SLOTS) !== null;
 
-/** Rows for the cheat-sheet overlay; `soon` = mapped but not built yet. */
-const CHEAT_ROWS: { keys: string; does: string; soon?: boolean }[] = [
+/** Rows for the cheat-sheet overlay. */
+const CHEAT_ROWS: { keys: string; does: string }[] = [
   { keys: "D / M / P", does: "Workbench tabs: Devices · Media · Perception" },
   { keys: "C / S", does: "Toggle Comparison · Settings" },
-  { keys: "Tab", does: "Switch between 2D and 3D view" },
+  { keys: "V", does: "Switch between 2D and 3D view" },
+  { keys: "Ctrl / ⌘ + \\", does: "Hide / show the UI for a clean view" },
+  { keys: "Tab", does: "Move keyboard focus through the controls" },
   { keys: "1 / 2 / 3", does: "Stance: Standing · On a couch · At a desk" },
   { keys: "Q / W / E", does: "Input: Handheld · Gamepad · Mouse & KB" },
   { keys: "Drag", does: "Pan the 2D composition (click selects)" },
   { keys: "Double-click", does: "Recenter 2D · on the ground, reset the 3D camera" },
-  { keys: "Esc", does: "Deselect / close this sheet" },
+  { keys: "Esc", does: "Deselect / close this sheet / show a hidden UI" },
   { keys: "← / →", does: "Previous / next media in the library" },
   { keys: "↑ / ↓", does: "Focus previous / next visible device" },
   { keys: "Space", does: "Play / pause timeline media" },
   { keys: "< / >", does: "Previous / next OCR keyframe (and pause)" },
   { keys: "X", does: "Crop the active media (again clears the crop)" },
-  { keys: "O", does: "OCR overlay", soon: true },
   { keys: "?", does: "This cheat sheet" },
 ];
 
+/** Ctrl+\ (Cmd+\ on a Mac), Figma's hide-UI chord. */
+const isChromeChord = (e: KeyboardEvent) =>
+  (e.ctrlKey || e.metaKey) &&
+  !e.altKey &&
+  (e.key === "\\" || e.code === "Backslash");
+
 export function Hotkeys() {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const chromeHidden = useUiStore((s) => s.chromeHidden);
+
+  // Presentation view: globals.css hides the chrome (toolbar, HUD,
+  // panels, readouts) while <html> carries data-chrome-hidden.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (chromeHidden) root.dataset.chromeHidden = "";
+    else delete root.dataset.chromeHidden;
+  }, [chromeHidden]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ahead of the typing guard and the modifier bail-out below: the
+      // chord is itself a modifier combo and should work from anywhere.
+      if (isChromeChord(e)) {
+        e.preventDefault();
+        const ui = useUiStore.getState();
+        ui.setChromeHidden(!ui.chromeHidden);
+        return;
+      }
       if (
         isTyping(e.target) ||
         isInOverlay(e.target) ||
@@ -100,11 +124,6 @@ export function Hotkeys() {
       const ui = useUiStore.getState();
       const viewer = useViewerStore.getState();
 
-      if (e.key === "Tab") {
-        e.preventDefault();
-        ui.setViewMode(ui.viewMode === "2d" ? "3d" : "2d");
-        return;
-      }
       if (e.key === "?") {
         e.preventDefault();
         setSheetOpen((v) => !v);
@@ -113,6 +132,8 @@ export function Hotkeys() {
       if (e.key === "Escape") {
         // The sheet first; otherwise clear the app-wide device selection.
         // (display-area's own Escape handling for measure boxes runs too.)
+        // A hidden UI comes back too, so nobody is stranded without it.
+        if (ui.chromeHidden) ui.setChromeHidden(false);
         setSheetOpen((open) => {
           if (!open && ui.selectedDeviceId) ui.selectDevice(null);
           return false;
@@ -121,6 +142,10 @@ export function Hotkeys() {
       }
 
       const key = e.key.toLowerCase();
+      if (key === "v") {
+        ui.setViewMode(ui.viewMode === "2d" ? "3d" : "2d");
+        return;
+      }
       const tab = TAB_KEYS[key];
       if (tab) {
         ui.toggleWorkbenchTab(tab);
@@ -220,6 +245,7 @@ export function Hotkeys() {
       onClick={() => setSheetOpen(false)}
     >
       <div
+        data-chrome-keep
         className="panel-frame w-96 rounded-lg border border-border p-4"
         onClick={(e) => e.stopPropagation()}
       >
@@ -230,13 +256,12 @@ export function Hotkeys() {
         <table className="w-full text-base">
           <tbody>
             {CHEAT_ROWS.map((r) => (
-              <tr key={r.keys} className={r.soon ? "text-muted-foreground/60" : ""}>
+              <tr key={r.keys}>
                 <td className="py-1 pr-3 whitespace-nowrap font-mono text-sm">
                   {r.keys}
                 </td>
                 <td className="py-1 text-sm">
                   {r.does}
-                  {r.soon ? " (soon)" : ""}
                 </td>
               </tr>
             ))}

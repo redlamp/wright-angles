@@ -17,13 +17,20 @@ this 27″/70cm design when it's a Switch 2 at 40cm?"
 - **This Device** — the display the app is being viewed on. It must be
   calibrated (diagonal, resolution, viewing distance) for every other
   reading to be honest. A first-run onboarding assistant walks through
-  it (welcome → screen size → viewing stance); "Run setup assistant
-  again" and a standalone "Calibrate screen size…" live in Settings
-  afterward. Screen size can be typed in, chosen from a monitor/TV
-  preset, or measured by dragging a bank-card shape on screen to match
-  a real ID-1 card held against the panel (edges and corners are
-  draggable, keyboard-operable, with a coarse slider and a
-  browser-zoom sanity check).
+  it (welcome → screen size → viewing stance → the two views → bring a
+  screenshot) and ends in the 2D view on the user's own image with the
+  Perception Report open; a one-time coach mark then points at the
+  2D | 3D toggle. "Run setup assistant again" and a standalone
+  "Calibrate screen size…" live in Settings afterward. The resolution
+  is prefilled from the browser only when the detection is confident.
+  Screen size calibration starts with a choice of method: **measure
+  with a card** (an ID-1 card pushed into a fixed corner guide, one
+  edge dragged to match, fine-adjust buttons and keys), **measure with
+  a ruler** (a bar matched to 10/15 cm or 4/6 in), or **I know my
+  screen size** (common sizes or a typed diagonal). A pre-check flags a
+  resolution mismatch (with a one-click fix) or browser zoom before
+  measuring, and the result screen offers the measured value or the
+  nearest common size, plus a 5 cm check line.
 - **Test Devices** — instances of device details (from presets or
   custom specs) with per-instance name, key color, distance, and
   visibility; the same preset can be added twice at different
@@ -46,7 +53,9 @@ A single floating, resizable popup with three tabs — **Devices**,
 **Media**, **Perception Report** — so cross-references between them are
 a tab switch, not window juggling. Hotkeys `D`/`M`/`P` jump straight to
 a tab; all three stay mounted so scroll position and in-flight scans
-survive switching.
+survive switching. Like every floating panel it always fits the window: it is
+clamped on open, resize and reload, and below 640 px wide its two
+columns stack and scroll (WCAG reflow, so 200% zoom works).
 
 **Device Manager tab** — This Device section plus the Test Devices
 list: collapsed rows show visibility, key color, name, and a distance
@@ -73,10 +82,14 @@ under-report its font size. Measure boxes can also be hand-drawn.
 
 **Perception Report tab** — the product's thesis made concrete: what
 reads comfortably on the screen you designed on may not read at all
-elsewhere. A Miller-column layout lists every device (This Device
-"blessed" and shown first) against the scanned/measured text of the
-active media, giving each line a color-coded verdict against the
-ISO 9241-303 bands (16′ minimum, 20–22′ comfortable). A device on
+elsewhere. The device column lists every device (This Device
+"blessed" and shown first), each led by its smallest readable text size
+in px at the media's reference resolution. Beside it, a verdict matrix
+puts the scanned/measured text lines in rows (each with a thumbnail of
+the line's real pixels) and the visible devices in named columns; each
+cell shows the arc-minute value and a verdict icon (readable / tight /
+too small) against the ISO 9241-303 bands (16′ minimum, 20–22′
+comfortable). Verdict hues are kept out of the device key-color palette. A device on
 `stretch` fit gets a visible warning that its arc-minute figures are
 vertical-only, since stretch is the one anamorphic mode.
 
@@ -121,13 +134,20 @@ notes nothing is uploaded or tracked.
 
 ### Hotkeys
 `D`/`M`/`P` switch Workbench tabs; `C`/`S` toggle the Comparison table
-and Settings; `Tab` flips 2D/3D; `1`/`2`/`3` set stance, `Q`/`W`/`E` set
-input type; drag pans the 2D composition (click still selects),
+and Settings; `V` flips 2D/3D; `Ctrl`/`Cmd`+`\` hides the toolbar, HUD
+and panels for a clean presentation view; `1`/`2`/`3` set stance,
+`Q`/`W`/`E` set input type; drag pans the 2D composition (click still selects),
 double-click recenters; `←`/`→` walk the media library, `↑`/`↓` cycle
 the focused visible device; `Space` plays/pauses timeline media,
 `<`/`>` jump between OCR keyframes; `X` toggles a crop on the active
-media; `Esc` deselects or closes the cheat sheet; `?` opens it. Hotkeys
-are suppressed while typing in a field or inside an open menu/dialog.
+media; `Esc` deselects, closes the cheat sheet, or brings a hidden UI
+back; `?` opens it. Hotkeys are suppressed while typing in a field or
+inside an open menu/dialog. `Tab` is never captured: it moves keyboard
+focus through the toolbar, HUD and panels, with a visible focus ring.
+`Ctrl`/`Cmd`+`Z` undoes device, measure-box, crop, reference-height and
+rename edits (`Ctrl`/`Cmd`+`Shift`+`Z` or `Ctrl`+`Y` redoes); media
+deletion keeps its confirm dialog instead. Pasting an image
+(`Ctrl`/`Cmd`+`V`) anywhere imports it.
 
 ### Flagged features
 `lib/flags.ts` parks work that exists in code but isn't shipping yet:

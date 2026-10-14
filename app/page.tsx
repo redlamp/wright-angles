@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Sidebar } from "@/components/sidebar";
 import { Hotkeys } from "@/components/hotkeys";
+import { UndoHotkeys } from "@/components/undo-hotkeys";
 import { DisplayArea } from "@/components/display-area";
 import { CvdFilters, cvdFilter } from "@/components/cvd-filters";
 import { WorkbenchPanel } from "@/components/panels/workbench";
@@ -221,12 +222,16 @@ export default function Home() {
       }}
       onDrop={onDrop}
     >
+      {/* The toolbar leads the DOM so the first Tab lands on it, not on
+          the view's overlay buttons (it's fixed + z-30, so painting
+          order is unaffected). */}
+      {mounted ? <Sidebar /> : null}
       {mounted && uiHydrated ? <ViewStack /> : null}
 
       {mounted ? (
         <>
           <Hotkeys />
-          <Sidebar />
+          <UndoHotkeys />
           <WorkbenchPanel />
           <DeviceInspector />
           <HoverTextCard />

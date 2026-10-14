@@ -5,7 +5,12 @@ import {
   CARD_H_MM,
   CARD_W_MM,
   COMMON_DIAGONALS_IN,
+  RULER_LENGTHS,
   cardWidthCssPx,
+  cssPxPerCm,
+  diagonalFromLengthPx,
+  fineStepPx,
+  nearestCommonDiagonal,
   diagonalFromCardPx,
   heightFromWidthPx,
   widthFromDiagonalPx,
@@ -96,5 +101,67 @@ describe("COMMON_DIAGONALS_IN", () => {
     expect(COMMON_DIAGONALS_IN).toEqual(sorted);
     expect(COMMON_DIAGONALS_IN[0]).toBeLessThan(20);
     expect(COMMON_DIAGONALS_IN.at(-1)).toBeGreaterThan(50);
+  });
+});
+
+describe("cssPxPerCm", () => {
+  test("agrees with the card seed on a 16:9 panel", () => {
+    const perCm = cssPxPerCm(27, res1440, 1);
+    expect(perCm * (CARD_W_MM / 10)).toBeCloseTo(
+      cardWidthCssPx(27, aspect169, res1440.w, 1),
+      6,
+    );
+  });
+  test("dpr 2 halves it", () => {
+    expect(cssPxPerCm(13.3, res1440, 2)).toBeCloseTo(
+      cssPxPerCm(13.3, res1440, 1) / 2,
+      9,
+    );
+  });
+});
+
+describe("diagonalFromLengthPx (ruler mode)", () => {
+  test("a 15 cm ruler at the expected px round-trips the diagonal", () => {
+    const res = { w: 1920, h: 1200 };
+    const px = cssPxPerCm(24, res, 1.25) * 15;
+    expect(diagonalFromLengthPx(px, 15, 1.25, res)).toBeCloseTo(24, 6);
+  });
+  test("the card is the 8.56 cm special case", () => {
+    expect(diagonalFromLengthPx(320, 8.56, 2, res1440)).toBeCloseTo(
+      diagonalFromCardPx(320, 2, res1440),
+      9,
+    );
+  });
+  test("ruler lengths: 10/15 cm, and 6 in is 15.24 cm", () => {
+    expect(RULER_LENGTHS.cm.map((r) => r.cm)).toEqual([10, 15]);
+    const six = RULER_LENGTHS.in.find((r) => r.label === "6 in");
+    expect(six?.cm).toBeCloseTo(15.24, 9);
+  });
+});
+
+describe("fineStepPx", () => {
+  test("0.1 mm of an 85.6 mm card drawn 342.4 px wide is 0.4 px", () => {
+    expect(fineStepPx(342.4, CARD_W_MM)).toBeCloseTo(0.4, 9);
+  });
+  test("custom step size", () => {
+    expect(fineStepPx(500, 100, 1)).toBeCloseTo(5, 9);
+  });
+});
+
+describe("nearestCommonDiagonal", () => {
+  test("26.8 is a 27", () => {
+    expect(nearestCommonDiagonal(26.8)).toBe(27);
+  });
+  test("exactly ±0.4 still counts", () => {
+    expect(nearestCommonDiagonal(23.6)).toBe(24);
+    expect(nearestCommonDiagonal(27.4)).toBe(27);
+  });
+  test("nothing near gives null", () => {
+    expect(nearestCommonDiagonal(25.5)).toBeNull();
+    expect(nearestCommonDiagonal(29)).toBeNull();
+  });
+  test("between two close sizes, the closer wins", () => {
+    expect(nearestCommonDiagonal(15.9)).toBe(16);
+    expect(nearestCommonDiagonal(15.7)).toBe(15.6);
   });
 });

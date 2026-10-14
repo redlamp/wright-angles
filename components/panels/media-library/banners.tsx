@@ -47,7 +47,7 @@ export function ImportErrorsBanner() {
   const clearImportErrors = useMediaStore((s) => s.clearImportErrors);
   if (errors.length === 0) return null;
   return (
-    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-[#e5484d]">
+    <div className="flex h-8 items-center justify-between gap-2 border-t border-border px-2.5 text-sm text-[#ce2c31] dark:text-[#ff9592]">
       <span className="flex items-center gap-1.5 truncate">
         <TriangleAlertIcon className="size-3.5 shrink-0" />
         {errors.length === 1
