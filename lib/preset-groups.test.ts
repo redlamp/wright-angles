@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEVICE_PRESETS } from "./presets";
-import { presetSections, presetsInGroup } from "./preset-groups";
+import { formatDiagonal, presetName, presetSections, presetsInGroup } from "./preset-groups";
 
 describe("presetsInGroup", () => {
   test("all keeps every preset", () => {
@@ -33,5 +33,25 @@ describe("preset data", () => {
     for (const p of presetsInGroup(DEVICE_PRESETS, "laptop")) {
       expect(p.aspect.w / p.aspect.h).toBeCloseTo(p.resolution.w / p.resolution.h, 6);
     }
+  });
+});
+
+describe("presetName / formatDiagonal", () => {
+  test("strips a leading or trailing size", () => {
+    expect(presetName("24″ 1080p Monitor")).toBe("1080p Monitor");
+    expect(presetName("MacBook Air 13.6″")).toBe("MacBook Air");
+    expect(presetName("120″ Projector")).toBe("Projector");
+  });
+  test("labels without a size are unchanged", () => {
+    expect(presetName("Steam Deck")).toBe("Steam Deck");
+    expect(presetName("iPad Pro 13")).toBe("iPad Pro 13");
+  });
+  test("a label that is only a size stays as-is", () => {
+    expect(presetName("27″")).toBe("27″");
+  });
+  test("diagonals read to one decimal at most", () => {
+    expect(formatDiagonal(24)).toBe("24″");
+    expect(formatDiagonal(13.6)).toBe("13.6″");
+    expect(formatDiagonal(6.2)).toBe("6.2″");
   });
 });

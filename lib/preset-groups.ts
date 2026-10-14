@@ -48,3 +48,21 @@ export function presetSections(
   });
   return sections.filter((s) => s.presets.length > 0);
 }
+
+/** One diagonal, as a preset list shows it: "24″", "13.6″". */
+export function formatDiagonal(inches: number): string {
+  return `${Math.round(inches * 10) / 10}″`;
+}
+
+/**
+ * A preset's label without its size, for lists that show the diagonal in
+ * its own column: "24″ 1080p Monitor" → "1080p Monitor", "MacBook Air
+ * 13.6″" → "MacBook Air". Labels with no size in them are unchanged.
+ */
+export function presetName(label: string): string {
+  const stripped = label
+    .replace(/^\s*\d+(?:\.\d+)?″\s*/, "")
+    .replace(/\s*\d+(?:\.\d+)?″\s*$/, "")
+    .trim();
+  return stripped || label;
+}
