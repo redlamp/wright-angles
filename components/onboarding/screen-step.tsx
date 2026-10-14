@@ -3,9 +3,12 @@
 import { useMemo, useState } from "react";
 import { RulerIcon } from "lucide-react";
 import { CM_PER_IN, aspectFromResolution, deviceAngles } from "@/lib/display-math";
-import { DEVICE_PRESETS } from "@/lib/presets";
+import { COMMON_ASPECTS, DEVICE_PRESETS } from "@/lib/presets";
+import { aspectLabel } from "@/lib/aspect-label";
 import {
   PRESET_GROUPS,
+  formatDiagonal,
+  presetName,
   presetSections,
   presetsInGroup,
   type PresetGroupId,
@@ -71,6 +74,27 @@ export function ScreenStep({
   const showDetected = matchesDetected && detected.confident;
   // An unsure reading (page zoom skews it) is offered, never applied.
   const suggestion = detected && !detected.confident && !matchesDetected ? detected : null;
+
+  // Aspect follows the pixels (square pixels). Picking a ratio keeps the
+  // long side and recomputes the short one, preserving orientation.
+  const res = draft.resolution;
+  const portrait = res.h > res.w;
+  const longSide = portrait ? res.h : res.w;
+  const shortSide = portrait ? res.w : res.h;
+  const aspectMatch = COMMON_ASPECTS.find(
+    (a) => Math.abs(a.w / a.h - longSide / shortSide) < 0.01,
+  );
+  const setAspect = (label: string) => {
+    const a = COMMON_ASPECTS.find((x) => x.label === label);
+    if (!a) return;
+    const short = Math.round((longSide * a.h) / a.w);
+    setDraft((d) => {
+      const resolution = portrait
+        ? { w: short, h: longSide }
+        : { w: longSide, h: short };
+      return { ...d, resolution, aspect: aspectFromResolution(resolution) };
+    });
+  };
 
   const setResolution = (axis: "w" | "h", v: number) =>
     setDraft((d) => {
@@ -152,7 +176,13 @@ export function ScreenStep({
                 {sec.label ? <SelectLabel>{sec.label}</SelectLabel> : null}
                 {sec.presets.map((p) => (
                   <SelectItem key={p.presetId} value={p.presetId}>
-                    {p.label}
+                    {/* Two columns so sizes and names line up row to row. */}
+                    <span className="grid w-full grid-cols-[3.25rem_minmax(0,1fr)] items-baseline gap-2">
+                      <span className="text-right font-mono tabular-nums text-muted-foreground">
+                        {formatDiagonal(p.diagonalIn)}
+                      </span>
+                      <span className="truncate">{presetName(p.label)}</span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -252,6 +282,35 @@ export function ScreenStep({
               max={4320}
               className="h-8 flex-1"
             />
+          </div>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <span className={LABEL}>Aspect ratio</span>
+            <Select
+              value={aspectMatch?.label ?? "custom"}
+              onValueChange={(v) => v && setAspect(v)}
+            >
+              <SelectTrigger className="w-36" aria-label="Aspect ratio">
+                <SelectValue>
+                  {aspectMatch
+                    ? portrait
+                      ? aspectMatch.label.split(":").reverse().join(":")
+                      : aspectMatch.label
+                    : aspectLabel(res)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {aspectMatch ? null : (
+                  <SelectItem value="custom" disabled>
+                    {aspectLabel(res)} (from pixels)
+                  </SelectItem>
+                )}
+                {COMMON_ASPECTS.map((a) => (
+                  <SelectItem key={a.label} value={a.label}>
+                    {portrait ? a.label.split(":").reverse().join(":") : a.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
