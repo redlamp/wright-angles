@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { MathUtils, MeshBasicMaterial, type Group } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { Color, MathUtils, MeshBasicMaterial, type Group } from "three";
 import { useFrame } from "@react-three/fiber";
 import { tweenStep } from "@/lib/motion";
 import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
+import { KenneyProp, materialsOf, type PropTint } from "./furniture-models";
 
 /** Matches the viewer figure's pose tween so furniture moves in sync. */
 const TWEEN_S = 0.5;
@@ -67,6 +68,12 @@ function applyFurniture(group: Group | null, mats: MatSet, p: number) {
   group.scale.y = Math.max(1e-3, e);
   mats.furniture.opacity = e;
   mats.soft.opacity = e;
+  // glTF pieces and the peripherals carry their own materials.
+  for (const m of materialsOf(group)) {
+    if (m === mats.furniture || m === mats.soft) continue;
+    if (!m.transparent) m.transparent = true;
+    m.opacity = e;
+  }
 }
 
 function stepFurniture(
@@ -106,58 +113,89 @@ function stepFurniture(
   );
 }
 
-/** Desk chair with its seat top at SEAT_Y.desk; backrest behind the figure. */
-function DeskChair({ mats }: { mats: MatSet }) {
-  const seatTop = SEAT_Y.desk;
+/** World height of the desk top (cm); hands and peripherals sit on it. */
+export const DESK_TOP = 74;
+/** 150 x 60: IKEA's common desk top (LINNMON, LAGKAPTEN); MICKE is 50, BEKANT 80. */
+const DESK_W = 150;
+const DESK_D = 60;
+/** Near edge sits just in front of the seated figure's knees. */
+const DESK_NEAR_Z = 27;
+
+/** Kenney office chair, scaled so its seat lands near SEAT_Y.desk. */
+function DeskChair({ tint }: { tint: PropTint }) {
+  const k = 190;
+  // Measured in the kit: the seat and back are one node centered at
+  // x 0.167, z -0.16 (back at -z), so that point goes under the hips.
+  // The figure's hip joints are at the origin and the thighs run to +z;
+  // a hip sits a hand's width in front of the seat back, so the seat
+  // center lands 8 cm ahead of the hips.
+  const seatX = 0.167 * k;
+  const seatZ = -0.16 * k;
+  return <KenneyProp name="chairDesk" scale={k} position={[-seatX, 0, 8 - seatZ]} tint={tint} />;
+}
+
+/**
+ * The desk stays the plain slab on four thin legs: open underneath, so
+ * the figure's knees have room, and it never argues with the device
+ * panels. (A Kenney desk with a drawer pedestal was tried 2026-10-17 and
+ * rejected: backwards, legs clipping.)
+ */
+function Desk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; tint: PropTint }) {
   return (
     <group>
-      <mesh material={mats.soft} position={[0, seatTop - 2, 3]}>
-        <boxGeometry args={[46, 4, 46]} />
+      <mesh material={mats.furniture} position={[0, DESK_TOP - 2, DESK_NEAR_Z + DESK_D / 2]}>
+        <boxGeometry args={[DESK_W, 4, DESK_D]} />
       </mesh>
       {[-1, 1].map((sx) =>
         [-1, 1].map((sz) => (
           <mesh
             key={`${sx}${sz}`}
             material={mats.furniture}
-            position={[sx * 19, (seatTop - 4) / 2, 3 + sz * 19]}
+            position={[sx * (DESK_W / 2 - 7), (DESK_TOP - 4) / 2, DESK_NEAR_Z + DESK_D / 2 + sz * (DESK_D / 2 - 5)]}
           >
-            <boxGeometry args={[4, seatTop - 4, 4]} />
+            <boxGeometry args={[5, DESK_TOP - 4, 5]} />
           </mesh>
         )),
       )}
-      <mesh material={mats.soft} position={[0, seatTop + 21, -17]}>
-        <boxGeometry args={[44, 38, 4]} />
-      </mesh>
+      <Peripherals top={DESK_TOP} show={inputType === "keyboard"} tint={tint} />
     </group>
   );
 }
 
-function Desk({ mats }: { mats: MatSet }) {
+/**
+ * Keyboard and mouse where the rigged figure's hands land: WASD under
+ * the left hand, the mouse out to the right (the figure's right is -X).
+ * Kenney keyboard 0.282 x 0.118 with its origin at a corner; mouse
+ * 0.05 x 0.085, origin at its front center.
+ */
+function Peripherals({ top, show, tint }: { top: number; show: boolean; tint: PropTint }) {
+  const k = 130;
+  // Lighter than the desk they sit on, or they vanish into it.
+  const lifted = useMemo<PropTint>(() => {
+    const c = new Color(tint.furniture).lerp(new Color("#ffffff"), 0.35);
+    const hex = `#${c.getHexString()}`;
+    return { furniture: hex, soft: hex };
+  }, [tint.furniture]);
   return (
-    <group>
-      <mesh material={mats.furniture} position={[0, 72, 62]}>
-        <boxGeometry args={[150, 4, 70]} />
-      </mesh>
-      {[-1, 1].map((sx) =>
-        [-1, 1].map((sz) => (
-          <mesh
-            key={`${sx}${sz}`}
-            material={mats.furniture}
-            position={[sx * 68, 35, 62 + sz * 30]}
-          >
-            <boxGeometry args={[5, 70, 5]} />
-          </mesh>
-        )),
-      )}
+    <group visible={show}>
+      <KenneyProp
+        name="computerKeyboard"
+        scale={k}
+        position={[3 + 0.141 * k, top, 40 - 0.059 * k]}
+        rotationY={Math.PI}
+        tint={lifted}
+      />
+      <KenneyProp name="computerMouse" scale={k} position={[-24, top, 37 + 0.0425 * k]} tint={lifted} />
     </group>
   );
 }
 
 /** Standing desk: tall top at STAND_DESK_TOP, no chair. */
-function StandingDesk({ mats }: { mats: MatSet }) {
+function StandingDesk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; tint: PropTint }) {
   const top = STAND_DESK_TOP;
   return (
     <group>
+      <Peripherals top={top} show={inputType === "keyboard"} tint={tint} />
       <mesh material={mats.furniture} position={[0, top - 2, 58]}>
         <boxGeometry args={[130, 4, 62]} />
       </mesh>
@@ -176,24 +214,13 @@ function StandingDesk({ mats }: { mats: MatSet }) {
   );
 }
 
-/** Low couch with its seat top at SEAT_Y.couch. */
-function Couch({ mats }: { mats: MatSet }) {
-  const seatTop = SEAT_Y.couch;
-  return (
-    <group>
-      <mesh material={mats.soft} position={[0, seatTop / 2, 2]}>
-        <boxGeometry args={[110, seatTop, 60]} />
-      </mesh>
-      <mesh material={mats.soft} position={[0, seatTop + 15, -30]}>
-        <boxGeometry args={[110, 40, 14]} />
-      </mesh>
-      {[-1, 1].map((side) => (
-        <mesh key={side} material={mats.soft} position={[side * 62, seatTop + 5, -1]}>
-          <boxGeometry args={[14, 22, 72]} />
-        </mesh>
-      ))}
-    </group>
-  );
+/**
+ * Kenney lounge sofa: seat at 0.23 units, 0.98 wide, origin at its front
+ * left corner with the back at -z. 174 puts the seat at SEAT_Y.couch.
+ */
+function Couch({ tint }: { tint: PropTint }) {
+  const k = SEAT_Y.couch / 0.23;
+  return <KenneyProp name="loungeSofa" scale={k} position={[-0.49 * k, 0, 0.41 * k - 28]} tint={tint} />;
 }
 
 /**
@@ -227,6 +254,10 @@ export default function ScenarioProps({
 
   const reduced = useReducedMotion();
   const active = furnitureFor(scenario, inputType);
+  const tint = useMemo<PropTint>(
+    () => ({ furniture: palette.furniture, soft: palette.soft }),
+    [palette.furniture, palette.soft],
+  );
   const deskRef = useRef<Group>(null);
   const couchRef = useRef<Group>(null);
   const standRef = useRef<Group>(null);
@@ -259,14 +290,14 @@ export default function ScenarioProps({
     // useFrame runs before the first paint, so nothing flashes on mount.
     <>
       <group ref={deskRef} userData={ORBIT_BASE}>
-        <DeskChair mats={DESK_MATS} />
-        <Desk mats={DESK_MATS} />
+        <DeskChair tint={tint} />
+        <Desk mats={DESK_MATS} inputType={inputType} tint={tint} />
       </group>
       <group ref={couchRef} userData={ORBIT_BASE}>
-        <Couch mats={COUCH_MATS} />
+        <Couch tint={tint} />
       </group>
       <group ref={standRef} userData={ORBIT_BASE}>
-        <StandingDesk mats={STAND_MATS} />
+        <StandingDesk mats={STAND_MATS} inputType={inputType} tint={tint} />
       </group>
     </>
   );
