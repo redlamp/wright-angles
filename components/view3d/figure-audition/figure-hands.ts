@@ -1,0 +1,184 @@
+/**
+ * Where a rigged figure's hands go and how they sit, per stance and
+ * input. Pure numbers; world space, centimeters, the figure facing +Z
+ * with its left side on +X. The capsule figure's symmetric wrists were
+ * tuned for its slab hands; a real figure needs the left hand on WASD,
+ * the right on a mouse, and palms that face what they touch.
+ */
+
+import type { InputType, Scenario } from "@/stores/viewer-store";
+import type { HeldGrip } from "@/lib/viewing-geometry";
+import { SEAT_Y, STAND_DESK_TOP } from "../viewer-figure";
+
+export interface V3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface HandPlan {
+  /** Wrist target, world cm. */
+  target: V3;
+  /** Elbow bend hint, world direction. */
+  pole: V3;
+  /** Direction the fingers point, world. */
+  fingers: V3;
+  /** Direction the palm faces, world. */
+  palm: V3;
+  /** How far the fingers and the thumb close toward the palm, degrees. */
+  curl: { fingers: number; thumb: number };
+}
+
+export interface HandsPlan {
+  left: HandPlan;
+  right: HandPlan;
+  /** Head pitches down toward the hands (a handheld in them). */
+  lookAtHands: boolean;
+  /** Degrees the shoulder tips drop from the rest pose's shrug. */
+  shoulderDropDeg: number;
+}
+
+/**
+ * Torso posture per stance, degrees about the lateral axis (positive
+ * pitches forward/down). The pelvis tips back when seated, the spine
+ * leans in at a desk and reclines on a couch, and the head counters so
+ * the gaze stays on the line of sight.
+ */
+export const POSTURE: Record<Scenario, Posture> = {
+  standing: { pelvis: 0, spine: 0, head: 0 },
+  desk: { pelvis: -6, spine: 12, head: -6 },
+  couch: { pelvis: -12, spine: -4, head: 16 },
+};
+
+/** Most the head pitches down to a handheld in the hands. */
+export const HANDHELD_LOOK_MAX_DEG = 40;
+
+/** Elbows down and clearly out from the ribs: arms that hang like arms. */
+const ELBOW = { x: 0.9, y: -0.8, z: -0.3 };
+/** Controller hold: elbows out and back, forearms meeting in front. */
+const ELBOW_TUCKED = { x: 0.7, y: -0.9, z: -0.55 };
+/** Handheld raised in front: elbows down and a little out. */
+const ELBOW_RAISED = { x: 0.6, y: -1, z: -0.3 };
+
+/** Desk top height per stance (world cm); the couch keyboard sits on the lap. */
+function surfaceY(scenario: Scenario): number {
+  if (scenario === "desk") return 74;
+  if (scenario === "standing") return STAND_DESK_TOP;
+  return SEAT_Y.couch + 13;
+}
+
+/**
+ * Wrist height above a surface the fingers rest on: the wrist joint
+ * sits a hand's thickness up, and the fingers slope down from there.
+ */
+const WRIST_ABOVE_SURFACE = 5;
+
+/** Mirror a plan's x components for the other hand. */
+const mirror = (p: HandPlan): HandPlan => ({
+  target: { ...p.target, x: -p.target.x },
+  pole: { ...p.pole, x: -p.pole.x },
+  fingers: { ...p.fingers, x: -p.fingers.x },
+  palm: { ...p.palm, x: -p.palm.x },
+  curl: { ...p.curl },
+});
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const lerpV = (a: V3, b: V3, t: number): V3 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
+const lerpHand = (a: HandPlan, b: HandPlan, t: number): HandPlan => ({
+  target: lerpV(a.target, b.target, t),
+  pole: lerpV(a.pole, b.pole, t),
+  fingers: lerpV(a.fingers, b.fingers, t),
+  palm: lerpV(a.palm, b.palm, t),
+  curl: { fingers: lerp(a.curl.fingers, b.curl.fingers, t), thumb: lerp(a.curl.thumb, b.curl.thumb, t) },
+});
+
+/** Blended hands plan: everything numeric lerps, the look-down becomes a weight. */
+export interface HandsBlend {
+  left: HandPlan;
+  right: HandPlan;
+  /** 0..1 weight of the head pitching down to the hands. */
+  lookAtHands: number;
+  shoulderDropDeg: number;
+}
+
+export function lerpHands(a: HandsPlan, b: HandsPlan, t: number): HandsBlend {
+  return {
+    left: lerpHand(a.left, b.left, t),
+    right: lerpHand(a.right, b.right, t),
+    lookAtHands: lerp(a.lookAtHands ? 1 : 0, b.lookAtHands ? 1 : 0, t),
+    shoulderDropDeg: lerp(a.shoulderDropDeg, b.shoulderDropDeg, t),
+  };
+}
+
+export type Posture = { pelvis: number; spine: number; head: number };
+
+export const lerpPosture = (a: Posture, b: Posture, t: number): Posture => ({
+  pelvis: lerp(a.pelvis, b.pelvis, t),
+  spine: lerp(a.spine, b.spine, t),
+  head: lerp(a.head, b.head, t),
+});
+
+/**
+ * @param rootY world height of the pelvis root
+ * @param s figure scale (height / 175)
+ */
+export function planHands(
+  scenario: Scenario,
+  input: InputType,
+  rootY: number,
+  s: number,
+  held: HeldGrip | null,
+): HandsPlan {
+  if (input === "keyboard") {
+    const y = surfaceY(scenario) + WRIST_ABOVE_SURFACE * s;
+    const z = scenario === "couch" ? 26 * s : 40 * s;
+    // Left hand on WASD, a little left of center; right hand out on the
+    // mouse, cupped over it. Fingers slope gently down to the keys with
+    // a light curl, so fingertips rest on the surface instead of
+    // driving through it.
+    const left: HandPlan = {
+      target: { x: 13 * s, y, z },
+      pole: ELBOW,
+      fingers: { x: -0.1, y: -0.25, z: 1 },
+      palm: { x: 0, y: -1, z: 0.25 },
+      curl: { fingers: 25, thumb: 10 },
+    };
+    const right: HandPlan = {
+      target: { x: -24 * s, y: y + 2 * s, z: z - 3 * s },
+      pole: ELBOW,
+      fingers: { x: 0.05, y: -0.3, z: 1 },
+      palm: { x: 0, y: -1, z: 0.25 },
+      curl: { fingers: 35, thumb: 15 },
+    };
+    return { left, right, lookAtHands: false, shoulderDropDeg: 9 };
+  }
+
+  if (input === "gamepad") {
+    // Controller held low in front of the belly: hands a grip apart,
+    // palms facing each other and tilted up, fingers wrapping down and
+    // around the grips (which angle down and forward), thumbs up on
+    // the sticks.
+    const left: HandPlan = {
+      target: { x: 9 * s, y: rootY + 23 * s, z: 22 * s },
+      pole: ELBOW_TUCKED,
+      fingers: { x: -0.3, y: -0.55, z: 1 },
+      palm: { x: -1, y: 0.55, z: -0.25 },
+      curl: { fingers: 75, thumb: 20 },
+    };
+    return { left, right: mirror(left), lookAtHands: false, shoulderDropDeg: 8 };
+  }
+
+  // Handheld: grip the device that is in the scene by its edges, fingers
+  // wrapped behind it, thumbs on the controls in front.
+  const grip = (x: number, y: number, z: number): HandPlan => ({
+    target: { x, y, z },
+    pole: ELBOW_RAISED,
+    fingers: { x: -0.55, y: 0.75, z: 0.35 },
+    palm: { x: -1, y: 0.1, z: 0.25 },
+    curl: { fingers: 60, thumb: 15 },
+  });
+  const left = held
+    ? grip(held.halfGripCm, held.wristY, held.distanceCm)
+    : grip(5.5 * s, rootY + 56 * s, 2 * s + 32);
+  return { left, right: mirror(left), lookAtHands: true, shoulderDropDeg: 2 };
+}
