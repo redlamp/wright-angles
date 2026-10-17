@@ -194,7 +194,7 @@ export default function AuditionPicker() {
             {c.tuning?.graftHands ? (
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={swapHands} onChange={(e) => setSwapHands(e.target.checked)} />
-                Five-finger hands
+                Replacement hands
               </label>
             ) : null}
             <label className="flex items-center gap-1">

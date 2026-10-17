@@ -407,7 +407,7 @@ function poseRig(
 
   for (const side of [1, -1] as const) {
     const g = rig.sides[side].graft;
-    if (g) g.scale = graftScale(g, heightCm, k);
+    if (g) g.scale = graftScale(g, heightCm, k, rig.tuning.handScale);
   }
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);

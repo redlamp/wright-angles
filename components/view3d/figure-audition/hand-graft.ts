@@ -46,8 +46,11 @@ export interface HandGraft {
   rest: [Bone, Quaternion][];
   /** Hand asset units are cm at a 175 cm body; set per frame. */
   scale: number;
-  /** Figure wrist width in model units and the asset's in cm: their ratio sizes the hand to the arm. */
-  wristFit: { figureUnits: number; assetCm: number } | null;
+  /** Figure model units to cm, set per frame with the scale. */
+  k: number;
+  /** The overlap below the wrist and what it should flare to: figure forearm end radius (model units) over the stub's own radius (cm). */
+  stub: Bone | null;
+  flare: { figureUnits: number; assetCm: number } | null;
   /** The figure's sampled skin (or glove) color, for the own-material look. */
   skin: Color | null;
 }
@@ -137,7 +140,9 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     thumbChain,
     rest: [...fingerChains.flat(), ...thumbChain].map((b) => [b, b.quaternion.clone()]),
     scale: 1,
-    wristFit: null,
+    k: 1,
+    stub: findBone(scene, /^stub/i),
+    flare: null,
     skin: null,
   };
 }
@@ -151,6 +156,11 @@ export function placeGraft(g: HandGraft, hand: Bone) {
   // rootRestQ under it) lands on the hand bone.
   g.armature.quaternion.copy(_q).multiply(g.rootRestQ.clone().invert());
   g.armature.scale.setScalar(g.scale);
+  if (g.stub && g.flare) {
+    // Radial only: the stub bone points back along the arm (local Y).
+    const f = Math.min(2.2, Math.max(0.7, (g.flare.figureUnits * g.k) / (g.flare.assetCm * g.scale)));
+    g.stub.scale.set(f, 1, f);
+  }
   hand.getWorldPosition(_a);
   _b.copy(g.rootRestP).multiplyScalar(g.scale).applyQuaternion(g.armature.quaternion);
   g.armature.position.copy(_a).sub(_b);
@@ -220,12 +230,13 @@ export function setGraftLook(sides: Record<1 | -1, { graft: HandGraft | null }>,
 }
 
 /**
- * Measure the figure's forearm where it meets the hand (bind pose, model
- * units) and the asset's wrist (cm), so the hand can be scaled to the arm
- * it sits on instead of to the body's height alone.
+ * Measure the figure's forearm where the hand's stub will sit (bind pose,
+ * model units: radius of the forearm-driven vertices in its last tenth)
+ * and the stub's own radius at the cut (cm), so the stub can flare to the
+ * arm it disappears into.
  */
 export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, hand: Bone) {
-  let figure = 0;
+  const radii: number[] = [];
   for (const { mesh: m } of meshes) {
     const mesh = m as SkinnedMesh;
     if (!mesh.isSkinnedMesh) continue;
@@ -243,29 +254,28 @@ export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, 
       if (dominantBone(mesh, i) !== foreArm) continue;
       _a.fromBufferAttribute(pos, i).sub(pf);
       const t = _a.dot(axis);
-      if (t < 0.75 * len) continue;
-      const r = _a.addScaledVector(axis, -t).length();
-      if (r > figure) figure = r;
+      if (t < 0.88 * len) continue;
+      radii.push(_a.addScaledVector(axis, -t).length());
     }
   }
-  // Asset wrist: vertices within a centimeter of the wrist plane (z = 0 in
-  // the asset's frame, fingers along -z), radius in x and y.
+  radii.sort((x, y) => x - y);
+  const figure = radii.length ? radii[Math.floor(radii.length * 0.85)] : 0;
+  // The stub's radius at its far end (asset frame: fingers along -z, stub toward +z).
   const pos = g.mesh.geometry.getAttribute("position");
+  let zMax = 0;
+  for (let i = 0; i < pos.count; i++) zMax = Math.max(zMax, pos.getZ(i));
   let asset = 0;
   for (let i = 0; i < pos.count; i++) {
-    if (Math.abs(pos.getZ(i)) > 1) continue;
-    const r = Math.hypot(pos.getX(i), pos.getY(i));
-    if (r > asset) asset = r;
+    if (pos.getZ(i) < zMax * 0.75) continue;
+    asset = Math.max(asset, Math.hypot(pos.getX(i), pos.getY(i)));
   }
-  g.wristFit = figure > 0 && asset > 0 ? { figureUnits: figure, assetCm: asset } : null;
+  g.flare = figure > 0 && asset > 0 && g.stub ? { figureUnits: figure, assetCm: asset } : null;
 }
 
-/** The hand's scale for this frame: height-based, nudged so its wrist matches the arm. */
-export function graftScale(g: HandGraft, heightCm: number, k: number): number {
-  const h = heightCm / GRAFT_AUTHORED_CM;
-  if (!g.wristFit) return h;
-  const ratio = (g.wristFit.figureUnits * k) / g.wristFit.assetCm;
-  return h * Math.min(1.15, Math.max(0.7, ratio / h));
+/** The hand's scale for this frame: the height scale times the model's hand-size tuning. */
+export function graftScale(g: HandGraft, heightCm: number, k: number, handScale: number): number {
+  g.k = k;
+  return (heightCm / GRAFT_AUTHORED_CM) * handScale;
 }
 
 function readTexel(tex: Texture, u: number, v: number): Color | null {
