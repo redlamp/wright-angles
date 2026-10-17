@@ -568,6 +568,8 @@ export default function RiggedFigure({
       h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
     }
     const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitsRef.current, tPoseRef.current, targets.current, grips.current, marks.current);
+    // The grafts' digits were curled after placement; make sure their matrices are fresh for this frame's skinning.
+    rig.grafts.updateMatrixWorld(true);
     if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, tPoseRef.current ? "standing" : scenario, seat.current)) {
       const s = seat.current;
       if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {

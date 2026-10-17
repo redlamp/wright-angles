@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, type ComponentProps } from "react";
+import { Suspense, useDeferredValue, useMemo, type ComponentProps } from "react";
 import { useGLTF, useTexture } from "@react-three/drei";
 import ViewerFigure from "../viewer-figure";
 import RiggedFigure from "./rigged-figure";
@@ -15,6 +15,8 @@ type RigProps = FigureProps & {
   look: FigureLook;
   outfit: string;
   showRig: boolean;
+  /** Palette variant id, or "" for the model's own. */
+  variant: string;
 };
 
 /** Bumped when the hand files change: the loader caches by URL and the browser by path. */
@@ -40,8 +42,7 @@ function GltfFigure(props: RigProps) {
   // A chosen palette variant replaces the candidate's own palette; only
   // candidates that take a palette texture offer the choice.
   const palettes = useAuditionStore((s) => s.palettes);
-  const palette = useAuditionStore((s) => s.palette);
-  const chosen = props.candidate.texture ? palettes.find((p) => p.id === palette) : undefined;
+  const chosen = props.candidate.texture ? palettes.find((p) => p.id === props.variant) : undefined;
   const url = chosen ? assetUrl(chosen.file) : textureUrl(props.candidate);
   if (url) return <TexturedFigure {...props} url={url} />;
   return <PlainFigure {...props} />;
@@ -55,10 +56,13 @@ function PlainFigure(props: RigProps) {
 
 /**
  * The viewer figure, or the audition candidate picked in the dev
- * overlay. The capsule figure stands in while a candidate loads.
+ * overlay. The capsule figure stands in only for the first load: model
+ * and palette changes are deferred, so the figure on screen stays until
+ * the next one is ready instead of flashing back to the capsules.
  */
 export default function AuditionFigure(props: FigureProps) {
-  const id = useAuditionStore((s) => s.candidate);
+  const id = useDeferredValue(useAuditionStore((s) => s.candidate));
+  const variant = useDeferredValue(useAuditionStore((s) => s.palette));
   const look = useAuditionStore((s) => s.look);
   const outfit = useAuditionStore((s) => s.outfit);
   const showRig = useAuditionStore((s) => s.showRig);
@@ -74,6 +78,7 @@ export default function AuditionFigure(props: FigureProps) {
         look={look}
         outfit={outfit}
         showRig={showRig}
+        variant={variant}
       />
     </Suspense>
   );
