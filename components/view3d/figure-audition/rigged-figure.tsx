@@ -6,6 +6,7 @@ import {
   Group,
   MathUtils,
   Matrix4,
+  type Texture,
   MeshStandardMaterial,
   Quaternion,
   Vector3,
@@ -33,7 +34,7 @@ import {
 } from "../viewer-figure";
 import type { Candidate, RigTuning, SideBones } from "./candidates";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, type FigureLook } from "./audition-store";
-import { applyOutfit, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
+import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { chainOf, findDigits, gripPoint, poseArm, type SideRig } from "./rig-arms";
@@ -454,10 +455,13 @@ export default function RiggedFigure({
   look,
   outfit,
   showRig = false,
+  texture,
 }: {
   /** Loaded scene; cloned, never mutated. */
   source: Object3D;
   candidate: Candidate;
+  /** Palette to assign to materials that have no map (packs that ship textures separately). */
+  texture?: Texture;
   scenario: Scenario;
   inputType: InputType;
   heightCm: number;
@@ -492,6 +496,7 @@ export default function RiggedFigure({
     eyeRef.current = eyeOffset;
   }, [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
+  useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
   }, [rig, candidate.id]);

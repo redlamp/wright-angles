@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { CANDIDATES, findCandidate, loadLocalCandidates } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
@@ -33,6 +33,15 @@ export default function AuditionPicker() {
     };
   }, [setLocal]);
   const c = findCandidate(candidate, local);
+  // Local manifests can list a whole pack; group them as the manifest says.
+  const localGroups = useMemo(() => {
+    const map = new Map<string, typeof local>();
+    for (const x of local) {
+      const g = x.group ?? "Local";
+      map.set(g, [...(map.get(g) ?? []), x]);
+    }
+    return [...map.entries()];
+  }, [local]);
   const selectClass = "rounded border border-border bg-background px-1 text-foreground";
 
   return (
@@ -56,15 +65,15 @@ export default function AuditionPicker() {
               </option>
             ))}
           </optgroup>
-          {local.length ? (
-            <optgroup label="Local only (not redistributable)">
-              {local.map((x) => (
+          {localGroups.map(([group, items]) => (
+            <optgroup key={group} label={`${group} (local only)`}>
+              {items.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.label}
                 </option>
               ))}
             </optgroup>
-          ) : null}
+          ))}
         </select>
       </div>
       {c ? (

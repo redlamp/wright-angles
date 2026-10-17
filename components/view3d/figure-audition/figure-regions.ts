@@ -1,4 +1,15 @@
-import { BufferAttribute, Color, Vector3, type Bone, type Mesh, type SkinnedMesh } from "three";
+import {
+  BufferAttribute,
+  Color,
+  SRGBColorSpace,
+  Vector3,
+  type Bone,
+  type Material,
+  type Mesh,
+  type MeshStandardMaterial,
+  type SkinnedMesh,
+  type Texture,
+} from "three";
 import { REGIONS, outfitById, outfitColors, regionForBone, type Region } from "./figure-outfits";
 import { worldPos } from "./rig-math";
 
@@ -138,5 +149,30 @@ export function applyOutfit(regions: MeshRegions[], outfitId: string) {
       attr.setXYZ(i, r, gg, b);
     }
     attr.needsUpdate = true;
+  }
+}
+
+/**
+ * Give a palette texture to every own material that has none: some packs
+ * ship their glTFs without a texture reference and expect the engine to
+ * assign the shared palette.
+ */
+export function assignPalette(meshes: { own: Material | Material[] }[], texture: Texture | undefined) {
+  if (!texture) return;
+  for (const { own } of meshes)
+    for (const m of Array.isArray(own) ? own : [own]) {
+      const sm = m as MeshStandardMaterial;
+      if (sm.map) continue;
+      sm.map = texture;
+      sm.needsUpdate = true;
+    }
+}
+
+/** glTF UVs have the origin at the top left and palettes are color data. */
+export function preparePalette(tex: Texture | Texture[]) {
+  for (const t of Array.isArray(tex) ? tex : [tex]) {
+    t.flipY = false;
+    t.colorSpace = SRGBColorSpace;
+    t.needsUpdate = true;
   }
 }

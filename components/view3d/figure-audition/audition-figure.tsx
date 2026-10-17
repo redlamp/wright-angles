@@ -1,10 +1,11 @@
 "use client";
 
 import { Suspense, type ComponentProps } from "react";
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, useTexture } from "@react-three/drei";
 import ViewerFigure from "../viewer-figure";
 import RiggedFigure from "./rigged-figure";
-import { candidateUrl, findCandidate, type Candidate } from "./candidates";
+import { candidateUrl, findCandidate, textureUrl, type Candidate } from "./candidates";
+import { preparePalette } from "./figure-regions";
 import { useAuditionStore, type FigureLook } from "./audition-store";
 
 type FigureProps = ComponentProps<typeof ViewerFigure>;
@@ -15,8 +16,21 @@ type RigProps = FigureProps & {
   showRig: boolean;
 };
 
+/** A candidate whose glTF carries no texture reference: the manifest's palette is assigned. */
+function TexturedFigure(props: RigProps & { url: string }) {
+  const gltf = useGLTF(candidateUrl(props.candidate), false, false);
+  const texture = useTexture(props.url, preparePalette);
+  return <RiggedFigure source={gltf.scene} texture={texture} {...props} />;
+}
+
 function GltfFigure(props: RigProps) {
   // No Draco/Meshopt: drei would otherwise wire a remote decoder path.
+  const url = textureUrl(props.candidate);
+  if (url) return <TexturedFigure {...props} url={url} />;
+  return <PlainFigure {...props} />;
+}
+
+function PlainFigure(props: RigProps) {
   const gltf = useGLTF(candidateUrl(props.candidate), false, false);
   return <RiggedFigure source={gltf.scene} {...props} />;
 }

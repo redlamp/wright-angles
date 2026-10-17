@@ -38,6 +38,10 @@ export interface Candidate {
   /** Under public/figures/audition/, or public/figures/ when it starts with "local/". */
   file: string;
   tuning?: RigTuning;
+  /** Palette texture to assign when the glTF carries no texture reference (same path rules as `file`). */
+  texture?: string;
+  /** Picker optgroup for local manifests with many entries. */
+  group?: string;
   style: string;
   license: string;
   author: string;
@@ -154,6 +158,10 @@ export const isLocal = (c: Candidate) => c.file.startsWith("local/");
 
 export const candidateUrl = (c: Candidate) =>
   isLocal(c) ? `${base()}/figures/${c.file}` : `${base()}/figures/audition/${c.file}`;
+
+/** The candidate's palette texture URL, if its manifest entry names one. */
+export const textureUrl = (c: Candidate) =>
+  c.texture ? (c.texture.startsWith("local/") ? `${base()}/figures/${c.texture}` : `${base()}/figures/audition/${c.texture}`) : null;
 
 /** Bundled candidates first, then whatever the local manifest added. */
 export const findCandidate = (id: string, local: Candidate[] = []) =>
