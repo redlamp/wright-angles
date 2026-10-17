@@ -13,17 +13,27 @@ export type FigureLook = "own" | "gray" | "outfit";
  * own, the scene's figure gray, or per-bone outfit colors. `local` holds
  * the candidates read from the gitignored manifest; not persisted.
  */
+/** Nudges to a model's measured eye point, world cm: up and forward. */
+export interface EyeOffset {
+  up: number;
+  fwd: number;
+}
+export const NO_EYE_OFFSET: EyeOffset = { up: 0, fwd: 0 };
+
 interface AuditionState {
   candidate: string;
   look: FigureLook;
   outfit: string;
   /** Draw the skeleton and the hand targets over the figure. */
   showRig: boolean;
+  /** Per-candidate eye point nudges, persisted; dialed in with the rig shown. */
+  eyeOffsets: Record<string, EyeOffset>;
   local: Candidate[];
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
   setShowRig: (showRig: boolean) => void;
+  setEyeOffset: (id: string, offset: EyeOffset) => void;
   setLocal: (local: Candidate[]) => void;
 }
 
@@ -34,11 +44,13 @@ export const useAuditionStore = create<AuditionState>()(
       look: "own",
       outfit: "casual",
       showRig: false,
+      eyeOffsets: {},
       local: [],
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
       setShowRig: (showRig) => set({ showRig }),
+      setEyeOffset: (id, offset) => set((s) => ({ eyeOffsets: { ...s.eyeOffsets, [id]: offset } })),
       setLocal: (local) => set({ local }),
     }),
     {
@@ -49,6 +61,7 @@ export const useAuditionStore = create<AuditionState>()(
         look: s.look,
         outfit: s.outfit,
         showRig: s.showRig,
+        eyeOffsets: s.eyeOffsets,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,

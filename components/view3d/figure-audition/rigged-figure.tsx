@@ -5,6 +5,7 @@ import {
   Box3,
   Group,
   MathUtils,
+  Matrix4,
   MeshStandardMaterial,
   Quaternion,
   Vector3,
@@ -31,8 +32,8 @@ import {
   type Pose,
 } from "../viewer-figure";
 import type { Candidate, RigTuning, SideBones } from "./candidates";
-import { AUDITION_READOUT_ID, type FigureLook } from "./audition-store";
-import { applyOutfit, computeRegions, dominantBone, headSpan, type MeshRegions } from "./figure-regions";
+import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, type FigureLook } from "./audition-store";
+import { applyOutfit, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { chainOf, findDigits, gripPoint, poseArm, type SideRig } from "./rig-arms";
@@ -81,13 +82,11 @@ interface Rig {
   head: Bone;
   /** Rest measurements at scale 1, after the yaw fix, in model units. */
   height: number;
-  minY: number;
-  /** Mean hip-joint (thigh root) height. */
-  hipJointY: number;
-  /** Seated: hip joint height above the underside of the thighs. */
-  seatDrop: number;
   eyeY: number;
-  /** Eye point in the head bone's local frame (rest pose). */
+  /** Measured eye point in model space at rest, and the head's rest world matrix inverse. */
+  eyeRest: Vector3;
+  headRestInv: Matrix4;
+  /** Scratch: the offset eye point in the head bone's frame. */
   eyeLocal: Vector3;
   meshes: { mesh: Mesh; own: Material | Material[] }[];
   gray: MeshStandardMaterial;
@@ -112,7 +111,6 @@ const DEFAULT_TUNING: Tuning = {
 const _a = new Vector3();
 const _b = new Vector3();
 const _c = new Vector3();
-const _v = new Vector3();
 const _dir = new Vector3();
 
 /** Skinned vertex reads use boneMatrices, which only a render refreshes. */
@@ -123,34 +121,6 @@ function updateSkeletons(rig: Rig) {
   }
 }
 
-
-/**
- * Sit the rig (thighs forward) and find the underside of its thighs:
- * the lowest skinned vertex driven mostly by a thigh bone. Rigs put the
- * thigh joint anywhere from the femoral head to the crotch line, so a
- * fixed joint-to-seat offset left some bodies hovering 13cm up.
- */
-function measureSeatDrop(rig: Rig): number {
-  for (const side of [1, -1] as const) {
-    const s = rig.sides[side];
-    aim(rig.segments, s.upperLeg, s.lowerLeg, legDir(-Math.PI / 2, _dir), 1);
-  }
-  updateSkeletons(rig);
-  const thighs = new Set<Bone>([rig.sides[1].upperLeg, rig.sides[-1].upperLeg]);
-  let minY = Infinity;
-  for (const { mesh } of rig.meshes) {
-    const sk = mesh as SkinnedMesh;
-    if (!sk.isSkinnedMesh) continue;
-    const n = sk.geometry.getAttribute("position").count;
-    for (let i = 0; i < n; i++) {
-      const bone = dominantBone(sk, i);
-      if (!bone || !thighs.has(bone)) continue;
-      sk.getVertexPosition(i, _v).applyMatrix4(sk.matrixWorld);
-      if (_v.y < minY) minY = _v.y;
-    }
-  }
-  return Number.isFinite(minY) ? rig.hipJointY - minY : 0;
-}
 
 function buildRig(source: Object3D, c: Candidate): Rig {
   const model = cloneSkinned(source);
@@ -232,10 +202,9 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     spine,
     head,
     height: 1,
-    minY: 0,
-    hipJointY: 0,
-    seatDrop: 0,
     eyeY: 0,
+    eyeRest: new Vector3(),
+    headRestInv: new Matrix4(),
     eyeLocal: new Vector3(),
     meshes,
     gray,
@@ -261,8 +230,6 @@ function buildRig(source: Object3D, c: Candidate): Rig {
 
   const box = new Box3().setFromObject(model, true);
   rig.height = box.max.y - box.min.y;
-  rig.minY = box.min.y;
-  rig.hipJointY = (worldPos(left.upperLeg, _a).y + worldPos(right.upperLeg, _b).y) / 2;
   const span = headSpan(rig);
   rig.eyeY =
     span && tuning.eyeFraction !== undefined
@@ -273,8 +240,8 @@ function buildRig(source: Object3D, c: Candidate): Rig {
   // posed head reports where they are.
   worldPos(head, _a);
   const eyeZ = span ? span.front - (span.max - span.min) * 0.12 : _a.z;
-  rig.eyeLocal.set(_a.x, rig.eyeY, eyeZ);
-  head.worldToLocal(rig.eyeLocal);
+  rig.eyeRest.set(_a.x, rig.eyeY, eyeZ);
+  rig.headRestInv.copy(head.matrixWorld).invert();
 
   model.traverse((o) => {
     const b = o as Bone;
@@ -323,7 +290,6 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     const invHand = s.hand.getWorldQuaternion(new Quaternion()).invert();
     s.palmLocal = palmWorld.normalize().applyQuaternion(invHand);
   }
-  rig.seatDrop = measureSeatDrop(rig);
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
     bone.position.copy(pos);
@@ -385,8 +351,10 @@ function poseRig(
   to: Stance,
   t: number,
   held: HeldGrip | null,
+  eye: EyeOffset,
   targetsOut: Vector3[],
   gripsOut: Vector3[],
+  marksOut: Vector3[],
 ): number {
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -428,6 +396,8 @@ function poseRig(
   // the posed eyes go exactly there, in height and depth, and the body
   // hangs from them: feet and seat land where the proportions put them.
   rig.outer.updateMatrixWorld(true);
+  // The per-model nudge is in world cm; the rest point is in model units.
+  rig.eyeLocal.copy(rig.eyeRest).add(_b.set(0, eye.up / k, eye.fwd / k)).applyMatrix4(rig.headRestInv);
   rig.head.localToWorld(_a.copy(rig.eyeLocal));
   const lift = eyeContract - _a.y;
   rig.outer.position.x -= _a.x;
@@ -449,6 +419,8 @@ function poseRig(
   targetsOut[1].set(hands.right.target.x, hands.right.target.y, hands.right.target.z);
   gripPoint(rig.sides[1], gripsOut[0]);
   gripPoint(rig.sides[-1], gripsOut[1]);
+  marksOut[0].set(0, eyeContract, 0);
+  worldPos(rig.head, marksOut[1]);
   return lift;
 }
 
@@ -500,6 +472,12 @@ export default function RiggedFigure({
   }, [candidate.id, rig, setHeightCm]);
   const targets = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const grips = useRef<Vector3[]>([new Vector3(), new Vector3()]);
+  const marks = useRef<Vector3[]>([new Vector3(), new Vector3()]);
+  const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
+  const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
+  useEffect(() => {
+    eyeRef.current = eyeOffset;
+  }, [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
@@ -569,12 +547,13 @@ export default function RiggedFigure({
       writeReadout(state.clock.elapsedTime, `missing bones: ${rig.missing.join(", ")}`);
       return;
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, held, targets.current, grips.current);
+    const eyeDelta = poseRig(rig, pose, from, to, t, held, eyeRef.current, targets.current, grips.current, marks.current);
     writeReadout(
       state.clock.elapsedTime,
       `eye lock lifted the body ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm · ` +
         `${Math.round(rig.tris).toLocaleString()} tris · ${rig.bones} bones` +
         (rig.sides[1].thumb ? " · palm from thumb" : " · palm from tuning") +
+        (eyeRef.current.up || eyeRef.current.fwd ? ` · eyes ${eyeRef.current.up} up, ${eyeRef.current.fwd} fwd` : "") +
         (controllerBlend.current > 0.5 ? ` · grips ${grips.current[0].distanceTo(grips.current[1]).toFixed(1)} cm apart` : ""),
     );
   });
@@ -582,7 +561,7 @@ export default function RiggedFigure({
   return (
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
-      {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} targets={targets} /> : null}
+      {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>
   );

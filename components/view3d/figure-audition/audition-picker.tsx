@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { CANDIDATES, findCandidate, loadLocalCandidates } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
-import { AUDITION_READOUT_ID, useAuditionStore, type FigureLook } from "./audition-store";
+import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
 
 /**
  * Dev-only overlay for swapping the viewer figure (FEATURE_FIGURE_AUDITION).
@@ -20,6 +20,8 @@ export default function AuditionPicker() {
   const showRig = useAuditionStore((s) => s.showRig);
   const setShowRig = useAuditionStore((s) => s.setShowRig);
   const local = useAuditionStore((s) => s.local);
+  const eye = useAuditionStore((s) => s.eyeOffsets[s.candidate]) ?? NO_EYE_OFFSET;
+  const setEyeOffset = useAuditionStore((s) => s.setEyeOffset);
   const setLocal = useAuditionStore((s) => s.setLocal);
   useEffect(() => {
     let alive = true;
@@ -102,6 +104,40 @@ export default function AuditionPicker() {
               <input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} />
               Show rig
             </label>
+          </div>
+          {/* Nudge where this model's eyes are taken to be; the cyan dot in
+              the rig overlay shows the eye point, so dial until it sits in
+              the eye sockets. Values are world cm. */}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1">
+              Eyes up
+              <input
+                type="range"
+                min={-8}
+                max={8}
+                step={0.5}
+                value={eye.up}
+                onChange={(e) => setEyeOffset(c.id, { ...eye, up: Number(e.target.value) })}
+                className="w-20"
+              />
+              <span className="w-8 text-right tabular-nums">{eye.up.toFixed(1)}</span>
+            </label>
+            <label className="flex items-center gap-1">
+              fwd
+              <input
+                type="range"
+                min={-8}
+                max={8}
+                step={0.5}
+                value={eye.fwd}
+                onChange={(e) => setEyeOffset(c.id, { ...eye, fwd: Number(e.target.value) })}
+                className="w-20"
+              />
+              <span className="w-8 text-right tabular-nums">{eye.fwd.toFixed(1)}</span>
+            </label>
+            <button type="button" className="underline" onClick={() => setEyeOffset(c.id, NO_EYE_OFFSET)}>
+              reset
+            </button>
           </div>
           <span id={AUDITION_READOUT_ID} />
         </>

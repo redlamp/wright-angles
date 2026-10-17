@@ -207,5 +207,8 @@ export function planHands(
   const left = held
     ? grip(held.halfGripCm + HANDHELD_WRIST_OUTBOARD_CM * s, held.wristY - HANDHELD_WRIST_DROP_CM * s, held.distanceCm)
     : grip((12 + HANDHELD_WRIST_OUTBOARD_CM) * s, rootY + (56 - HANDHELD_WRIST_DROP_CM) * s, 2 * s + 32);
-  return { left, right: mirror(left), lookAtHands: true, shoulderDropDeg: 2 };
+  // The head keeps its gaze on the display: the device sits in the sight
+  // line anyway, and pitching toward the hands made the head bob through
+  // the tween (Taylor 2026-10-17).
+  return { left, right: mirror(left), lookAtHands: false, shoulderDropDeg: 2 };
 }
