@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, type ComponentProps } from "react";
+import { Suspense, useMemo, type ComponentProps } from "react";
 import { useGLTF, useTexture } from "@react-three/drei";
 import ViewerFigure from "../viewer-figure";
 import RiggedFigure from "./rigged-figure";
 import { assetUrl, candidateUrl, findCandidate, textureUrl, type Candidate } from "./candidates";
 import { preparePalette } from "./figure-regions";
+import type { HandSources } from "./hand-graft";
 import { useAuditionStore, type FigureLook } from "./audition-store";
 
 type FigureProps = ComponentProps<typeof ViewerFigure>;
@@ -16,11 +17,21 @@ type RigProps = FigureProps & {
   showRig: boolean;
 };
 
+const HAND_URLS = () => [assetUrl("mpfb/hand-left.glb"), assetUrl("mpfb/hand-right.glb")];
+
+/** The five-fingered MPFB hands (CC0), for candidates that take them; null when switched off. */
+function useHands(): HandSources | null {
+  const swap = useAuditionStore((s) => s.swapHands);
+  const [l, r] = useGLTF(HAND_URLS(), false, false);
+  return useMemo(() => (swap ? { left: l.scene, right: r.scene } : null), [swap, l, r]);
+}
+
 /** A candidate whose glTF carries no texture reference: the manifest's palette is assigned. */
 function TexturedFigure(props: RigProps & { url: string }) {
   const gltf = useGLTF(candidateUrl(props.candidate), false, false);
   const texture = useTexture(props.url, preparePalette);
-  return <RiggedFigure source={gltf.scene} texture={texture} {...props} />;
+  const hands = useHands();
+  return <RiggedFigure source={gltf.scene} texture={texture} hands={hands} {...props} />;
 }
 
 function GltfFigure(props: RigProps) {
@@ -36,7 +47,8 @@ function GltfFigure(props: RigProps) {
 
 function PlainFigure(props: RigProps) {
   const gltf = useGLTF(candidateUrl(props.candidate), false, false);
-  return <RiggedFigure source={gltf.scene} {...props} />;
+  const hands = useHands();
+  return <RiggedFigure source={gltf.scene} hands={hands} {...props} />;
 }
 
 /**

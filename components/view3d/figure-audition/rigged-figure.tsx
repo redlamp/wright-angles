@@ -37,7 +37,8 @@ import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, t
 import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
-import { chainOf, findDigits, gripPoint, poseArm, type SideRig } from "./rig-arms";
+import { fitHand, gripPoint, poseArm, type SideRig } from "./rig-arms";
+import { applySkin, GRAFT_AUTHORED_CM, type HandSources } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
@@ -92,6 +93,8 @@ interface Rig {
   eyeLocal: Vector3;
   /** Seated: thigh underside below the hip joints, model units. */
   seatDrop: number;
+  /** World-space container for grafted hands. */
+  grafts: Group;
   meshes: { mesh: Mesh; own: Material | Material[] }[];
   gray: MeshStandardMaterial;
   outfitMat: MeshStandardMaterial;
@@ -109,6 +112,7 @@ const DEFAULT_TUNING: Tuning = {
   palm: "auto",
   reach: 1,
   handScale: 1,
+  graftHands: false,
 };
 
 
@@ -126,7 +130,7 @@ function updateSkeletons(rig: Rig) {
 }
 
 
-function buildRig(source: Object3D, c: Candidate): Rig {
+function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = null): Rig {
   const model = cloneSkinned(source);
   const yaw = new Group();
   const outer = new Group();
@@ -144,7 +148,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
   const head = need(c.head);
   const bones = (
     s: SideBones,
-  ): Omit<SideRig, "upperLen" | "foreLen" | "footRest" | "palmLocal" | "finger" | "thumb" | "fingerChain" | "thumbChain"> => {
+  ): Omit<SideRig, "upperLen" | "foreLen" | "footRest" | "palmLocal" | "finger" | "thumb" | "fingerChains" | "thumbChain" | "graft"> => {
     const upperArm = need(s.upperArm);
     const parent = upperArm?.parent as Bone | null;
     const clavicle = parent && parent.isBone && /clavicle|shoulder/.test(squash(parent.name)) ? parent : null;
@@ -189,8 +193,9 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     ...b,
     finger: null,
     thumb: null,
-    fingerChain: [],
+    fingerChains: [],
     thumbChain: [],
+    graft: null,
     upperLen: 0,
     foreLen: 0,
     footRest: new Quaternion(),
@@ -211,6 +216,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     headRestInv: new Matrix4(),
     eyeLocal: new Vector3(),
     seatDrop: 0,
+    grafts: new Group(),
     meshes,
     gray,
     outfitMat,
@@ -269,31 +275,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     segment(s.lowerLeg, s.foot);
     segment(s.upperArm, s.foreArm);
     segment(s.foreArm, s.hand);
-    const digits = findDigits(s.hand, s.foreArm);
-    s.finger = digits.finger;
-    s.thumb = digits.thumb;
-    s.fingerChain = chainOf(s.finger);
-    s.thumbChain = chainOf(s.thumb);
-    if (s.finger) segment(s.hand, s.finger);
-    // Palm normal: fingers x thumb for the left hand, thumb x fingers for
-    // the right. Without a thumb, trust the tuning (T-poses: palms down).
-    const handPos = worldPos(s.hand, _c).clone();
-    const fingerDir = (s.finger ? worldPos(s.finger, _a) : worldPos(s.hand, _a).sub(worldPos(s.foreArm, _b)).add(handPos))
-      .clone()
-      .sub(handPos)
-      .normalize();
-    let palmWorld: Vector3 | null = null;
-    if (tuning.palm === "auto" && s.thumb) {
-      const thumbDir = worldPos(s.thumb, _b).clone().sub(handPos).normalize();
-      palmWorld = side === 1 ? fingerDir.clone().cross(thumbDir) : thumbDir.clone().cross(fingerDir);
-      if (palmWorld.lengthSq() < 1e-6) palmWorld = null;
-    }
-    if (!palmWorld) {
-      palmWorld =
-        tuning.palm === "in" ? new Vector3(-side, 0, 0) : tuning.palm === "back" ? new Vector3(0, 0, -1) : new Vector3(0, -1, 0);
-    }
-    const invHand = s.hand.getWorldQuaternion(new Quaternion()).invert();
-    s.palmLocal = palmWorld.normalize().applyQuaternion(invHand);
+    fitHand(s, side, tuning, hands, segment, rig.grafts);
   }
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -302,7 +284,8 @@ function buildRig(source: Object3D, c: Candidate): Rig {
   // Stylized packs oversize the hands; scale lives on the hand bone so
   // the fingers and the hand mesh follow. Poses restore rotation and
   // position only, so this holds.
-  for (const side of [1, -1] as const) rig.sides[side].hand.scale.setScalar(tuning.handScale);
+  // A grafted hand replaces the mitten: collapse the mitten into the wrist.
+  for (const side of [1, -1] as const) rig.sides[side].hand.scale.setScalar(rig.sides[side].graft ? 0.001 : tuning.handScale);
   rig.seatDrop = measureSeatDrop(rig);
   outer.updateMatrixWorld(true);
   updateSkeletons(rig);
@@ -419,6 +402,10 @@ function poseRig(
     setWorldQuat(s.foot, s.footRest);
   }
 
+  for (const side of [1, -1] as const) {
+    const g = rig.sides[side].graft;
+    if (g) g.scale = heightCm / GRAFT_AUTHORED_CM;
+  }
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
   targetsOut[0].set(hands.left.target.x, hands.left.target.y, hands.left.target.z);
@@ -456,12 +443,15 @@ export default function RiggedFigure({
   outfit,
   showRig = false,
   texture,
+  hands = null,
 }: {
   /** Loaded scene; cloned, never mutated. */
   source: Object3D;
   candidate: Candidate;
   /** Palette to assign to materials that have no map (packs that ship textures separately). */
   texture?: Texture;
+  /** Five-fingered hand assets to wear, when the candidate's tuning allows. */
+  hands?: HandSources | null;
   scenario: Scenario;
   inputType: InputType;
   heightCm: number;
@@ -471,7 +461,7 @@ export default function RiggedFigure({
   outfit: string;
   showRig?: boolean;
 }) {
-  const rig = useMemo(() => buildRig(source, candidate), [source, candidate]);
+  const rig = useMemo(() => buildRig(source, candidate, hands), [source, candidate, hands]);
   // Switching models resets the height to the model's own, so each is
   // seen at the size it was built at rather than stretched to the last.
   const setHeightCm = useViewerStore((s) => s.setHeightCm);
@@ -497,6 +487,7 @@ export default function RiggedFigure({
   }, [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
+  useEffect(() => applySkin(rig.sides, rig.meshes, texture), [rig, texture]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
   }, [rig, candidate.id]);
@@ -591,6 +582,7 @@ export default function RiggedFigure({
   return (
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
+      <primitive object={rig.grafts} />
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>

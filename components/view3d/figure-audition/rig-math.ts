@@ -128,3 +128,12 @@ export function rollToward(bone: Bone, axis: Vector3, current: Vector3, desired:
   _qw.premultiply(_q);
   setWorldQuat(bone, _qw);
 }
+
+/** A bone and all its descendant bones, root first. */
+export function chainOf(root: Bone | null): Bone[] {
+  const out: Bone[] = [];
+  root?.traverse((o) => {
+    if ((o as Bone).isBone) out.push(o as Bone);
+  });
+  return out;
+}

@@ -30,6 +30,8 @@ export interface RigTuning {
   reach?: number;
   /** Uniform scale on the hand bones, for packs with stylized oversized hands. */
   handScale?: number;
+  /** Wear the five-fingered MPFB hands over this model's own (mitten) hands. */
+  graftHands?: boolean;
 }
 
 export interface Candidate {
@@ -98,6 +100,7 @@ const mpfbSide = (s: "l" | "r"): SideBones => ({
 const mpfb = (id: string, label: string, style: string): Candidate => ({
   id: `mpfb-${id}`,
   label: `MPFB ${label}`,
+  group: "MakeHuman (CC0)",
   file: `mpfb/${id}.glb`,
   style,
   license: "CC0-1.0",
@@ -139,6 +142,7 @@ const enigmaSide = (s: "L" | "R"): SideBones => ({
 const ENIGMA: Candidate = {
   id: "enigma-humanoid-rigged",
   label: "Base humanoid 402 (Enigma rig)",
+  group: "Base meshes (CC0)",
   file: "enigma/humanoid-rigged.glb",
   style: "Smooth base mesh, 402 tris, flat skin color",
   license: "CC0-1.0",

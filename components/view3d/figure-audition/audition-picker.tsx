@@ -27,6 +27,8 @@ export default function AuditionPicker() {
   const setPalettes = useAuditionStore((s) => s.setPalettes);
   const palette = useAuditionStore((s) => s.palette);
   const setPalette = useAuditionStore((s) => s.setPalette);
+  const swapHands = useAuditionStore((s) => s.swapHands);
+  const setSwapHands = useAuditionStore((s) => s.setSwapHands);
   useEffect(() => {
     let alive = true;
     loadLocalManifest().then(({ candidates, palettes: pals }) => {
@@ -39,15 +41,33 @@ export default function AuditionPicker() {
     };
   }, [setLocal, setPalettes]);
   const c = findCandidate(candidate, local);
-  // Local manifests can list a whole pack; group them as the manifest says.
-  const localGroups = useMemo(() => {
-    const map = new Map<string, typeof local>();
+  // Two menus instead of one long list: a set (bundled groups, then the
+  // local manifest's groups), and the models in it. Prev and next step
+  // through every model in order, across sets.
+  const sets = useMemo(() => {
+    const map = new Map<string, { id: string; label: string }[]>();
+    map.set("Capsule figure", [{ id: "current", label: "Current (capsules)" }]);
+    for (const x of CANDIDATES) {
+      const g = x.group ?? "Bundled";
+      map.set(g, [...(map.get(g) ?? []), x]);
+    }
     for (const x of local) {
-      const g = x.group ?? "Local";
+      const g = `${x.group ?? "Local"} (local only)`;
       map.set(g, [...(map.get(g) ?? []), x]);
     }
     return [...map.entries()];
   }, [local]);
+  const setIndex = Math.max(
+    0,
+    sets.findIndex(([, items]) => items.some((x) => x.id === candidate)),
+  );
+  const [setLabel, items] = sets[setIndex];
+  const step = (d: number) => {
+    const all = sets.flatMap(([, i]) => i);
+    const i = all.findIndex((x) => x.id === candidate);
+    const n = all[(i + d + all.length) % all.length];
+    if (n) setCandidate(n.id);
+  };
   const selectClass = "rounded border border-border bg-background px-1 text-foreground";
 
   return (
@@ -58,29 +78,40 @@ export default function AuditionPicker() {
       <div className="flex items-center gap-2">
         <span className="text-foreground">Figure audition</span>
         <select
+          aria-label="Figure set"
+          className={`min-w-0 flex-1 py-0.5 ${selectClass}`}
+          value={setLabel}
+          onChange={(e) => {
+            const next = sets.find(([l]) => l === e.target.value);
+            if (next?.[1][0]) setCandidate(next[1][0].id);
+          }}
+        >
+          {sets.map(([l]) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-1">
+        <button type="button" aria-label="Previous model" className={`px-1.5 ${selectClass}`} onClick={() => step(-1)}>
+          &lsaquo;
+        </button>
+        <select
           aria-label="Figure candidate"
           className={`min-w-0 flex-1 py-0.5 ${selectClass}`}
           value={candidate}
           onChange={(e) => setCandidate(e.target.value)}
         >
-          <option value="current">Current (capsules)</option>
-          <optgroup label="Bundled">
-            {CANDIDATES.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.label}
-              </option>
-            ))}
-          </optgroup>
-          {localGroups.map(([group, items]) => (
-            <optgroup key={group} label={`${group} (local only)`}>
-              {items.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.label}
-                </option>
-              ))}
-            </optgroup>
+          {items.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.label}
+            </option>
           ))}
         </select>
+        <button type="button" aria-label="Next model" className={`px-1.5 ${selectClass}`} onClick={() => step(1)}>
+          &rsaquo;
+        </button>
       </div>
       {c ? (
         <>
@@ -126,6 +157,12 @@ export default function AuditionPicker() {
                     </option>
                   ))}
                 </select>
+              </label>
+            ) : null}
+            {c.tuning?.graftHands ? (
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={swapHands} onChange={(e) => setSwapHands(e.target.checked)} />
+                Five-finger hands
               </label>
             ) : null}
             <label className="flex items-center gap-1">

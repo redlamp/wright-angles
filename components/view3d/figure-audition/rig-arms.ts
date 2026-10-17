@@ -1,7 +1,10 @@
-import { Quaternion, Vector3, type Bone } from "three";
+import { Quaternion, Vector3, type Bone, type Object3D } from "three";
 import { solveTwoBone } from "@/lib/limb-ik";
 import type { HandPlan } from "./figure-hands";
-import { aim, rollToward, rotateWorld, squash, tipWorld, worldPos, type Segment } from "./rig-math";
+import { aim, chainOf, rollToward, rotateWorld, squash, tipWorld, worldPos, type Segment } from "./rig-math";
+import { buildGraft, placeGraft, type HandGraft, type HandSources } from "./hand-graft";
+
+export { chainOf };
 
 /** Palm roll never twists a wrist past this. */
 const PALM_ROLL_MAX_DEG = 60;
@@ -19,9 +22,11 @@ export interface SideRig {
   finger: Bone | null;
   /** Thumb bone, if any: with the fingers it gives the palm's direction. */
   thumb: Bone | null;
-  /** The finger and thumb bones with their descendants, for curling. */
-  fingerChain: Bone[];
+  /** Finger chains (root first) and the thumb chain, for curling: one chain for a mitten, four for a grafted hand. */
+  fingerChains: Bone[][];
   thumbChain: Bone[];
+  /** A five-fingered hand worn over this one, if grafted. */
+  graft: HandGraft | null;
   upperLen: number;
   foreLen: number;
   /** Foot orientation in the rest pose (world, yaw-fixed): feet stay flat. */
@@ -47,13 +52,6 @@ const _q = new Quaternion();
 const childBones = (b: Bone) => b.children.filter((c) => (c as Bone).isBone) as Bone[];
 
 /** A bone and every bone below it, top first. */
-export function chainOf(root: Bone | null): Bone[] {
-  const out: Bone[] = [];
-  root?.traverse((o) => {
-    if ((o as Bone).isBone) out.push(o as Bone);
-  });
-  return out;
-}
 
 /**
  * Among the hand's children, the finger is the one that continues the
@@ -86,19 +84,23 @@ function curlDigits(s: SideRig, plan: HandPlan) {
   if (!s.palmLocal) return;
   s.hand.getWorldQuaternion(_q);
   _palm.copy(s.palmLocal).applyQuaternion(_q);
-  const bend = (chain: Bone[], root: Bone | null, deg: number) => {
-    if (!root || !chain.length || !deg) return;
-    const base = worldPos(root.parent ?? root, _a).clone();
-    const dir = worldPos(root, _b).clone().sub(base).normalize();
-    // Rotating `dir` about dir x palm swings it toward the palm.
-    _lat.crossVectors(dir, _palm);
-    if (_lat.lengthSq() < 1e-8) return;
-    _lat.normalize();
-    const per = deg / chain.length;
-    for (const b of chain) rotateWorld(b, _lat, per);
+  const bend = (chains: Bone[][], deg: number) => {
+    if (!deg) return;
+    for (const chain of chains) {
+      const root = chain[0];
+      if (!root) continue;
+      const base = worldPos(root.parent ?? root, _a).clone();
+      const dir = worldPos(root, _b).clone().sub(base).normalize();
+      // Rotating `dir` about dir x palm swings it toward the palm.
+      _lat.crossVectors(dir, _palm);
+      if (_lat.lengthSq() < 1e-8) continue;
+      _lat.normalize();
+      const per = deg / chain.length;
+      for (const b of chain) rotateWorld(b, _lat, per);
+    }
   };
-  bend(s.fingerChain, s.finger, plan.curl.fingers);
-  bend(s.thumbChain, s.thumb, plan.curl.thumb);
+  bend(s.fingerChains, plan.curl.fingers);
+  bend(s.thumbChain.length ? [s.thumbChain] : [], plan.curl.thumb);
 }
 
 /**
@@ -135,6 +137,8 @@ export function poseArm(
     rollToward(s.foreArm, _axis, _palm, _want.set(plan.palm.x, plan.palm.y, plan.palm.z), PALM_ROLL_MAX_DEG);
     fingers();
   }
+  // A grafted hand rides the posed hand bone; its fingers curl below.
+  if (s.graft) placeGraft(s.graft, s.hand);
   curlDigits(s, plan);
 }
 
@@ -158,4 +162,56 @@ export function gripPoint(s: SideRig, out: Vector3): Vector3 {
     out.addScaledVector(_palm.copy(s.palmLocal).applyQuaternion(_q), GRIP_RADIUS);
   }
   return out;
+}
+
+/**
+ * Measure a hand in the rest pose: its index and thumb roots, their
+ * chains, and the palm normal in the hand bone's frame (fingers x thumb
+ * for the left hand, thumb x fingers for the right; without a thumb the
+ * tuning decides). When the model asks for it and the hand assets are
+ * loaded, a five-fingered graft is built from that frame and its digits
+ * take over from the model's own.
+ */
+export function fitHand(
+  s: SideRig,
+  side: 1 | -1,
+  tuning: { palm: "auto" | "down" | "in" | "back"; graftHands: boolean },
+  hands: HandSources | null,
+  segment: (a: Bone, b: Bone) => void,
+  grafts: Object3D,
+) {
+  const digits = findDigits(s.hand, s.foreArm);
+  s.finger = digits.finger;
+  s.thumb = digits.thumb;
+  s.fingerChains = s.finger ? [chainOf(s.finger)] : [];
+  s.thumbChain = chainOf(s.thumb);
+  if (s.finger) segment(s.hand, s.finger);
+  const handPos = worldPos(s.hand, _c).clone();
+  const fingerDir = (s.finger ? worldPos(s.finger, _a) : worldPos(s.hand, _a).sub(worldPos(s.foreArm, _b)).add(handPos))
+    .clone()
+    .sub(handPos)
+    .normalize();
+  let palmWorld: Vector3 | null = null;
+  if (tuning.palm === "auto" && s.thumb) {
+    const thumbDir = worldPos(s.thumb, _b).clone().sub(handPos).normalize();
+    palmWorld = side === 1 ? fingerDir.clone().cross(thumbDir) : thumbDir.clone().cross(fingerDir);
+    if (palmWorld.lengthSq() < 1e-6) palmWorld = null;
+  }
+  if (!palmWorld) {
+    palmWorld =
+      tuning.palm === "in" ? new Vector3(-side, 0, 0) : tuning.palm === "back" ? new Vector3(0, 0, -1) : new Vector3(0, -1, 0);
+  }
+  const invHand = s.hand.getWorldQuaternion(new Quaternion()).invert();
+  s.palmLocal = palmWorld.normalize().applyQuaternion(invHand);
+  if (hands && tuning.graftHands) {
+    const g = buildGraft(side === 1 ? hands.left : hands.right, side, fingerDir.clone().applyQuaternion(invHand), s.palmLocal);
+    if (g) {
+      s.graft = g;
+      s.finger = g.finger;
+      s.thumb = g.thumb;
+      s.fingerChains = g.fingerChains;
+      s.thumbChain = g.thumbChain;
+      grafts.add(g.group);
+    }
+  }
 }

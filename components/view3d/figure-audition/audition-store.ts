@@ -36,6 +36,8 @@ interface AuditionState {
   palettes: Palette[];
   /** Chosen palette id; empty for the candidate's own texture. Persisted. */
   palette: string;
+  /** Wear the five-fingered hands on models that allow it. Persisted. */
+  swapHands: boolean;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -45,6 +47,7 @@ interface AuditionState {
   setLocal: (local: Candidate[]) => void;
   setPalettes: (palettes: Palette[]) => void;
   setPalette: (palette: string) => void;
+  setSwapHands: (swapHands: boolean) => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -59,6 +62,7 @@ export const useAuditionStore = create<AuditionState>()(
       local: [],
       palettes: [],
       palette: "",
+      swapHands: true,
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
@@ -68,6 +72,7 @@ export const useAuditionStore = create<AuditionState>()(
       setLocal: (local) => set({ local }),
       setPalettes: (palettes) => set({ palettes }),
       setPalette: (palette) => set({ palette }),
+      setSwapHands: (swapHands) => set({ swapHands }),
     }),
     {
       name: "wright-angles:figure-audition",
@@ -79,6 +84,7 @@ export const useAuditionStore = create<AuditionState>()(
         showRig: s.showRig,
         eyeOffsets: s.eyeOffsets,
         palette: s.palette,
+        swapHands: s.swapHands,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,
