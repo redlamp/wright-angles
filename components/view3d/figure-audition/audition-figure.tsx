@@ -17,7 +17,9 @@ type RigProps = FigureProps & {
   showRig: boolean;
 };
 
-const HAND_URLS = () => [assetUrl("hands/hand-left.glb"), assetUrl("hands/hand-right.glb")];
+/** Bumped when the hand files change: the loader caches by URL and the browser by path. */
+const HAND_VERSION = 5;
+const HAND_URLS = () => [assetUrl(`hands/hand-left.glb?v=${HAND_VERSION}`), assetUrl(`hands/hand-right.glb?v=${HAND_VERSION}`)];
 
 /** The blocky three-digit hands (CC0, public/figures/audition/hands), for candidates that take them; null when switched off. */
 function useHands(): HandSources | null {
