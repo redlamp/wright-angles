@@ -46,6 +46,10 @@ export interface HandGraft {
   rest: [Bone, Quaternion][];
   /** Hand asset units are cm at a 175 cm body; set per frame. */
   scale: number;
+  /** Figure wrist width in model units and the asset's in cm: their ratio sizes the hand to the arm. */
+  wristFit: { figureUnits: number; assetCm: number } | null;
+  /** The figure's sampled skin (or glove) color, for the own-material look. */
+  skin: Color | null;
 }
 
 /** Height the MPFB hand was exported at. */
@@ -133,6 +137,8 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     thumbChain,
     rest: [...fingerChains.flat(), ...thumbChain].map((b) => [b, b.quaternion.clone()]),
     scale: 1,
+    wristFit: null,
+    skin: null,
   };
 }
 
@@ -187,14 +193,79 @@ export function sampleSkin(meshes: { mesh: Mesh }[], hand: Bone, texture: Textur
   return mat.color ? mat.color.clone() : null;
 }
 
-/** Color each grafted hand with its figure's skin tone. */
+/** Remember each grafted hand's figure skin tone (sampled from the palette). */
 export function applySkin(sides: Record<1 | -1, { hand: Bone; graft: HandGraft | null }>, meshes: { mesh: Mesh }[], texture: Texture | undefined) {
   for (const side of [1, -1] as const) {
     const s = sides[side];
     if (!s.graft) continue;
     const c = sampleSkin(meshes, s.hand, texture);
+    s.graft.skin = c;
     if (c) s.graft.material.color.copy(c);
   }
+}
+
+/**
+ * The hand follows the figure's look: the scene gray when the figure is
+ * gray, the outfit's skin color when it wears a painted outfit, else its
+ * own sampled skin.
+ */
+export function setGraftLook(sides: Record<1 | -1, { graft: HandGraft | null }>, look: "own" | "gray" | "outfit", gray: string, outfitSkin: string | undefined) {
+  for (const side of [1, -1] as const) {
+    const g = sides[side].graft;
+    if (!g) continue;
+    if (look === "gray") g.material.color.set(gray);
+    else if (look === "outfit" && outfitSkin) g.material.color.set(outfitSkin);
+    else if (g.skin) g.material.color.copy(g.skin);
+  }
+}
+
+/**
+ * Measure the figure's forearm where it meets the hand (bind pose, model
+ * units) and the asset's wrist (cm), so the hand can be scaled to the arm
+ * it sits on instead of to the body's height alone.
+ */
+export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, hand: Bone) {
+  let figure = 0;
+  for (const { mesh: m } of meshes) {
+    const mesh = m as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) continue;
+    const jf = mesh.skeleton.bones.indexOf(foreArm);
+    const jh = mesh.skeleton.bones.indexOf(hand);
+    if (jf < 0 || jh < 0) continue;
+    const pf = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jf]).invert());
+    const ph = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jh]).invert());
+    const axis = _b.subVectors(ph, pf);
+    const len = axis.length();
+    if (len < 1e-6) continue;
+    axis.divideScalar(len);
+    const pos = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      if (dominantBone(mesh, i) !== foreArm) continue;
+      _a.fromBufferAttribute(pos, i).sub(pf);
+      const t = _a.dot(axis);
+      if (t < 0.75 * len) continue;
+      const r = _a.addScaledVector(axis, -t).length();
+      if (r > figure) figure = r;
+    }
+  }
+  // Asset wrist: vertices within a centimeter of the wrist plane (z = 0 in
+  // the asset's frame, fingers along -z), radius in x and y.
+  const pos = g.mesh.geometry.getAttribute("position");
+  let asset = 0;
+  for (let i = 0; i < pos.count; i++) {
+    if (Math.abs(pos.getZ(i)) > 1) continue;
+    const r = Math.hypot(pos.getX(i), pos.getY(i));
+    if (r > asset) asset = r;
+  }
+  g.wristFit = figure > 0 && asset > 0 ? { figureUnits: figure, assetCm: asset } : null;
+}
+
+/** The hand's scale for this frame: height-based, nudged so its wrist matches the arm. */
+export function graftScale(g: HandGraft, heightCm: number, k: number): number {
+  const h = heightCm / GRAFT_AUTHORED_CM;
+  if (!g.wristFit) return h;
+  const ratio = (g.wristFit.figureUnits * k) / g.wristFit.assetCm;
+  return h * Math.min(1.15, Math.max(0.7, ratio / h));
 }
 
 function readTexel(tex: Texture, u: number, v: number): Color | null {

@@ -23,11 +23,14 @@ import { useFrame } from "@react-three/fiber";
  */
 export default function RigOverlay({
   root,
+  grafts,
   targets,
   marks,
 }: {
   /** The figure's outer group (world space). */
   root: Object3D;
+  /** World-space container of grafted hands, if any; their bones draw too. */
+  grafts?: Object3D;
   /** Live wrist targets, world cm; read every frame. */
   targets: { current: Vector3[] };
   /** Eye point, then head bone origin, world cm; read every frame. */
@@ -59,7 +62,23 @@ export default function RigOverlay({
     }
     return g;
   }, []);
+  const handHelper = useMemo(() => {
+    if (!grafts) return null;
+    let bones = 0;
+    grafts.traverse((o) => {
+      if ((o as { isBone?: boolean }).isBone) bones++;
+    });
+    if (!bones) return null;
+    const h = new SkeletonHelper(grafts);
+    const m = h.material as LineBasicMaterial;
+    m.depthTest = false;
+    m.transparent = true;
+    m.opacity = 0.95;
+    h.renderOrder = 10;
+    return h;
+  }, [grafts]);
   useEffect(() => () => helper.dispose(), [helper]);
+  useEffect(() => () => handHelper?.dispose(), [handHelper]);
   useFrame(() => {
     targets.current.forEach((t, i) => {
       const d = dots.children[i];
@@ -73,6 +92,7 @@ export default function RigOverlay({
   return (
     <>
       <primitive object={helper} />
+      {handHelper ? <primitive object={handHelper} /> : null}
       <primitive object={dots} />
     </>
   );

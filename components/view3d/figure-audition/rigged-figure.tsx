@@ -35,10 +35,11 @@ import {
 import type { Candidate, RigTuning, SideBones } from "./candidates";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, type FigureLook } from "./audition-store";
 import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
+import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, type SideRig } from "./rig-arms";
-import { applySkin, GRAFT_AUTHORED_CM, type HandSources } from "./hand-graft";
+import { applySkin, fitWrist, graftScale, setGraftLook, type HandSources } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
@@ -276,6 +277,7 @@ function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = nu
     segment(s.upperArm, s.foreArm);
     segment(s.foreArm, s.hand);
     fitHand(s, side, tuning, hands, segment, rig.grafts);
+    if (s.graft) fitWrist(s.graft, rig.meshes, s.foreArm, s.hand);
   }
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -299,6 +301,7 @@ function setLook(rig: Rig, look: FigureLook, grayColor: string, outfitId: string
   if (look === "outfit") applyOutfit(rig.regions, outfitId);
   for (const { mesh, own } of rig.meshes)
     mesh.material = look === "gray" ? rig.gray : look === "outfit" ? rig.outfitMat : own;
+  setGraftLook(rig.sides, look, grayColor, outfitById(outfitId)?.skin);
 }
 
 /**
@@ -404,7 +407,7 @@ function poseRig(
 
   for (const side of [1, -1] as const) {
     const g = rig.sides[side].graft;
-    if (g) g.scale = heightCm / GRAFT_AUTHORED_CM;
+    if (g) g.scale = graftScale(g, heightCm, k);
   }
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
@@ -487,7 +490,10 @@ export default function RiggedFigure({
   }, [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
-  useEffect(() => applySkin(rig.sides, rig.meshes, texture), [rig, texture]);
+  useEffect(() => {
+    applySkin(rig.sides, rig.meshes, texture);
+    setGraftLook(rig.sides, look, palette.figure, outfitById(outfit)?.skin);
+  }, [rig, texture, look, outfit, palette]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
   }, [rig, candidate.id]);
@@ -574,6 +580,7 @@ export default function RiggedFigure({
       `eye lock lifted the body ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm · ` +
         `${Math.round(rig.tris).toLocaleString()} tris · ${rig.bones} bones` +
         (rig.sides[1].thumb ? " · palm from thumb" : " · palm from tuning") +
+        (rig.sides[1].graft ? ` · hand x${rig.sides[1].graft.scale.toFixed(2)}` : "") +
         (eyeRef.current.up || eyeRef.current.fwd ? ` · eyes ${eyeRef.current.up} up, ${eyeRef.current.fwd} fwd` : "") +
         (controllerBlend.current > 0.5 ? ` · grips ${grips.current[0].distanceTo(grips.current[1]).toFixed(1)} cm apart` : ""),
     );
@@ -583,7 +590,7 @@ export default function RiggedFigure({
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       <primitive object={rig.grafts} />
-      {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} targets={targets} marks={marks} /> : null}
+      {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} grafts={rig.grafts} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>
   );
