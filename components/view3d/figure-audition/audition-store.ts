@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Candidate } from "./candidates";
+import type { Candidate, Palette } from "./candidates";
 import type { SeatOffset } from "./figure-seat";
 
 export type FigureLook = "own" | "gray" | "outfit";
@@ -32,6 +32,10 @@ interface AuditionState {
   /** Where the seated rig's seat is, so the chair and sofa can follow; null for the capsule. */
   seat: SeatOffset | null;
   local: Candidate[];
+  /** Palette variants the local manifest offers; not persisted. */
+  palettes: Palette[];
+  /** Chosen palette id; empty for the candidate's own texture. Persisted. */
+  palette: string;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -39,6 +43,8 @@ interface AuditionState {
   setEyeOffset: (id: string, offset: EyeOffset) => void;
   setSeat: (seat: SeatOffset | null) => void;
   setLocal: (local: Candidate[]) => void;
+  setPalettes: (palettes: Palette[]) => void;
+  setPalette: (palette: string) => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -51,6 +57,8 @@ export const useAuditionStore = create<AuditionState>()(
       eyeOffsets: {},
       seat: null,
       local: [],
+      palettes: [],
+      palette: "",
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
@@ -58,6 +66,8 @@ export const useAuditionStore = create<AuditionState>()(
       setEyeOffset: (id, offset) => set((s) => ({ eyeOffsets: { ...s.eyeOffsets, [id]: offset } })),
       setSeat: (seat) => set({ seat }),
       setLocal: (local) => set({ local }),
+      setPalettes: (palettes) => set({ palettes }),
+      setPalette: (palette) => set({ palette }),
     }),
     {
       name: "wright-angles:figure-audition",
@@ -68,6 +78,7 @@ export const useAuditionStore = create<AuditionState>()(
         outfit: s.outfit,
         showRig: s.showRig,
         eyeOffsets: s.eyeOffsets,
+        palette: s.palette,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,

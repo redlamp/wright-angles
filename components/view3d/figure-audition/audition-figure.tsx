@@ -4,7 +4,7 @@ import { Suspense, type ComponentProps } from "react";
 import { useGLTF, useTexture } from "@react-three/drei";
 import ViewerFigure from "../viewer-figure";
 import RiggedFigure from "./rigged-figure";
-import { candidateUrl, findCandidate, textureUrl, type Candidate } from "./candidates";
+import { assetUrl, candidateUrl, findCandidate, textureUrl, type Candidate } from "./candidates";
 import { preparePalette } from "./figure-regions";
 import { useAuditionStore, type FigureLook } from "./audition-store";
 
@@ -24,8 +24,12 @@ function TexturedFigure(props: RigProps & { url: string }) {
 }
 
 function GltfFigure(props: RigProps) {
-  // No Draco/Meshopt: drei would otherwise wire a remote decoder path.
-  const url = textureUrl(props.candidate);
+  // A chosen palette variant replaces the candidate's own palette; only
+  // candidates that take a palette texture offer the choice.
+  const palettes = useAuditionStore((s) => s.palettes);
+  const palette = useAuditionStore((s) => s.palette);
+  const chosen = props.candidate.texture ? palettes.find((p) => p.id === palette) : undefined;
+  const url = chosen ? assetUrl(chosen.file) : textureUrl(props.candidate);
   if (url) return <TexturedFigure {...props} url={url} />;
   return <PlainFigure {...props} />;
 }

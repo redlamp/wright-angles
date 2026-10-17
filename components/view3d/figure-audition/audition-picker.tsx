@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { CANDIDATES, findCandidate, loadLocalCandidates } from "./candidates";
+import { CANDIDATES, findCandidate, loadLocalManifest } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
 
@@ -23,15 +23,21 @@ export default function AuditionPicker() {
   const eye = useAuditionStore((s) => s.eyeOffsets[s.candidate]) ?? NO_EYE_OFFSET;
   const setEyeOffset = useAuditionStore((s) => s.setEyeOffset);
   const setLocal = useAuditionStore((s) => s.setLocal);
+  const palettes = useAuditionStore((s) => s.palettes);
+  const setPalettes = useAuditionStore((s) => s.setPalettes);
+  const palette = useAuditionStore((s) => s.palette);
+  const setPalette = useAuditionStore((s) => s.setPalette);
   useEffect(() => {
     let alive = true;
-    loadLocalCandidates().then((list) => {
-      if (alive) setLocal(list);
+    loadLocalManifest().then(({ candidates, palettes: pals }) => {
+      if (!alive) return;
+      setLocal(candidates);
+      setPalettes(pals);
     });
     return () => {
       alive = false;
     };
-  }, [setLocal]);
+  }, [setLocal, setPalettes]);
   const c = findCandidate(candidate, local);
   // Local manifests can list a whole pack; group them as the manifest says.
   const localGroups = useMemo(() => {
@@ -109,6 +115,19 @@ export default function AuditionPicker() {
                 ))}
               </select>
             </label>
+            {c.texture && palettes.length ? (
+              <label className="flex items-center gap-1">
+                Palette
+                <select className={selectClass} value={palette} onChange={(e) => setPalette(e.target.value)}>
+                  <option value="">model default</option>
+                  {palettes.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} />
               Show rig

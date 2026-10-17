@@ -153,16 +153,16 @@ export function applyOutfit(regions: MeshRegions[], outfitId: string) {
 }
 
 /**
- * Give a palette texture to every own material that has none: some packs
- * ship their glTFs without a texture reference and expect the engine to
- * assign the shared palette.
+ * Put the palette texture on every own material: some packs ship their
+ * glTFs without a texture reference and expect the engine to assign the
+ * shared palette, and a chosen variant replaces an embedded one.
  */
 export function assignPalette(meshes: { own: Material | Material[] }[], texture: Texture | undefined) {
   if (!texture) return;
   for (const { own } of meshes)
     for (const m of Array.isArray(own) ? own : [own]) {
       const sm = m as MeshStandardMaterial;
-      if (sm.map) continue;
+      if (sm.map === texture) continue;
       sm.map = texture;
       sm.needsUpdate = true;
     }

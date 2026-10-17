@@ -159,9 +159,19 @@ export const isLocal = (c: Candidate) => c.file.startsWith("local/");
 export const candidateUrl = (c: Candidate) =>
   isLocal(c) ? `${base()}/figures/${c.file}` : `${base()}/figures/audition/${c.file}`;
 
+/** A figure asset path from a manifest or candidate, under public/figures/ (local/...) or public/figures/audition/. */
+export const assetUrl = (path: string) =>
+  path.startsWith("local/") ? `${base()}/figures/${path}` : `${base()}/figures/audition/${path}`;
+
 /** The candidate's palette texture URL, if its manifest entry names one. */
-export const textureUrl = (c: Candidate) =>
-  c.texture ? (c.texture.startsWith("local/") ? `${base()}/figures/${c.texture}` : `${base()}/figures/audition/${c.texture}`) : null;
+export const textureUrl = (c: Candidate) => (c.texture ? assetUrl(c.texture) : null);
+
+/** A palette texture variant listed by a local manifest; any candidate with a `texture` can wear it. */
+export interface Palette {
+  id: string;
+  label: string;
+  file: string;
+}
 
 /** Bundled candidates first, then whatever the local manifest added. */
 export const findCandidate = (id: string, local: Candidate[] = []) =>
@@ -173,18 +183,22 @@ export const LOCAL_MANIFEST_URL = () => `${base()}/figures/local/manifest.json`;
  * Read the gitignored local manifest. Missing (a fresh clone) is the
  * normal case and yields no candidates; a malformed one is reported.
  */
-export async function loadLocalCandidates(): Promise<Candidate[]> {
+export async function loadLocalManifest(): Promise<{ candidates: Candidate[]; palettes: Palette[] }> {
+  const none = { candidates: [], palettes: [] };
   try {
     const res = await fetch(LOCAL_MANIFEST_URL(), { cache: "no-store" });
-    if (!res.ok) return [];
-    const json = (await res.json()) as { candidates?: unknown };
+    if (!res.ok) return none;
+    const json = (await res.json()) as { candidates?: unknown; palettes?: unknown };
     const list = Array.isArray(json.candidates) ? (json.candidates as Candidate[]) : [];
-    return list.filter(
+    const pals = Array.isArray(json.palettes) ? (json.palettes as Palette[]) : [];
+    const palettes = pals.filter((p) => p && typeof p.id === "string" && typeof p.file === "string" && p.file.startsWith("local/"));
+    const candidates = list.filter(
       (c) =>
         c && typeof c.id === "string" && typeof c.file === "string" && c.file.startsWith("local/"),
     );
+    return { candidates, palettes };
   } catch (e) {
     console.warn("[figure-audition] local manifest unreadable:", e);
-    return [];
+    return none;
   }
 }
