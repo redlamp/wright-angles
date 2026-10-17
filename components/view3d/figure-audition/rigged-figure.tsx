@@ -35,7 +35,7 @@ import { AUDITION_READOUT_ID, type FigureLook } from "./audition-store";
 import { applyOutfit, computeRegions, dominantBone, headSpan, type MeshRegions } from "./figure-regions";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
-import { chainOf, findDigits, poseArm, type SideRig } from "./rig-arms";
+import { chainOf, findDigits, gripPoint, poseArm, type SideRig } from "./rig-arms";
 import {
   aim,
   findBone,
@@ -369,6 +369,7 @@ function poseRig(
   t: number,
   held: HeldGrip | null,
   targetsOut: Vector3[],
+  gripsOut: Vector3[],
 ): number {
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -415,6 +416,8 @@ function poseRig(
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
   targetsOut[0].set(hands.left.target.x, hands.left.target.y, hands.left.target.z);
   targetsOut[1].set(hands.right.target.x, hands.right.target.y, hands.right.target.z);
+  gripPoint(rig.sides[1], gripsOut[0]);
+  gripPoint(rig.sides[-1], gripsOut[1]);
 
   if (hands.lookAtHands > 0) {
     const eyeWorldY = y + rig.eyeY * k;
@@ -469,6 +472,7 @@ export default function RiggedFigure({
 }) {
   const rig = useMemo(() => buildRig(source, candidate), [source, candidate]);
   const targets = useRef<Vector3[]>([new Vector3(), new Vector3()]);
+  const grips = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
@@ -538,12 +542,13 @@ export default function RiggedFigure({
       writeReadout(state.clock.elapsedTime, `missing bones: ${rig.missing.join(", ")}`);
       return;
     }
-    const eyeDelta = poseRig(rig, pose, anchor, from, to, t, held, targets.current);
+    const eyeDelta = poseRig(rig, pose, anchor, from, to, t, held, targets.current, grips.current);
     writeReadout(
       state.clock.elapsedTime,
       `eyes ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm vs eye point · ` +
         `${Math.round(rig.tris).toLocaleString()} tris · ${rig.bones} bones` +
-        (rig.sides[1].thumb ? " · palm from thumb" : " · palm from tuning"),
+        (rig.sides[1].thumb ? " · palm from thumb" : " · palm from tuning") +
+        (controllerBlend.current > 0.5 ? ` · grips ${grips.current[0].distanceTo(grips.current[1]).toFixed(1)} cm apart` : ""),
     );
   });
 
@@ -551,7 +556,7 @@ export default function RiggedFigure({
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} targets={targets} /> : null}
-      {!rig.missing.length ? <ControllerProp targets={targets} blend={controllerBlend} /> : null}
+      {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>
   );
 }

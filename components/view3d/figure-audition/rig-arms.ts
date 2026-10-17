@@ -137,3 +137,25 @@ export function poseArm(
   }
   curlDigits(s, plan);
 }
+
+/** Half the thickness of a controller grip: the grip's center sits this far off the palm. */
+const GRIP_RADIUS = 1.8;
+
+/**
+ * Where a held grip's center is for this hand, in world cm: between the
+ * thumb root and the finger roots (the palm's crease), pushed off the
+ * palm by a grip's radius. Falls back to a point along the hand when the
+ * rig has no digits.
+ */
+export function gripPoint(s: SideRig, out: Vector3): Vector3 {
+  worldPos(s.hand, out);
+  const f = s.finger ? worldPos(s.finger, _a) : null;
+  const t = s.thumb ? worldPos(s.thumb, _b) : null;
+  if (f && t) out.addVectors(f, t).multiplyScalar(0.5);
+  else if (f) out.lerp(f, 0.6);
+  if (s.palmLocal) {
+    s.hand.getWorldQuaternion(_q);
+    out.addScaledVector(_palm.copy(s.palmLocal).applyQuaternion(_q), GRIP_RADIUS);
+  }
+  return out;
+}
