@@ -92,6 +92,8 @@ export interface HandFit {
 export const DEFAULT_HAND_FIT: HandFit = { size: 1, flareX: 1, flareY: 1, slideX: 0, slideY: 0, slideZ: 0, rotX: 0, rotY: 0, rotZ: 0 };
 
 type RawFit = Partial<HandFit> & { flare?: number; slide?: number };
+/** Fits as saved or as a manifest bakes them: per side, or one shared fit. */
+export type RawFits = RawFit | { left?: RawFit; right?: RawFit };
 
 /** Accepts fits saved under the earlier shape (one flare, one slide). */
 export function normalizeFit(raw: RawFit | undefined): HandFit {
@@ -123,7 +125,7 @@ export function mirrorFit(f: HandFit): HandFit {
 }
 
 /** Accepts fits saved per side, or the earlier single fit (which the right hand mirrored then). */
-export function normalizeFits(raw: RawFit | { left?: RawFit; right?: RawFit } | undefined): SideFits {
+export function normalizeFits(raw: RawFits | undefined): SideFits {
   if (!raw) return DEFAULT_SIDE_FITS;
   if ("left" in raw || "right" in raw) {
     const r = raw as { left?: RawFit; right?: RawFit };

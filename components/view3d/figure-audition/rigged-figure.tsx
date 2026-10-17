@@ -103,7 +103,7 @@ interface Rig {
   bones: number;
 }
 
-type Tuning = Required<Omit<RigTuning, "eyeFraction">> & Pick<RigTuning, "eyeFraction">;
+type Tuning = Required<Omit<RigTuning, "eyeFraction" | "handFits">> & Pick<RigTuning, "eyeFraction" | "handFits">;
 
 const DEFAULT_TUNING: Tuning = {
   palm: "auto",
@@ -472,11 +472,11 @@ export default function RiggedFigure({
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
   const rawFits = useAuditionStore((s) => s.handFits[candidate.id]);
-  const handFits = useMemo(() => normalizeFits(rawFits), [rawFits]);
+  const handFits = useMemo(() => normalizeFits(rawFits ?? candidate.tuning?.handFits), [rawFits, candidate]);
   const tPose = useAuditionStore((s) => s.tPose);
   const showGhost = useAuditionStore((s) => s.showGhost);
   useEffect(() => void rig.ghosts.forEach((g) => (g.visible = showGhost)), [rig, showGhost]);
-  const setHandFit = useAuditionStore((s) => s.setHandFit);
+  const setHandFits = useAuditionStore((s) => s.setHandFits);
   const tPoseRef = useRef(false);
   useEffect(() => void (tPoseRef.current = tPose), [tPose]);
   const handFitsRef = useRef<SideFits>(DEFAULT_SIDE_FITS);
@@ -591,7 +591,7 @@ export default function RiggedFigure({
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       <primitive object={rig.grafts} />
       <WristFocus sides={rig.sides} />
-      {tPose ? <HandGizmos sides={rig.sides} fits={handFits} onChange={(side, f) => setHandFit(candidate.id, side, f)} /> : null}
+      {tPose ? <HandGizmos sides={rig.sides} fits={handFits} onChange={(side, f) => setHandFits(candidate.id, side === 1 ? { ...handFits, left: f } : { ...handFits, right: f })} /> : null}
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} grafts={rig.grafts} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>

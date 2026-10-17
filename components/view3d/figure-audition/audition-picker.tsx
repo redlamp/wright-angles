@@ -251,7 +251,7 @@ export default function AuditionPicker() {
               reset
             </button>
           </div>
-          {c.tuning?.graftHands ? <HandFitTable candidateId={c.id} dim={!swapHands} /> : null}
+          {c.tuning?.graftHands ? <HandFitTable candidateId={c.id} baked={c.tuning?.handFits} dim={!swapHands} /> : null}
           <span id={AUDITION_READOUT_ID} />
         </>
       ) : null}

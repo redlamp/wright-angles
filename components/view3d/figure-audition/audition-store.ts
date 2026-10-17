@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Candidate, Palette } from "./candidates";
 import type { SeatOffset } from "./figure-seat";
-import { normalizeFits, type HandFit, type SideFits } from "./hand-graft";
+import type { HandFit, SideFits } from "./hand-graft";
 
 export type FigureLook = "own" | "gray" | "outfit";
 
@@ -60,7 +60,7 @@ interface AuditionState {
   setPalettes: (palettes: Palette[]) => void;
   setPalette: (palette: string) => void;
   setSwapHands: (swapHands: boolean) => void;
-  setHandFit: (id: string, side: 1 | -1, fit: HandFit) => void;
+  setHandFits: (id: string, fits: SideFits) => void;
   setTPose: (tPose: boolean) => void;
   setHandDials: (handDials: boolean) => void;
   setShowGhost: (showGhost: boolean) => void;
@@ -96,11 +96,7 @@ export const useAuditionStore = create<AuditionState>()(
       setPalettes: (palettes) => set({ palettes }),
       setPalette: (palette) => set({ palette }),
       setSwapHands: (swapHands) => set({ swapHands }),
-      setHandFit: (id, side, fit) =>
-        set((s) => {
-          const cur = normalizeFits(s.handFits[id]);
-          return { handFits: { ...s.handFits, [id]: side === 1 ? { ...cur, left: fit } : { ...cur, right: fit } } };
-        }),
+      setHandFits: (id, fits) => set((s) => ({ handFits: { ...s.handFits, [id]: fits } })),
       setTPose: (tPose) => set({ tPose }),
       setHandDials: (handDials) => set({ handDials }),
       setShowGhost: (showGhost) => set({ showGhost }),

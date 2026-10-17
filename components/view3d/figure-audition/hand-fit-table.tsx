@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo } from "react";
 import { useAuditionStore } from "./audition-store";
-import { DEFAULT_HAND_FIT, mirrorFit, normalizeFits, type HandFit } from "./hand-graft";
+import { mirrorFit, normalizeFits, type HandFit, type RawFits, type SideFits } from "./hand-graft";
 
 /** One slider row per fit value, the same range for both hands. */
 const ROWS: { key: keyof HandFit; label: string; min: number; max: number; step: number; digits: number }[] = [
@@ -29,10 +29,11 @@ const SIDES = [
  * hand's fit mirrored; the gizmos in T-pose write the same values. The
  * header folds the dials away, leaving the focus links.
  */
-export default function HandFitTable({ candidateId, dim }: { candidateId: string; dim: boolean }) {
+export default function HandFitTable({ candidateId, baked, dim }: { candidateId: string; baked: RawFits | undefined; dim: boolean }) {
   const raw = useAuditionStore((s) => s.handFits[candidateId]);
-  const fits = useMemo(() => normalizeFits(raw), [raw]);
-  const setHandFit = useAuditionStore((s) => s.setHandFit);
+  const fits = useMemo(() => normalizeFits(raw ?? baked), [raw, baked]);
+  const setHandFits = useAuditionStore((s) => s.setHandFits);
+  const setSide = (key: keyof SideFits, fit: HandFit) => setHandFits(candidateId, { ...fits, [key]: fit });
   const requestFocusWrist = useAuditionStore((s) => s.requestFocusWrist);
   const open = useAuditionStore((s) => s.handDials);
   const setOpen = useAuditionStore((s) => s.setHandDials);
@@ -62,7 +63,7 @@ export default function HandFitTable({ candidateId, dim }: { candidateId: string
                   max={r.max}
                   step={r.step}
                   value={f[r.key]}
-                  onChange={(e) => setHandFit(candidateId, side, { ...f, [r.key]: Number(e.target.value) })}
+                  onChange={(e) => setSide(key, { ...f, [r.key]: Number(e.target.value) })}
                   className="w-20"
                 />
                 <span className="w-9 text-right tabular-nums">{f[r.key].toFixed(r.digits)}</span>
@@ -72,12 +73,12 @@ export default function HandFitTable({ candidateId, dim }: { candidateId: string
         </Fragment>
       )) : null}
       {open ? <span className="text-muted-foreground">T-pose: gizmos</span> : null}
-      {open ? SIDES.map(({ side, other }) => (
+      {open ? SIDES.map(({ side, key, other }) => (
         <div key={side} className="col-span-2 flex gap-2">
-          <button type="button" className="underline" onClick={() => setHandFit(candidateId, side, DEFAULT_HAND_FIT)}>
+          <button type="button" className="underline" title="Back to the model's baked fit" onClick={() => setSide(key, normalizeFits(baked)[key])}>
             reset
           </button>
-          <button type="button" className="underline" title={`Take the ${other} hand's fit, mirrored`} onClick={() => setHandFit(candidateId, side, mirrorFit(fits[other]))}>
+          <button type="button" className="underline" title={`Take the ${other} hand's fit, mirrored`} onClick={() => setSide(key, mirrorFit(fits[other]))}>
             mirror {other}
           </button>
         </div>
