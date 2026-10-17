@@ -117,7 +117,36 @@ const MPFB: Candidate[] = [
   mpfb("neutral-2400", "neutral 2.4k", "Human proportions, faceted, 2.4k tris"),
 ];
 
-export const CANDIDATES: Candidate[] = [...MPFB];
+const enigmaSide = (s: "L" | "R"): SideBones => ({
+  upperLeg: `UpperLeg.${s}`,
+  lowerLeg: `LowerLeg.${s}`,
+  foot: `Foot.${s}`,
+  upperArm: `UpperArm.${s}`,
+  foreArm: `LowerArm.${s}`,
+  hand: `Hand.${s}`,
+});
+
+/**
+ * Comp-3 Interactive's 402-triangle base humanoid, rigged by Enigma Game
+ * Dev (both CC0, public/figures/audition/enigma/CREDITS.md). Smooth
+ * mannequin, no face or clothes: a proportion and pose reference, and a
+ * body that can take painted outfits.
+ */
+const ENIGMA: Candidate = {
+  id: "enigma-humanoid-rigged",
+  label: "Base humanoid 402 (Enigma rig)",
+  file: "enigma/humanoid-rigged.glb",
+  style: "Smooth base mesh, 402 tris, flat skin color",
+  license: "CC0-1.0",
+  author: "Comp-3 Interactive (mesh), Enigma Game Dev (rig)",
+  source: "https://enigma-game-dev.itch.io/low-poly-human-mesh-rigged",
+  hips: "Bone",
+  head: "Bone.005",
+  left: enigmaSide("L"),
+  right: enigmaSide("R"),
+};
+
+export const CANDIDATES: Candidate[] = [...MPFB, ENIGMA];
 
 const base = () => process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
