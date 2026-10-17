@@ -374,10 +374,13 @@ export default function AuditionPicker() {
                   />
                   <span className="w-8 text-right tabular-nums">{handFit.rotZ.toFixed(1)}</span>
                 </label>
-                <button type="button" className="underline" onClick={() => requestFocusWrist()}>
-                  focus wrist
+                <button type="button" className="underline" onClick={() => requestFocusWrist(1)}>
+                  focus left
                 </button>
-                <span className="text-muted-foreground">T-pose shows a gizmo on the left hand</span>
+                <button type="button" className="underline" onClick={() => requestFocusWrist(-1)}>
+                  right
+                </button>
+                <span className="text-muted-foreground">T-pose shows gizmos on both hands</span>
               </div>
             </>
           ) : null}

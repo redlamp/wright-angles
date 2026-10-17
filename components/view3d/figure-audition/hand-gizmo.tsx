@@ -20,19 +20,23 @@ const DEG = MathUtils.degToRad;
  */
 export default function HandGizmo({
   graft,
+  side,
   fit,
   onChange,
 }: {
   graft: HandGraft;
+  /** The right hand shows and edits the fit mirrored (across slide, roll and yaw), like placeGraft applies it. */
+  side: 1 | -1;
   fit: HandFit;
   onChange: (fit: HandFit) => void;
 }) {
   const anchor = useRef<Group>(null);
+  const m = side === -1 ? -1 : 1;
   const matrix = useMemo(() => {
-    const m = new Matrix4();
-    const q = new Quaternion().setFromEuler(new Euler(DEG(fit.rotX), DEG(fit.rotY), DEG(fit.rotZ), "XYZ"));
-    return m.compose(new Vector3(fit.slideZ, fit.slideY, fit.slideX), q, new Vector3(fit.size, fit.size, fit.size));
-  }, [fit]);
+    const mat = new Matrix4();
+    const q = new Quaternion().setFromEuler(new Euler(DEG(fit.rotX * m), DEG(fit.rotY * m), DEG(fit.rotZ), "XYZ"));
+    return mat.compose(new Vector3(fit.slideZ, fit.slideY, fit.slideX * m), q, new Vector3(fit.size, fit.size, fit.size));
+  }, [fit, m]);
   const tmp = useMemo(() => ({ p: new Vector3(), q: new Quaternion(), s: new Vector3(), e: new Euler() }), []);
   useFrame(() => {
     const a = anchor.current;
@@ -59,9 +63,9 @@ export default function HandGizmo({
             flareY: fit.flareY,
             slideZ: tmp.p.x,
             slideY: tmp.p.y,
-            slideX: tmp.p.z,
-            rotX: MathUtils.radToDeg(tmp.e.x),
-            rotY: MathUtils.radToDeg(tmp.e.y),
+            slideX: tmp.p.z * m,
+            rotX: MathUtils.radToDeg(tmp.e.x) * m,
+            rotY: MathUtils.radToDeg(tmp.e.y) * m,
             rotZ: MathUtils.radToDeg(tmp.e.z),
           });
         }}
@@ -77,10 +81,11 @@ const FOCUS_OFFSET = new Vector3(0.5, 0.45, 0.75).normalize().multiplyScalar(55)
  * counter in the store): target on the wrist, camera 55 cm away, in
  * front, above and to the figure's left. Always mounted, no render.
  */
-export function WristFocus({ graft, hand }: { graft: HandGraft | null; hand: Bone }) {
+export function WristFocus({ sides }: { sides: Record<1 | -1, { graft: HandGraft | null; hand: Bone }> }) {
   // A store selector, not a frame-loop poll: with the demand frameloop no
   // frame runs until something re-renders, and this re-render is it.
   const n = useAuditionStore((s) => s.focusWrist);
+  const side = useAuditionStore((s) => s.focusSide);
   const seen = useRef(n);
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as { target: Vector3; update: () => void } | null;
@@ -88,15 +93,29 @@ export function WristFocus({ graft, hand }: { graft: HandGraft | null; hand: Bon
   useEffect(() => {
     if (n === seen.current) return;
     seen.current = n;
+    const { graft, hand } = sides[side];
     const at = new Vector3();
     if (graft) at.copy(graft.anchorPos);
     else worldPos(hand, at);
-    camera.position.copy(at).add(FOCUS_OFFSET);
+    // Approach from the figure's front, above, on that hand's own side.
+    camera.position.copy(at).add(new Vector3(FOCUS_OFFSET.x * side, FOCUS_OFFSET.y, FOCUS_OFFSET.z));
     if (controls) {
       controls.target.copy(at);
       controls.update();
     } else camera.lookAt(at);
     invalidate();
-  }, [n, graft, hand, camera, controls, invalidate]);
+  }, [n, side, sides, camera, controls, invalidate]);
   return null;
+}
+
+/** Both hands' gizmos (T-pose), editing the one shared fit. */
+export function HandGizmos({ sides, fit, onChange }: { sides: Record<1 | -1, { graft: HandGraft | null }>; fit: HandFit; onChange: (fit: HandFit) => void }) {
+  return (
+    <>
+      {([1, -1] as const).map((side) => {
+        const g = sides[side].graft;
+        return g ? <HandGizmo key={side} side={side} graft={g} fit={fit} onChange={onChange} /> : null;
+      })}
+    </>
+  );
 }

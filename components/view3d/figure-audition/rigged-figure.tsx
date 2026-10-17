@@ -54,7 +54,7 @@ import {
   worldPos,
 } from "./rig-math";
 import ControllerProp from "./controller-prop";
-import HandGizmo, { WristFocus } from "./hand-gizmo";
+import { HandGizmos, WristFocus } from "./hand-gizmo";
 
 /** Height the capsule figure's pose numbers are authored at. */
 const AUTHORED_CM = 175;
@@ -588,8 +588,8 @@ export default function RiggedFigure({
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       <primitive object={rig.grafts} />
-      <WristFocus graft={rig.sides[1].graft} hand={rig.sides[1].hand} />
-      {tPose && rig.sides[1].graft ? <HandGizmo graft={rig.sides[1].graft} fit={handFit} onChange={(f) => setHandFit(candidate.id, f)} /> : null}
+      <WristFocus sides={rig.sides} />
+      {tPose ? <HandGizmos sides={rig.sides} fit={handFit} onChange={(f) => setHandFit(candidate.id, f)} /> : null}
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} grafts={rig.grafts} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>
