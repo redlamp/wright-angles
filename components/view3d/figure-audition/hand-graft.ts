@@ -324,10 +324,13 @@ export function graftScale(g: HandGraft, heightCm: number, k: number, handScale:
 
 /**
  * Hide the figure's own hand without collapsing its bone: every vertex
- * the hand bone or its digits drive is pushed back onto the wrist plane
- * (bind pose), so the mitten becomes a flat disk that the grafted hand's
- * stub covers, and the forearm's cuff keeps its shape instead of being
- * dragged to a point.
+ * the hand bone or its digits drive that sits past the wrist is moved to
+ * the wrist point (bind pose). The mitten's own faces vanish and the
+ * forearm's cuff ring fans to that point as a flat cap, which the grafted
+ * hand's stub covers. Vertices with partial hand weight keep their place,
+ * so the cuff is not dragged into a taper. A disk (keeping the radial
+ * offsets) was tried first and showed as a flat plate wider than the
+ * hand's wrist.
  */
 export function flattenMitten(meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bone) {
   const mitten = new Set<Bone>(chainOf(hand));
@@ -348,8 +351,7 @@ export function flattenMitten(meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bon
       _a.fromBufferAttribute(pos, i).sub(ph);
       const t = _a.dot(axis);
       if (t <= 0) continue;
-      _a.addScaledVector(axis, -t).add(ph);
-      pos.setXYZ(i, _a.x, _a.y, _a.z);
+      pos.setXYZ(i, ph.x, ph.y, ph.z);
       changed = true;
     }
     if (changed) {
