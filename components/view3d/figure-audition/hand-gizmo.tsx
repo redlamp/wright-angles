@@ -89,12 +89,18 @@ export function WristFocus({ sides }: { sides: Record<1 | -1, { graft: HandGraft
   useEffect(() => {
     if (n === seen.current) return;
     seen.current = n;
-    const { graft, hand } = sides[side];
     const at = new Vector3();
-    if (graft) at.copy(graft.anchorPos);
-    else worldPos(hand, at);
-    // Approach from the figure's front, above, on that hand's own side.
-    camera.position.copy(at).add(new Vector3(FOCUS_OFFSET.x * side, FOCUS_OFFSET.y, FOCUS_OFFSET.z));
+    const wrist = (s: 1 | -1, out: Vector3) => (sides[s].graft ? out.copy(sides[s].graft!.anchorPos) : worldPos(sides[s].hand, out));
+    if (side === 0) {
+      // Both hands: the midpoint, seen from the figure's front left and a
+      // little above, low enough to pass under the device screens.
+      at.copy(wrist(1, new Vector3())).add(wrist(-1, new Vector3())).multiplyScalar(0.5);
+      camera.position.copy(at).add(new Vector3(60, 22, 40));
+    } else {
+      wrist(side, at);
+      // Approach from the figure's front, above, on that hand's own side.
+      camera.position.copy(at).add(new Vector3(FOCUS_OFFSET.x * side, FOCUS_OFFSET.y, FOCUS_OFFSET.z));
+    }
     if (controls) {
       controls.target.copy(at);
       controls.update();

@@ -58,9 +58,9 @@ const childBones = (b: Bone) => b.children.filter((c) => (c as Bone).isBone) as 
  * forearm best and the thumb the one that departs from it most; names
  * win when they say so (Biped "Finger0" is the thumb).
  */
-export function findDigits(hand: Bone, foreArm: Bone): { finger: Bone | null; thumb: Bone | null } {
+export function findDigits(hand: Bone, foreArm: Bone): { finger: Bone | null; thumb: Bone | null; fingers: Bone[] } {
   const kids = childBones(hand);
-  if (!kids.length) return { finger: null, thumb: null };
+  if (!kids.length) return { finger: null, thumb: null, fingers: [] };
   const armDir = worldPos(hand, _a).clone().sub(worldPos(foreArm, _b)).normalize();
   const handPos = worldPos(hand, _c).clone();
   const scored = kids.map((k) => {
@@ -76,7 +76,10 @@ export function findDigits(hand: Bone, foreArm: Bone): { finger: Bone | null; th
   const thumb =
     scored.find((s) => s.thumbName)?.k ??
     (kids.length > 1 ? scored.sort((x, y) => x.d - y.d)[0]?.k ?? null : null);
-  return { finger, thumb: thumb === finger ? null : thumb };
+  const t = thumb === finger ? null : thumb;
+  // Every other child is a finger (an index and a three-finger block on carved hands).
+  const fingers = scored.filter((x) => x.k !== t).sort((x, y) => y.d - x.d).map((x) => x.k);
+  return { finger, thumb: t, fingers };
 }
 
 /** Close the fingers and the thumb toward the palm by the plan's angles. */
@@ -183,7 +186,7 @@ export function fitHand(
   const digits = findDigits(s.hand, s.foreArm);
   s.finger = digits.finger;
   s.thumb = digits.thumb;
-  s.fingerChains = s.finger ? [chainOf(s.finger)] : [];
+  s.fingerChains = digits.fingers.map(chainOf);
   s.thumbChain = chainOf(s.thumb);
   if (s.finger) segment(s.hand, s.finger);
   const handPos = worldPos(s.hand, _c).clone();

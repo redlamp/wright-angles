@@ -37,7 +37,7 @@ import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, t
 import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
-import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
+import { HANDHELD_LOOK_MAX_DEG, POSTURE, frameHands, lerpPosture } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, restHands, type SideRig } from "./rig-arms";
 import { applySkin, DEFAULT_SIDE_FITS, graftScale, normalizeFits, replaceMitten, setGraftLook, sideFit, type HandSources, type SideFits } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
@@ -339,7 +339,7 @@ function poseRig(
   held: HeldGrip | null,
   eye: EyeOffset,
   handFits: SideFits,
-  tPose: boolean,
+  check: "off" | "t" | "hands",
   targetsOut: Vector3[],
   gripsOut: Vector3[],
   marksOut: Vector3[],
@@ -357,23 +357,16 @@ function poseRig(
   rig.outer.position.set(0, eyeContract - rig.eyeY * k, 0);
   rig.outer.updateMatrixWorld(true);
 
-  const hands =
-    t >= 1
-      ? lerpHands(planHands(to.scenario, to.input, p.rootY, p.scale, held), planHands(to.scenario, to.input, p.rootY, p.scale, held), 1)
-      : lerpHands(
-          planHands(from.scenario, from.input, p.rootY, p.scale, held),
-          planHands(to.scenario, to.input, p.rootY, p.scale, held),
-          t,
-        );
+  const hands = frameHands(check, from, to, t, p.rootY, p.scale, held);
 
   // Posture tweens with the body so the torso travels between stances.
   // T-pose: the rest pose with the grafts on, for fitting hands; the eye lock still applies.
-  const posture = tPose ? POSTURE.standing : lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
+  const posture = check !== "off" ? POSTURE.standing : lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
   if (rig.pelvis) pitchWorld(rig.pelvis, posture.pelvis);
   const chain = rig.spine.length ? rig.spine : rig.head.parent && (rig.head.parent as Bone).isBone ? [rig.head.parent as Bone] : [];
   for (const b of chain) pitchWorld(b, posture.spine / chain.length);
   let headDeg = posture.head;
-  if (!tPose && hands.lookAtHands > 0) {
+  if (check === "off" && hands.lookAtHands > 0) {
     const handY = (hands.left.target.y + hands.right.target.y) / 2;
     const handZ = Math.max(1, (hands.left.target.z + hands.right.target.z) / 2);
     const down = MathUtils.radToDeg(Math.atan2(eyeContract - handY, handZ));
@@ -386,7 +379,7 @@ function poseRig(
   rig.eyeLocal.copy(rig.eyeRest).add(_b.set(0, eye.up / k, eye.fwd / k)).applyMatrix4(rig.headRestInv);
   const lift = lockEyes(rig.outer, rig.head, rig.eyeLocal, eyeContract);
 
-  if (tPose) {
+  if (check === "t") {
     restHands(rig.sides, heightCm, k, rig.tuning.handScale, handFits, targetsOut, gripsOut);
     marksOut[0].set(0, eyeContract, 0);
     worldPos(rig.head, marksOut[1]);
@@ -477,8 +470,9 @@ export default function RiggedFigure({
   const showGhost = useAuditionStore((s) => s.showGhost);
   useEffect(() => void rig.ghosts.forEach((g) => (g.visible = showGhost)), [rig, showGhost]);
   const setHandFits = useAuditionStore((s) => s.setHandFits);
-  const tPoseRef = useRef(false);
-  useEffect(() => void (tPoseRef.current = tPose), [tPose]);
+  const handsView = useAuditionStore((s) => s.handsView);
+  const checkRef = useRef<"off" | "t" | "hands">("off");
+  useEffect(() => void (checkRef.current = handsView ? "hands" : tPose ? "t" : "off"), [tPose, handsView]);
   const handFitsRef = useRef<SideFits>(DEFAULT_SIDE_FITS);
   useEffect(() => void (handFitsRef.current = handFits), [handFits]);
   const setSeat = useAuditionStore((s) => s.setSeat);
@@ -567,10 +561,10 @@ export default function RiggedFigure({
       const travel = pose.rootY + EYE_LOCAL * pose.scale - (target.rootY + EYE_LOCAL * target.scale);
       h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitsRef.current, tPoseRef.current, targets.current, grips.current, marks.current);
+    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitsRef.current, checkRef.current, targets.current, grips.current, marks.current);
     // The grafts' digits were curled after placement; make sure their matrices are fresh for this frame's skinning.
     rig.grafts.updateMatrixWorld(true);
-    if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, tPoseRef.current ? "standing" : scenario, seat.current)) {
+    if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, checkRef.current !== "off" ? "standing" : scenario, seat.current)) {
       const s = seat.current;
       if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {
         published.current = { dy: s.dy, dz: s.dz };

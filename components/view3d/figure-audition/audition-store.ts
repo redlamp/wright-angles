@@ -43,13 +43,16 @@ interface AuditionState {
   handFits: Record<string, SideFits | HandFit>;
   /** Show the rest pose (arms out) with the grafts attached, for fitting hands. Not persisted. */
   tPose: boolean;
+  /** Hands check: arms forward, palms down, for judging both hands up close. Not persisted. */
+  handsView: boolean;
   /** The hand fit dials unfolded in the picker. Persisted. */
   handDials: boolean;
   /** Show the figure's own hand as a see-through ghost behind a grafted one. Persisted. */
   showGhost: boolean;
   /** Bumped to snap the camera onto a wrist (focusSide picks which). Not persisted. */
   focusWrist: number;
-  focusSide: 1 | -1;
+  /** 1 left, -1 right, 0 between both hands. */
+  focusSide: 1 | -1 | 0;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -62,9 +65,10 @@ interface AuditionState {
   setSwapHands: (swapHands: boolean) => void;
   setHandFits: (id: string, fits: SideFits) => void;
   setTPose: (tPose: boolean) => void;
+  setHandsView: (handsView: boolean) => void;
   setHandDials: (handDials: boolean) => void;
   setShowGhost: (showGhost: boolean) => void;
-  requestFocusWrist: (side: 1 | -1) => void;
+  requestFocusWrist: (side: 1 | -1 | 0) => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -82,6 +86,7 @@ export const useAuditionStore = create<AuditionState>()(
       swapHands: true,
       handFits: {},
       tPose: false,
+      handsView: false,
       handDials: true,
       showGhost: false,
       focusWrist: 0,
@@ -98,6 +103,7 @@ export const useAuditionStore = create<AuditionState>()(
       setSwapHands: (swapHands) => set({ swapHands }),
       setHandFits: (id, fits) => set((s) => ({ handFits: { ...s.handFits, [id]: fits } })),
       setTPose: (tPose) => set({ tPose }),
+      setHandsView: (handsView) => set({ handsView }),
       setHandDials: (handDials) => set({ handDials }),
       setShowGhost: (showGhost) => set({ showGhost }),
       requestFocusWrist: (side) => set((s) => ({ focusWrist: s.focusWrist + 1, focusSide: side })),

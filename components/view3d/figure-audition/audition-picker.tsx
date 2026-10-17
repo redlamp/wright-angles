@@ -34,6 +34,9 @@ export default function AuditionPicker() {
   const setShowGhost = useAuditionStore((s) => s.setShowGhost);
   const tPose = useAuditionStore((s) => s.tPose);
   const setTPose = useAuditionStore((s) => s.setTPose);
+  const handsView = useAuditionStore((s) => s.handsView);
+  const setHandsView = useAuditionStore((s) => s.setHandsView);
+  const requestFocusWrist = useAuditionStore((s) => s.requestFocusWrist);
   useEffect(() => {
     let alive = true;
     loadLocalManifest().then(({ candidates, palettes: pals }) => {
@@ -216,6 +219,13 @@ export default function AuditionPicker() {
               <input type="checkbox" checked={tPose} onChange={(e) => setTPose(e.target.checked)} />
               T-pose
             </label>
+            <label className="flex items-center gap-1" title="Arms forward, palms down: both hands up close">
+              <input type="checkbox" checked={handsView} onChange={(e) => setHandsView(e.target.checked)} />
+              Hands
+            </label>
+            <button type="button" className="underline" onClick={() => requestFocusWrist(0)}>
+              focus hands
+            </button>
           </div>
           {/* Nudge where this model's eyes are taken to be; the cyan dot in
               the rig overlay shows the eye point, so dial until it sits in

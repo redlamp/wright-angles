@@ -8,6 +8,9 @@
 
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { HeldGrip } from "@/lib/viewing-geometry";
+
+/** A stance: the body's scenario and what the hands hold. */
+export type Stance = { scenario: Scenario; input: InputType };
 import { SEAT_Y, STAND_DESK_TOP } from "../viewer-figure";
 
 export interface V3 {
@@ -142,6 +145,32 @@ export const lerpPosture = (a: Posture, b: Posture, t: number): Posture => ({
  * @param rootY world height of the pelvis root
  * @param s figure scale (height / 175)
  */
+/**
+ * Hands check: both arms forward at chest height, shoulder width apart,
+ * palms down, fingers straight, so a close camera sees both hands and
+ * how they flow into the forearms. Not a scenario; a dev view.
+ */
+export function planHandsCheck(rootY: number, s: number): HandsPlan {
+  const left: HandPlan = {
+    target: { x: 17 * s, y: rootY + 50 * s, z: 34 * s },
+    pole: ELBOW,
+    fingers: { x: 0, y: -0.05, z: 1 },
+    palm: { x: 0, y: -1, z: 0 },
+    curl: { fingers: 0, thumb: 0 },
+  };
+  return { left, right: mirror(left), lookAtHands: false, shoulderDropDeg: 9 };
+}
+
+/** This frame's hands: the check view when on, else the stance tween (held plans at t >= 1 settle on the target). */
+export function frameHands(check: "off" | "t" | "hands", from: Stance, to: Stance, t: number, rootY: number, s: number, held: HeldGrip | null): HandsBlend {
+  if (check === "hands") {
+    const p = planHandsCheck(rootY, s);
+    return lerpHands(p, p, 1);
+  }
+  const b = planHands(to.scenario, to.input, rootY, s, held);
+  return t >= 1 ? lerpHands(b, b, 1) : lerpHands(planHands(from.scenario, from.input, rootY, s, held), b, t);
+}
+
 export function planHands(
   scenario: Scenario,
   input: InputType,
