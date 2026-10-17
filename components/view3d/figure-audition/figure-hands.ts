@@ -75,8 +75,14 @@ const WRIST_ABOVE_SURFACE = 2;
 /** Near edge of the keyboard (center z 40, 19 cm deep) and of the mouse (center z 37, 12 cm long); see scenario-props Peripherals. */
 const KEYBOARD_NEAR_Z = 30;
 const MOUSE_NEAR_Z = 31;
-/** Mouse center x, a hand's width clear of the keyboard's right edge (x -19). */
-export const MOUSE_X = -32;
+/**
+ * Keyboard center x and mouse center x (world cm, +x is the figure's
+ * left). Together they put the left hand on WASD and the right on the
+ * mouse about equally either side of the body, so neither arm reaches
+ * across; the mouse clears the keyboard's right edge by a hand's width.
+ */
+export const KEYBOARD_X = 11;
+export const MOUSE_X = -24;
 
 /** Mirror a plan's x components for the other hand. */
 const mirror = (p: HandPlan): HandPlan => ({
@@ -144,7 +150,7 @@ export function planHands(
     const y = surfaceY(scenario) + WRIST_ABOVE_SURFACE * s;
     const desk = scenario !== "couch";
     const left: HandPlan = {
-      target: { x: 13 * s, y, z: (desk ? KEYBOARD_NEAR_Z : 18) * s },
+      target: { x: (KEYBOARD_X + 10) * s, y, z: (desk ? KEYBOARD_NEAR_Z : 18) * s },
       pole: ELBOW,
       fingers: { x: -0.1, y: 0.12, z: 1 },
       palm: { x: 0, y: -1, z: 0.25 },
