@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Euler, Group, MathUtils, Matrix4, Quaternion, Vector3 } from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { PivotControls } from "@react-three/drei";
 import type { HandFit, HandGraft } from "./hand-graft";
 import { useAuditionStore } from "./audition-store";
@@ -78,21 +78,25 @@ const FOCUS_OFFSET = new Vector3(0.5, 0.45, 0.75).normalize().multiplyScalar(55)
  * front, above and to the figure's left. Always mounted, no render.
  */
 export function WristFocus({ graft, hand }: { graft: HandGraft | null; hand: Bone }) {
-  const seen = useRef(useAuditionStore.getState().focusWrist);
-  const at = useMemo(() => new Vector3(), []);
-  useFrame((state) => {
-    const n = useAuditionStore.getState().focusWrist;
+  // A store selector, not a frame-loop poll: with the demand frameloop no
+  // frame runs until something re-renders, and this re-render is it.
+  const n = useAuditionStore((s) => s.focusWrist);
+  const seen = useRef(n);
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as { target: Vector3; update: () => void } | null;
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
     if (n === seen.current) return;
     seen.current = n;
+    const at = new Vector3();
     if (graft) at.copy(graft.anchorPos);
     else worldPos(hand, at);
-    const controls = state.controls as { target: Vector3; update: () => void } | null;
-    state.camera.position.copy(at).add(FOCUS_OFFSET);
+    camera.position.copy(at).add(FOCUS_OFFSET);
     if (controls) {
       controls.target.copy(at);
       controls.update();
-    } else state.camera.lookAt(at);
-    state.invalidate();
-  });
+    } else camera.lookAt(at);
+    invalidate();
+  }, [n, graft, hand, camera, controls, invalidate]);
   return null;
 }
