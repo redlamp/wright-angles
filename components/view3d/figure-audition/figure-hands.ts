@@ -57,6 +57,15 @@ export const HANDHELD_LOOK_MAX_DEG = 40;
 const ELBOW = { x: 0.9, y: -0.8, z: -0.3 };
 /** Controller hold: elbows out and back, forearms meeting in front. */
 const ELBOW_TUCKED = { x: 0.7, y: -0.9, z: -0.55 };
+/**
+ * Handheld: how far outside heldGripFor's half span the rig's wrist sits.
+ * That span is the chassis edge less a 2 cm inset (for the capsule
+ * figure's slab hands); a wrist belongs about 1 cm outside the edge, so
+ * the hand wraps the grip instead of lying across the screen.
+ */
+const HANDHELD_WRIST_OUTBOARD_CM = 3;
+/** And a little below heldGripFor's wrist height: the grips hang under the controls. */
+const HANDHELD_WRIST_DROP_CM = 3;
 /** Handheld raised in front: elbows down and a little out. */
 const ELBOW_RAISED = { x: 0.6, y: -1, z: -0.3 };
 
@@ -181,17 +190,22 @@ export function planHands(
     return { left, right: mirror(left), lookAtHands: false, shoulderDropDeg: 8 };
   }
 
-  // Handheld: grip the device that is in the scene by its edges, fingers
-  // wrapped behind it, thumbs on the controls in front.
+  // Handheld: hold the device in the scene by its grips. Handhelds carry
+  // their sticks and buttons outboard of the screen, so the heel of the
+  // hand sits on the chassis edge with the wrist outside it, the fingers
+  // wrap behind, and the thumb reaches the controls inboard without
+  // covering the display. held.halfGripCm is the chassis half width less
+  // the capsule figure's inset; the rig's wrist goes back out past it.
   const grip = (x: number, y: number, z: number): HandPlan => ({
     target: { x, y, z },
     pole: ELBOW_RAISED,
-    fingers: { x: -0.55, y: 0.75, z: 0.35 },
+    // Hand axis mostly up along the grip, a touch inward and behind.
+    fingers: { x: -0.2, y: 0.9, z: 0.35 },
     palm: { x: -1, y: 0.1, z: 0.25 },
     curl: { fingers: 60, thumb: 15 },
   });
   const left = held
-    ? grip(held.halfGripCm, held.wristY, held.distanceCm)
-    : grip(5.5 * s, rootY + 56 * s, 2 * s + 32);
+    ? grip(held.halfGripCm + HANDHELD_WRIST_OUTBOARD_CM * s, held.wristY - HANDHELD_WRIST_DROP_CM * s, held.distanceCm)
+    : grip((12 + HANDHELD_WRIST_OUTBOARD_CM) * s, rootY + (56 - HANDHELD_WRIST_DROP_CM) * s, 2 * s + 32);
   return { left, right: mirror(left), lookAtHands: true, shoulderDropDeg: 2 };
 }
