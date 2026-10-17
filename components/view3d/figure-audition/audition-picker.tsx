@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { CANDIDATES, findCandidate, loadLocalManifest } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
@@ -68,6 +68,36 @@ export default function AuditionPicker() {
     const n = all[(i + d + all.length) % all.length];
     if (n) setCandidate(n.id);
   };
+  const hasPalettes = Boolean(c?.texture && palettes.length);
+  const cyclePalette = (d: number) => {
+    if (!hasPalettes) return;
+    const ids = ["", ...palettes.map((x) => x.id)];
+    const i = Math.max(0, ids.indexOf(palette));
+    setPalette(ids[(i + d + ids.length) % ids.length]);
+  };
+  // While auditioning, the arrow keys walk models (left, right) and
+  // palette variants (up, down). Captured ahead of the app's own arrow
+  // hotkeys (media and device cycling), which this dev panel displaces.
+  const keys = useRef({ step, cyclePalette });
+  useEffect(() => {
+    keys.current = { step, cyclePalette };
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      const v = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+      if (!d && !v) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (d) keys.current.step(d);
+      else keys.current.cyclePalette(v);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   const selectClass = "rounded border border-border bg-background px-1 text-foreground";
 
   return (
@@ -131,22 +161,24 @@ export default function AuditionPicker() {
                 <option value="own">glTF material</option>
               </select>
             </label>
-            <label className="flex items-center gap-1">
-              Outfit
-              <select
-                className={selectClass}
-                value={outfit}
-                disabled={look !== "outfit"}
-                onChange={(e) => setOutfit(e.target.value)}
-              >
-                {OUTFITS.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {c.texture && palettes.length ? (
+            {look === "outfit" ? (
+              <label className="flex items-center gap-1">
+                Outfit
+                <select
+                  className={selectClass}
+                  value={outfit}
+                  disabled={look !== "outfit"}
+                  onChange={(e) => setOutfit(e.target.value)}
+                >
+                  {OUTFITS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {hasPalettes ? (
               <label className="flex items-center gap-1">
                 Palette
                 <select className={selectClass} value={palette} onChange={(e) => setPalette(e.target.value)}>

@@ -42,6 +42,8 @@ export interface HandGraft {
   thumb: Bone;
   fingerChains: Bone[][];
   thumbChain: Bone[];
+  /** Every digit bone with its rest rotation: restored before each frame's curl. */
+  rest: [Bone, Quaternion][];
   /** Hand asset units are cm at a 175 cm body; set per frame. */
   scale: number;
 }
@@ -85,7 +87,8 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
   const scene = cloneSkinned(source) as Group;
   const root = findBone(scene, /^hand/i);
   const finger = findBone(scene, /^index_01/i);
-  const middle = findBone(scene, /^middle_01/i);
+  // A three-finger block (fingers_01) or separate middle, ring and pinky.
+  const middle = findBone(scene, /^(middle|fingers)_01/i);
   const ring = findBone(scene, /^ring_01/i);
   const pinky = findBone(scene, /^pinky_01/i);
   const thumb = findBone(scene, /^thumb_01/i);
@@ -113,6 +116,8 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
 
   const group = new Group();
   group.add(scene);
+  const fingerChains = [finger, middle, ring, pinky].filter((b): b is Bone => !!b).map(chainOf);
+  const thumbChain = chainOf(thumb);
   return {
     group,
     armature: root.parent,
@@ -124,14 +129,17 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     material,
     finger,
     thumb,
-    fingerChains: [finger, middle, ring, pinky].filter((b): b is Bone => !!b).map(chainOf),
-    thumbChain: chainOf(thumb),
+    fingerChains,
+    thumbChain,
+    rest: [...fingerChains.flat(), ...thumbChain].map((b) => [b, b.quaternion.clone()]),
     scale: 1,
   };
 }
 
 /** Put the graft's wrist on the figure's hand bone, oriented like it. */
 export function placeGraft(g: HandGraft, hand: Bone) {
+  // Curls are applied fresh each frame on top of the rest pose.
+  for (const [b, q] of g.rest) b.quaternion.copy(q);
   hand.getWorldQuaternion(_q).multiply(g.align);
   // Drive the armature so that its root bone (rest transform rootRestP,
   // rootRestQ under it) lands on the hand bone.

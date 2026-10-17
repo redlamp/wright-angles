@@ -17,9 +17,9 @@ type RigProps = FigureProps & {
   showRig: boolean;
 };
 
-const HAND_URLS = () => [assetUrl("mpfb/hand-left.glb"), assetUrl("mpfb/hand-right.glb")];
+const HAND_URLS = () => [assetUrl("hands/hand-left.glb"), assetUrl("hands/hand-right.glb")];
 
-/** The five-fingered MPFB hands (CC0), for candidates that take them; null when switched off. */
+/** The blocky three-digit hands (CC0, public/figures/audition/hands), for candidates that take them; null when switched off. */
 function useHands(): HandSources | null {
   const swap = useAuditionStore((s) => s.swapHands);
   const [l, r] = useGLTF(HAND_URLS(), false, false);
