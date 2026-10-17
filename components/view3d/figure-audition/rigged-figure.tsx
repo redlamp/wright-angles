@@ -39,7 +39,7 @@ import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, type SideRig } from "./rig-arms";
-import { applySkin, fitWrist, graftScale, setGraftLook, type HandSources } from "./hand-graft";
+import { applySkin, DEFAULT_HAND_FIT, fitWrist, flattenMitten, graftScale, setGraftLook, type HandFit, type HandSources } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
@@ -60,11 +60,7 @@ const AUTHORED_CM = 175;
 const EYE_LOCAL = 69;
 /** The candidate shown last, across remounts: a switch resets the height. */
 let lastCandidateId: string | null = null;
-/**
- * A model's own height in cm when its units are cm (a child is well under
- * 120, so the test is wide; the store clamps). Models in meters fall back
- * to the authored height.
- */
+/** A model's own height when its units are cm (wide test: a child is under 120; the store clamps); meters fall back to the authored height. */
 const naturalHeightCm = (rig: Rig) => (rig.height >= 50 && rig.height <= 250 ? Math.round(rig.height) : AUTHORED_CM);
 /**
  * Eye line as a fraction of stature, the same ratio the viewer store's
@@ -277,7 +273,10 @@ function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = nu
     segment(s.upperArm, s.foreArm);
     segment(s.foreArm, s.hand);
     fitHand(s, side, tuning, hands, segment, rig.grafts);
-    if (s.graft) fitWrist(s.graft, rig.meshes, s.foreArm, s.hand);
+    if (s.graft) {
+      fitWrist(s.graft, rig.meshes, s.foreArm, s.hand);
+      flattenMitten(rig.meshes, s.hand, s.foreArm);
+    }
   }
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -286,8 +285,8 @@ function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = nu
   // Stylized packs oversize the hands; scale lives on the hand bone so
   // the fingers and the hand mesh follow. Poses restore rotation and
   // position only, so this holds.
-  // A grafted hand replaces the mitten: collapse the mitten into the wrist.
-  for (const side of [1, -1] as const) rig.sides[side].hand.scale.setScalar(rig.sides[side].graft ? 0.001 : tuning.handScale);
+  // A grafted hand replaces the mitten, which flattenMitten has already hidden.
+  for (const side of [1, -1] as const) rig.sides[side].hand.scale.setScalar(rig.sides[side].graft ? 1 : tuning.handScale);
   rig.seatDrop = measureSeatDrop(rig);
   outer.updateMatrixWorld(true);
   updateSkeletons(rig);
@@ -344,6 +343,7 @@ function poseRig(
   t: number,
   held: HeldGrip | null,
   eye: EyeOffset,
+  handFit: HandFit,
   targetsOut: Vector3[],
   gripsOut: Vector3[],
   marksOut: Vector3[],
@@ -407,7 +407,7 @@ function poseRig(
 
   for (const side of [1, -1] as const) {
     const g = rig.sides[side].graft;
-    if (g) g.scale = graftScale(g, heightCm, k, rig.tuning.handScale);
+    if (g) g.scale = graftScale(g, heightCm, k, rig.tuning.handScale, handFit);
   }
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
@@ -477,6 +477,9 @@ export default function RiggedFigure({
   const marks = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
+  const handFit = useAuditionStore((s) => s.handFits[candidate.id]) ?? DEFAULT_HAND_FIT;
+  const handFitRef = useRef<HandFit>(DEFAULT_HAND_FIT);
+  useEffect(() => void (handFitRef.current = handFit), [handFit]);
   const setSeat = useAuditionStore((s) => s.setSeat);
   const seat = useRef<SeatOffset>({ dy: 0, dz: 0 });
   const published = useRef<SeatOffset>({ dy: NaN, dz: NaN });
@@ -485,9 +488,7 @@ export default function RiggedFigure({
   // must follow the live eye point through the tween, so the grip is
   // shifted by the eye's travel each frame.
   const heldLive = useRef<HeldGrip>({ distanceCm: 0, centerY: 0, wristY: 0, halfGripCm: 0 });
-  useEffect(() => {
-    eyeRef.current = eyeOffset;
-  }, [eyeOffset]);
+  useEffect(() => void (eyeRef.current = eyeOffset), [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
   useEffect(() => {
@@ -567,7 +568,7 @@ export default function RiggedFigure({
       const travel = pose.rootY + EYE_LOCAL * pose.scale - (target.rootY + EYE_LOCAL * target.scale);
       h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, targets.current, grips.current, marks.current);
+    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitRef.current, targets.current, grips.current, marks.current);
     if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, scenario, seat.current)) {
       const s = seat.current;
       if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {

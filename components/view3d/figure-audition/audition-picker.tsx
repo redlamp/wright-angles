@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { CANDIDATES, findCandidate, loadLocalManifest } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
+import { DEFAULT_HAND_FIT } from "./hand-graft";
 
 /**
  * Dev-only overlay for swapping the viewer figure (FEATURE_FIGURE_AUDITION).
@@ -29,6 +30,8 @@ export default function AuditionPicker() {
   const setPalette = useAuditionStore((s) => s.setPalette);
   const swapHands = useAuditionStore((s) => s.swapHands);
   const setSwapHands = useAuditionStore((s) => s.setSwapHands);
+  const handFit = useAuditionStore((s) => s.handFits[s.candidate]) ?? DEFAULT_HAND_FIT;
+  const setHandFit = useAuditionStore((s) => s.setHandFit);
   useEffect(() => {
     let alive = true;
     loadLocalManifest().then(({ candidates, palettes: pals }) => {
@@ -236,6 +239,52 @@ export default function AuditionPicker() {
               reset
             </button>
           </div>
+          {c.tuning?.graftHands && swapHands ? (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1">
+                Hand size
+                <input
+                  type="range"
+                  min={0.7}
+                  max={1.3}
+                  step={0.01}
+                  value={handFit.size}
+                  onChange={(e) => setHandFit(c.id, { ...handFit, size: Number(e.target.value) })}
+                  className="w-16"
+                />
+                <span className="w-8 text-right tabular-nums">{handFit.size.toFixed(2)}</span>
+              </label>
+              <label className="flex items-center gap-1">
+                flare
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.01}
+                  value={handFit.flare}
+                  onChange={(e) => setHandFit(c.id, { ...handFit, flare: Number(e.target.value) })}
+                  className="w-16"
+                />
+                <span className="w-8 text-right tabular-nums">{handFit.flare.toFixed(2)}</span>
+              </label>
+              <label className="flex items-center gap-1">
+                slide
+                <input
+                  type="range"
+                  min={-4}
+                  max={4}
+                  step={0.1}
+                  value={handFit.slide}
+                  onChange={(e) => setHandFit(c.id, { ...handFit, slide: Number(e.target.value) })}
+                  className="w-16"
+                />
+                <span className="w-8 text-right tabular-nums">{handFit.slide.toFixed(1)}</span>
+              </label>
+              <button type="button" className="underline" onClick={() => setHandFit(c.id, DEFAULT_HAND_FIT)}>
+                reset
+              </button>
+            </div>
+          ) : null}
           <span id={AUDITION_READOUT_ID} />
         </>
       ) : null}

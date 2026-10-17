@@ -48,6 +48,8 @@ export interface HandGraft {
   scale: number;
   /** Figure model units to cm, set per frame with the scale. */
   k: number;
+  /** Live per-model adjustments. */
+  fit: HandFit;
   /** The overlap below the wrist and what it should flare to: figure forearm end radius (model units) over the stub's own radius (cm). */
   stub: Bone | null;
   flare: { figureUnits: number; assetCm: number } | null;
@@ -57,6 +59,14 @@ export interface HandGraft {
 
 /** Height the MPFB hand was exported at. */
 export const GRAFT_AUTHORED_CM = 175;
+
+/** Per-model hand adjustments, dialed in by eye: size multiplier, wrist flare multiplier, slide along the arm (cm, negative toward the elbow). */
+export interface HandFit {
+  size: number;
+  flare: number;
+  slide: number;
+}
+export const DEFAULT_HAND_FIT: HandFit = { size: 1, flare: 1, slide: 0 };
 
 /** The loaded hand assets, one scene per side. */
 export interface HandSources {
@@ -141,6 +151,7 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     rest: [...fingerChains.flat(), ...thumbChain].map((b) => [b, b.quaternion.clone()]),
     scale: 1,
     k: 1,
+    fit: DEFAULT_HAND_FIT,
     stub: findBone(scene, /^stub/i),
     flare: null,
     skin: null,
@@ -158,10 +169,12 @@ export function placeGraft(g: HandGraft, hand: Bone) {
   g.armature.scale.setScalar(g.scale);
   if (g.stub && g.flare) {
     // Radial only: the stub bone points back along the arm (local Y).
-    const f = Math.min(2.2, Math.max(0.7, (g.flare.figureUnits * g.k) / (g.flare.assetCm * g.scale)));
+    const f = Math.min(2.5, Math.max(0.6, ((g.flare.figureUnits * g.k) / (g.flare.assetCm * g.scale)) * g.fit.flare));
     g.stub.scale.set(f, 1, f);
   }
   hand.getWorldPosition(_a);
+  // Slide along the figure's finger direction (the hand frame's x after alignment).
+  if (g.fit.slide) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(_q), g.fit.slide);
   _b.copy(g.rootRestP).multiplyScalar(g.scale).applyQuaternion(g.armature.quaternion);
   g.armature.position.copy(_a).sub(_b);
   g.group.updateMatrixWorld(true);
@@ -260,22 +273,58 @@ export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, 
   }
   radii.sort((x, y) => x - y);
   const figure = radii.length ? radii[Math.floor(radii.length * 0.85)] : 0;
-  // The stub's radius at its far end (asset frame: fingers along -z, stub toward +z).
+  // The asset's radius at its wrist plane (asset frame: fingers along -z).
   const pos = g.mesh.geometry.getAttribute("position");
-  let zMax = 0;
-  for (let i = 0; i < pos.count; i++) zMax = Math.max(zMax, pos.getZ(i));
   let asset = 0;
   for (let i = 0; i < pos.count; i++) {
-    if (pos.getZ(i) < zMax * 0.75) continue;
+    if (Math.abs(pos.getZ(i)) > 0.4) continue;
     asset = Math.max(asset, Math.hypot(pos.getX(i), pos.getY(i)));
   }
   g.flare = figure > 0 && asset > 0 && g.stub ? { figureUnits: figure, assetCm: asset } : null;
 }
 
-/** The hand's scale for this frame: the height scale times the model's hand-size tuning. */
-export function graftScale(g: HandGraft, heightCm: number, k: number, handScale: number): number {
+/** The hand's scale for this frame: the height scale times the model's hand-size tuning and the live size nudge. */
+export function graftScale(g: HandGraft, heightCm: number, k: number, handScale: number, fit: HandFit): number {
   g.k = k;
-  return (heightCm / GRAFT_AUTHORED_CM) * handScale;
+  g.fit = fit;
+  return (heightCm / GRAFT_AUTHORED_CM) * handScale * fit.size;
+}
+
+/**
+ * Hide the figure's own hand without collapsing its bone: every vertex
+ * the hand bone or its digits drive is pushed back onto the wrist plane
+ * (bind pose), so the mitten becomes a flat disk that the grafted hand's
+ * stub covers, and the forearm's cuff keeps its shape instead of being
+ * dragged to a point.
+ */
+export function flattenMitten(meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bone) {
+  const mitten = new Set<Bone>(chainOf(hand));
+  for (const { mesh: m } of meshes) {
+    const mesh = m as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) continue;
+    const jf = mesh.skeleton.bones.indexOf(foreArm);
+    const jh = mesh.skeleton.bones.indexOf(hand);
+    if (jf < 0 || jh < 0) continue;
+    const pf = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jf]).invert());
+    const ph = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jh]).invert());
+    const axis = _b.subVectors(ph, pf).normalize();
+    const pos = mesh.geometry.getAttribute("position");
+    let changed = false;
+    for (let i = 0; i < pos.count; i++) {
+      const b = dominantBone(mesh, i);
+      if (!b || !mitten.has(b)) continue;
+      _a.fromBufferAttribute(pos, i).sub(ph);
+      const t = _a.dot(axis);
+      if (t <= 0) continue;
+      _a.addScaledVector(axis, -t).add(ph);
+      pos.setXYZ(i, _a.x, _a.y, _a.z);
+      changed = true;
+    }
+    if (changed) {
+      pos.needsUpdate = true;
+      mesh.geometry.computeVertexNormals();
+    }
+  }
 }
 
 function readTexel(tex: Texture, u: number, v: number): Color | null {

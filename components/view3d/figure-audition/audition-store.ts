@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Candidate, Palette } from "./candidates";
 import type { SeatOffset } from "./figure-seat";
+import type { HandFit } from "./hand-graft";
 
 export type FigureLook = "own" | "gray" | "outfit";
 
@@ -38,6 +39,8 @@ interface AuditionState {
   palette: string;
   /** Wear the five-fingered hands on models that allow it. Persisted. */
   swapHands: boolean;
+  /** Per-candidate hand size, wrist flare and slide, persisted; dialed in with the rig shown. */
+  handFits: Record<string, HandFit>;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -48,6 +51,7 @@ interface AuditionState {
   setPalettes: (palettes: Palette[]) => void;
   setPalette: (palette: string) => void;
   setSwapHands: (swapHands: boolean) => void;
+  setHandFit: (id: string, fit: HandFit) => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -63,6 +67,7 @@ export const useAuditionStore = create<AuditionState>()(
       palettes: [],
       palette: "",
       swapHands: true,
+      handFits: {},
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
@@ -73,6 +78,7 @@ export const useAuditionStore = create<AuditionState>()(
       setPalettes: (palettes) => set({ palettes }),
       setPalette: (palette) => set({ palette }),
       setSwapHands: (swapHands) => set({ swapHands }),
+      setHandFit: (id, fit) => set((s) => ({ handFits: { ...s.handFits, [id]: fit } })),
     }),
     {
       name: "wright-angles:figure-audition",
@@ -85,6 +91,7 @@ export const useAuditionStore = create<AuditionState>()(
         eyeOffsets: s.eyeOffsets,
         palette: s.palette,
         swapHands: s.swapHands,
+        handFits: s.handFits,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,
