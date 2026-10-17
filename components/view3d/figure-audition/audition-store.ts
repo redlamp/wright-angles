@@ -45,6 +45,8 @@ interface AuditionState {
   tPose: boolean;
   /** The hand fit dials unfolded in the picker. Persisted. */
   handDials: boolean;
+  /** Show the figure's own hand as a see-through ghost behind a grafted one. Persisted. */
+  showGhost: boolean;
   /** Bumped to snap the camera onto a wrist (focusSide picks which). Not persisted. */
   focusWrist: number;
   focusSide: 1 | -1;
@@ -61,6 +63,7 @@ interface AuditionState {
   setHandFit: (id: string, side: 1 | -1, fit: HandFit) => void;
   setTPose: (tPose: boolean) => void;
   setHandDials: (handDials: boolean) => void;
+  setShowGhost: (showGhost: boolean) => void;
   requestFocusWrist: (side: 1 | -1) => void;
 }
 
@@ -80,6 +83,7 @@ export const useAuditionStore = create<AuditionState>()(
       handFits: {},
       tPose: false,
       handDials: true,
+      showGhost: false,
       focusWrist: 0,
       focusSide: 1,
       setCandidate: (candidate) => set({ candidate }),
@@ -99,6 +103,7 @@ export const useAuditionStore = create<AuditionState>()(
         }),
       setTPose: (tPose) => set({ tPose }),
       setHandDials: (handDials) => set({ handDials }),
+      setShowGhost: (showGhost) => set({ showGhost }),
       requestFocusWrist: (side) => set((s) => ({ focusWrist: s.focusWrist + 1, focusSide: side })),
     }),
     {
@@ -114,6 +119,7 @@ export const useAuditionStore = create<AuditionState>()(
         swapHands: s.swapHands,
         handFits: s.handFits,
         handDials: s.handDials,
+        showGhost: s.showGhost,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,

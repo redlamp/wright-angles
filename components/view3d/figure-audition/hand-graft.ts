@@ -1,17 +1,20 @@
 import {
+  BufferGeometry,
   Color,
+  DoubleSide,
   Euler,
   Group,
   MathUtils,
   Matrix4,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Quaternion,
+  SkinnedMesh,
   SRGBColorSpace,
   Vector3,
   type Bone,
   type Mesh,
   type Object3D,
-  type SkinnedMesh,
   type Texture,
 } from "three";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -438,6 +441,67 @@ export function flattenMitten(meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bon
       mesh.geometry.computeVertexNormals();
     }
   }
+}
+
+const GHOST_MATERIAL = new MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false, side: DoubleSide });
+
+/**
+ * A see-through copy of the figure's own hand, the mitten flattenMitten
+ * is about to hide: the same vertices, skinned to the same skeleton, so
+ * it follows the arm and the grafted hand can be lined up against it.
+ * Hidden until asked for. Call before flattenMitten.
+ */
+export function ghostMitten(meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bone): SkinnedMesh[] {
+  const mitten = new Set<Bone>(chainOf(hand));
+  const out: SkinnedMesh[] = [];
+  for (const { mesh: m } of meshes) {
+    const mesh = m as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) continue;
+    const jf = mesh.skeleton.bones.indexOf(foreArm);
+    const jh = mesh.skeleton.bones.indexOf(hand);
+    if (jf < 0 || jh < 0) continue;
+    const pf = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jf]).invert());
+    const ph = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jh]).invert());
+    const axis = _b.subVectors(ph, pf).normalize();
+    const geo = mesh.geometry;
+    const pos = geo.getAttribute("position");
+    const keep = new Uint8Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      const b = dominantBone(mesh, i);
+      if (!b || !mitten.has(b)) continue;
+      if (_a.fromBufferAttribute(pos, i).sub(ph).dot(axis) > 0) keep[i] = 1;
+    }
+    const index = geo.getIndex();
+    const n = index ? index.count : pos.count;
+    const tris: number[] = [];
+    for (let i = 0; i + 2 < n; i += 3) {
+      const [a, b, c] = index ? [index.getX(i), index.getX(i + 1), index.getX(i + 2)] : [i, i + 1, i + 2];
+      if (keep[a] && keep[b] && keep[c]) tris.push(a, b, c);
+    }
+    if (!tris.length) continue;
+    const g = new BufferGeometry();
+    for (const name of ["position", "normal", "skinIndex", "skinWeight"]) {
+      const at = geo.getAttribute(name);
+      if (at) g.setAttribute(name, at.clone());
+    }
+    g.setIndex(tris);
+    const ghost = new SkinnedMesh(g, GHOST_MATERIAL);
+    ghost.bind(mesh.skeleton, mesh.bindMatrix);
+    ghost.frustumCulled = false;
+    ghost.renderOrder = 5;
+    ghost.visible = false;
+    mesh.add(ghost);
+    out.push(ghost);
+  }
+  return out;
+}
+
+/** Measure the wrist for the graft, keep a ghost of the mitten, then hide the mitten. Returns the ghosts. */
+export function replaceMitten(g: HandGraft, meshes: { mesh: Mesh }[], hand: Bone, foreArm: Bone): SkinnedMesh[] {
+  fitWrist(g, meshes, foreArm, hand);
+  const ghosts = ghostMitten(meshes, hand, foreArm);
+  flattenMitten(meshes, hand, foreArm);
+  return ghosts;
 }
 
 function readTexel(tex: Texture, u: number, v: number): Color | null {

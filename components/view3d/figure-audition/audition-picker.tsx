@@ -30,6 +30,8 @@ export default function AuditionPicker() {
   const setPalette = useAuditionStore((s) => s.setPalette);
   const swapHands = useAuditionStore((s) => s.swapHands);
   const setSwapHands = useAuditionStore((s) => s.setSwapHands);
+  const showGhost = useAuditionStore((s) => s.showGhost);
+  const setShowGhost = useAuditionStore((s) => s.setShowGhost);
   const tPose = useAuditionStore((s) => s.tPose);
   const setTPose = useAuditionStore((s) => s.setTPose);
   useEffect(() => {
@@ -198,6 +200,12 @@ export default function AuditionPicker() {
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={swapHands} onChange={(e) => setSwapHands(e.target.checked)} />
                 Replacement hands
+              </label>
+            ) : null}
+            {c.tuning?.graftHands ? (
+              <label className={`flex items-center gap-1 ${swapHands ? "" : "pointer-events-none opacity-40"}`} title="The model's own hand, see-through, to line the replacement up against">
+                <input type="checkbox" checked={showGhost} onChange={(e) => setShowGhost(e.target.checked)} />
+                Ghost hand
               </label>
             ) : null}
             <label className="flex items-center gap-1">

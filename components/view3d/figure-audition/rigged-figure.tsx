@@ -39,7 +39,7 @@ import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, restHands, type SideRig } from "./rig-arms";
-import { applySkin, DEFAULT_SIDE_FITS, fitWrist, flattenMitten, graftScale, normalizeFits, setGraftLook, sideFit, type HandSources, type SideFits } from "./hand-graft";
+import { applySkin, DEFAULT_SIDE_FITS, graftScale, normalizeFits, replaceMitten, setGraftLook, sideFit, type HandSources, type SideFits } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
@@ -90,6 +90,8 @@ interface Rig {
   seatDrop: number;
   /** World-space container for grafted hands. */
   grafts: Group;
+  /** See-through copies of the hidden mittens, for lining grafts up. */
+  ghosts: Object3D[];
   meshes: { mesh: Mesh; own: Material | Material[] }[];
   gray: MeshStandardMaterial;
   outfitMat: MeshStandardMaterial;
@@ -209,6 +211,7 @@ function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = nu
     eyeLocal: new Vector3(),
     seatDrop: 0,
     grafts: new Group(),
+    ghosts: [],
     meshes,
     gray,
     outfitMat,
@@ -268,10 +271,7 @@ function buildRig(source: Object3D, c: Candidate, hands: HandSources | null = nu
     segment(s.upperArm, s.foreArm);
     segment(s.foreArm, s.hand);
     fitHand(s, side, tuning, hands, segment, rig.grafts);
-    if (s.graft) {
-      fitWrist(s.graft, rig.meshes, s.foreArm, s.hand);
-      flattenMitten(rig.meshes, s.hand, s.foreArm);
-    }
+    if (s.graft) rig.ghosts.push(...replaceMitten(s.graft, rig.meshes, s.hand, s.foreArm));
   }
   for (const [bone, q, pos] of rig.rest) {
     bone.quaternion.copy(q);
@@ -474,6 +474,8 @@ export default function RiggedFigure({
   const rawFits = useAuditionStore((s) => s.handFits[candidate.id]);
   const handFits = useMemo(() => normalizeFits(rawFits), [rawFits]);
   const tPose = useAuditionStore((s) => s.tPose);
+  const showGhost = useAuditionStore((s) => s.showGhost);
+  useEffect(() => void rig.ghosts.forEach((g) => (g.visible = showGhost)), [rig, showGhost]);
   const setHandFit = useAuditionStore((s) => s.setHandFit);
   const tPoseRef = useRef(false);
   useEffect(() => void (tPoseRef.current = tPose), [tPose]);
