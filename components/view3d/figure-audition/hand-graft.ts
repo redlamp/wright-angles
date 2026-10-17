@@ -53,6 +53,8 @@ export interface HandGraft {
   /** The overlap below the wrist and what it should flare to: figure forearm end radius (model units) over the stub's own radius (cm). */
   stub: Bone | null;
   flare: { figureUnits: number; assetCm: number } | null;
+  /** The figure's own hand length (wrist to mitten tip, model units) and the asset's (cm): the graft is sized so the tips coincide. */
+  length: { figureUnits: number; assetCm: number } | null;
   /** The figure's sampled skin (or glove) color, for the own-material look. */
   skin: Color | null;
 }
@@ -154,6 +156,7 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     fit: DEFAULT_HAND_FIT,
     stub: findBone(scene, /^stub/i),
     flare: null,
+    length: null,
     skin: null,
   };
 }
@@ -273,6 +276,25 @@ export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, 
   }
   radii.sort((x, y) => x - y);
   const figure = radii.length ? radii[Math.floor(radii.length * 0.85)] : 0;
+  // The mitten's reach past the wrist along the arm's axis, before it is flattened.
+  const mitten = new Set<Bone>(chainOf(hand));
+  let reach = 0;
+  for (const { mesh: m } of meshes) {
+    const mesh = m as SkinnedMesh;
+    if (!mesh.isSkinnedMesh) continue;
+    const jf = mesh.skeleton.bones.indexOf(foreArm);
+    const jh = mesh.skeleton.bones.indexOf(hand);
+    if (jf < 0 || jh < 0) continue;
+    const pf = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jf]).invert());
+    const ph = new Vector3().setFromMatrixPosition(_m.copy(mesh.skeleton.boneInverses[jh]).invert());
+    const axis = _b.subVectors(ph, pf).normalize();
+    const pos = mesh.geometry.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) {
+      const b = dominantBone(mesh, i);
+      if (!b || !mitten.has(b)) continue;
+      reach = Math.max(reach, _a.fromBufferAttribute(pos, i).sub(ph).dot(axis));
+    }
+  }
   // The asset's radius at its wrist plane (asset frame: fingers along -z).
   const pos = g.mesh.geometry.getAttribute("position");
   let asset = 0;
@@ -281,13 +303,23 @@ export function fitWrist(g: HandGraft, meshes: { mesh: Mesh }[], foreArm: Bone, 
     asset = Math.max(asset, Math.hypot(pos.getX(i), pos.getY(i)));
   }
   g.flare = figure > 0 && asset > 0 && g.stub ? { figureUnits: figure, assetCm: asset } : null;
+  // The asset's own reach: fingertips along -z from the wrist.
+  let tip = 0;
+  for (let i = 0; i < pos.count; i++) tip = Math.max(tip, -pos.getZ(i));
+  g.length = reach > 0 && tip > 0 ? { figureUnits: reach, assetCm: tip } : null;
 }
 
-/** The hand's scale for this frame: the height scale times the model's hand-size tuning and the live size nudge. */
+/**
+ * The hand's scale for this frame: sized so its fingertips land where the
+ * figure's own mitten tips were (wrist to tip), times the live size
+ * nudge; without a mitten measurement, the height scale and the model's
+ * hand-size tuning.
+ */
 export function graftScale(g: HandGraft, heightCm: number, k: number, handScale: number, fit: HandFit): number {
   g.k = k;
   g.fit = fit;
-  return (heightCm / GRAFT_AUTHORED_CM) * handScale * fit.size;
+  const base = g.length ? (g.length.figureUnits * k) / g.length.assetCm : (heightCm / GRAFT_AUTHORED_CM) * handScale;
+  return base * fit.size;
 }
 
 /**
