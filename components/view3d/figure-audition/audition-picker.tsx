@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { CANDIDATES, findCandidate, loadLocalManifest } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
-import { DEFAULT_HAND_FIT, normalizeFit } from "./hand-graft";
+import HandFitTable from "./hand-fit-table";
 
 /**
  * Dev-only overlay for swapping the viewer figure (FEATURE_FIGURE_AUDITION).
@@ -30,12 +30,8 @@ export default function AuditionPicker() {
   const setPalette = useAuditionStore((s) => s.setPalette);
   const swapHands = useAuditionStore((s) => s.swapHands);
   const setSwapHands = useAuditionStore((s) => s.setSwapHands);
-  const rawFit = useAuditionStore((s) => s.handFits[s.candidate]);
-  const handFit = useMemo(() => normalizeFit(rawFit), [rawFit]);
   const tPose = useAuditionStore((s) => s.tPose);
   const setTPose = useAuditionStore((s) => s.setTPose);
-  const requestFocusWrist = useAuditionStore((s) => s.requestFocusWrist);
-  const setHandFit = useAuditionStore((s) => s.setHandFit);
   useEffect(() => {
     let alive = true;
     loadLocalManifest().then(({ candidates, palettes: pals }) => {
@@ -247,143 +243,7 @@ export default function AuditionPicker() {
               reset
             </button>
           </div>
-          {c.tuning?.graftHands ? (
-            <>
-              <div className={`flex items-center gap-2 ${swapHands ? "" : "pointer-events-none opacity-40"}`}>
-                <label className="flex items-center gap-1">
-                  Hand size
-                  <input
-                    type="range"
-                    min={0.7}
-                    max={1.3}
-                    step={0.01}
-                    value={handFit.size}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, size: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.size.toFixed(2)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  flare X
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2}
-                    step={0.01}
-                    value={handFit.flareX}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, flareX: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.flareX.toFixed(2)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  flare Y
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2}
-                    step={0.01}
-                    value={handFit.flareY}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, flareY: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.flareY.toFixed(2)}</span>
-                </label>
-              </div>
-              <div className={`flex items-center gap-2 ${swapHands ? "" : "pointer-events-none opacity-40"}`}>
-                <label className="flex items-center gap-1">
-                  slide X
-                  <input
-                    type="range"
-                    min={-4}
-                    max={4}
-                    step={0.1}
-                    value={handFit.slideX}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, slideX: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.slideX.toFixed(1)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  Y
-                  <input
-                    type="range"
-                    min={-4}
-                    max={4}
-                    step={0.1}
-                    value={handFit.slideY}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, slideY: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.slideY.toFixed(1)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  Z
-                  <input
-                    type="range"
-                    min={-4}
-                    max={4}
-                    step={0.1}
-                    value={handFit.slideZ}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, slideZ: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.slideZ.toFixed(1)}</span>
-                </label>
-                <button type="button" className="underline" onClick={() => setHandFit(c.id, DEFAULT_HAND_FIT)}>
-                  reset
-                </button>
-              </div>
-              <div className={`flex items-center gap-2 ${swapHands ? "" : "pointer-events-none opacity-40"}`}>
-                <label className="flex items-center gap-1">
-                  rot X
-                  <input
-                    type="range"
-                    min={-45}
-                    max={45}
-                    step={0.5}
-                    value={handFit.rotX}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, rotX: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.rotX.toFixed(1)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  Y
-                  <input
-                    type="range"
-                    min={-45}
-                    max={45}
-                    step={0.5}
-                    value={handFit.rotY}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, rotY: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.rotY.toFixed(1)}</span>
-                </label>
-                <label className="flex items-center gap-1">
-                  Z
-                  <input
-                    type="range"
-                    min={-45}
-                    max={45}
-                    step={0.5}
-                    value={handFit.rotZ}
-                    onChange={(e) => setHandFit(c.id, { ...handFit, rotZ: Number(e.target.value) })}
-                    className="w-14"
-                  />
-                  <span className="w-8 text-right tabular-nums">{handFit.rotZ.toFixed(1)}</span>
-                </label>
-                <button type="button" className="underline" onClick={() => requestFocusWrist(1)}>
-                  focus left
-                </button>
-                <button type="button" className="underline" onClick={() => requestFocusWrist(-1)}>
-                  right
-                </button>
-                <span className="text-muted-foreground">T-pose shows gizmos on both hands</span>
-              </div>
-            </>
-          ) : null}
+          {c.tuning?.graftHands ? <HandFitTable candidateId={c.id} dim={!swapHands} /> : null}
           <span id={AUDITION_READOUT_ID} />
         </>
       ) : null}

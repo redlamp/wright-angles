@@ -88,8 +88,10 @@ export interface HandFit {
 }
 export const DEFAULT_HAND_FIT: HandFit = { size: 1, flareX: 1, flareY: 1, slideX: 0, slideY: 0, slideZ: 0, rotX: 0, rotY: 0, rotZ: 0 };
 
+type RawFit = Partial<HandFit> & { flare?: number; slide?: number };
+
 /** Accepts fits saved under the earlier shape (one flare, one slide). */
-export function normalizeFit(raw: Partial<HandFit> & { flare?: number; slide?: number } | undefined): HandFit {
+export function normalizeFit(raw: RawFit | undefined): HandFit {
   if (!raw) return DEFAULT_HAND_FIT;
   return {
     size: raw.size ?? 1,
@@ -102,6 +104,30 @@ export function normalizeFit(raw: Partial<HandFit> & { flare?: number; slide?: n
     rotY: raw.rotY ?? 0,
     rotZ: raw.rotZ ?? 0,
   };
+}
+
+/** One fit per hand: the two wrists never sit alike, so the right is its own, not a mirror of the left. */
+export interface SideFits {
+  left: HandFit;
+  right: HandFit;
+}
+export const DEFAULT_SIDE_FITS: SideFits = { left: DEFAULT_HAND_FIT, right: DEFAULT_HAND_FIT };
+export const sideFit = (f: SideFits, side: 1 | -1) => (side === 1 ? f.left : f.right);
+
+/** The same fit seen from the other hand: the across slide, roll and yaw flip sign. */
+export function mirrorFit(f: HandFit): HandFit {
+  return { ...f, slideX: -f.slideX, rotX: -f.rotX, rotY: -f.rotY };
+}
+
+/** Accepts fits saved per side, or the earlier single fit (which the right hand mirrored then). */
+export function normalizeFits(raw: RawFit | { left?: RawFit; right?: RawFit } | undefined): SideFits {
+  if (!raw) return DEFAULT_SIDE_FITS;
+  if ("left" in raw || "right" in raw) {
+    const r = raw as { left?: RawFit; right?: RawFit };
+    return { left: normalizeFit(r.left), right: normalizeFit(r.right) };
+  }
+  const left = normalizeFit(raw as RawFit);
+  return { left, right: mirrorFit(left) };
 }
 
 /** The loaded hand assets, one scene per side. */
@@ -201,20 +227,18 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
 
 /**
  * Put the graft's wrist on the figure's hand bone, oriented like it, then
- * apply the per-model fit. Slides and rotations are in the aligned frame
- * (x fingers, y palm normal, z across); the across slide and the roll and
- * yaw mirror for the right hand so one fit serves both.
+ * apply that hand's own fit (set by graftScale). Slides and rotations are
+ * in the aligned frame: x fingers, y palm normal, z across the wrist.
  */
-export function placeGraft(g: HandGraft, hand: Bone, side: 1 | -1 = 1) {
+export function placeGraft(g: HandGraft, hand: Bone) {
   // Curls are applied fresh each frame on top of the rest pose.
   for (const [b, q] of g.rest) b.quaternion.copy(q);
   hand.getWorldQuaternion(_q).multiply(g.align);
   g.anchorQ.copy(_q);
   hand.getWorldPosition(g.anchorPos);
-  const m = side === -1 ? -1 : 1;
   const f = g.fit;
   if (f.rotX || f.rotY || f.rotZ) {
-    _qf.setFromEuler(_e.set(MathUtils.degToRad(f.rotX * m), MathUtils.degToRad(f.rotY * m), MathUtils.degToRad(f.rotZ), "XYZ"));
+    _qf.setFromEuler(_e.set(MathUtils.degToRad(f.rotX), MathUtils.degToRad(f.rotY), MathUtils.degToRad(f.rotZ), "XYZ"));
     _q.multiply(_qf);
   }
   // Drive the armature so that its root bone (rest transform rootRestP,
@@ -232,7 +256,7 @@ export function placeGraft(g: HandGraft, hand: Bone, side: 1 | -1 = 1) {
   // Slide in the aligned hand frame (before the fit rotation): x along the fingers, y along the palm normal, z across the wrist.
   if (f.slideZ) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(g.anchorQ), f.slideZ);
   if (f.slideY) _a.addScaledVector(_c.set(0, 1, 0).applyQuaternion(g.anchorQ), f.slideY);
-  if (f.slideX) _a.addScaledVector(_c.set(0, 0, 1).applyQuaternion(g.anchorQ), f.slideX * m);
+  if (f.slideX) _a.addScaledVector(_c.set(0, 0, 1).applyQuaternion(g.anchorQ), f.slideX);
   _b.copy(g.rootRestP).multiplyScalar(g.scale).applyQuaternion(g.armature.quaternion);
   g.armature.position.copy(_a).sub(_b);
   g.group.updateMatrixWorld(true);

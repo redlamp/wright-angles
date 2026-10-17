@@ -2,7 +2,7 @@ import { Quaternion, Vector3, type Bone, type Object3D } from "three";
 import { solveTwoBone } from "@/lib/limb-ik";
 import type { HandPlan } from "./figure-hands";
 import { aim, chainOf, rollToward, rotateWorld, squash, tipWorld, worldPos, type Segment } from "./rig-math";
-import { buildGraft, graftScale, placeGraft, type HandFit, type HandGraft, type HandSources } from "./hand-graft";
+import { buildGraft, graftScale, placeGraft, sideFit, type HandGraft, type HandSources, type SideFits } from "./hand-graft";
 
 export { chainOf };
 
@@ -138,7 +138,7 @@ export function poseArm(
     fingers();
   }
   // A grafted hand rides the posed hand bone; its fingers curl below.
-  if (s.graft) placeGraft(s.graft, s.hand, side);
+  if (s.graft) placeGraft(s.graft, s.hand);
   curlDigits(s, plan);
 }
 
@@ -226,7 +226,7 @@ export function restHands(
   heightCm: number,
   k: number,
   handScale: number,
-  fit: HandFit,
+  fits: SideFits,
   targetsOut: Vector3[],
   gripsOut: Vector3[],
 ) {
@@ -234,8 +234,8 @@ export function restHands(
     const s = sides[side];
     const i = side === 1 ? 0 : 1;
     if (s.graft) {
-      s.graft.scale = graftScale(s.graft, heightCm, k, handScale, fit);
-      placeGraft(s.graft, s.hand, side);
+      s.graft.scale = graftScale(s.graft, heightCm, k, handScale, sideFit(fits, side));
+      placeGraft(s.graft, s.hand);
     }
     gripPoint(s, gripsOut[i]);
     targetsOut[i].copy(gripsOut[i]);

@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Candidate, Palette } from "./candidates";
 import type { SeatOffset } from "./figure-seat";
-import type { HandFit } from "./hand-graft";
+import { normalizeFits, type HandFit, type SideFits } from "./hand-graft";
 
 export type FigureLook = "own" | "gray" | "outfit";
 
@@ -39,10 +39,12 @@ interface AuditionState {
   palette: string;
   /** Wear the five-fingered hands on models that allow it. Persisted. */
   swapHands: boolean;
-  /** Per-candidate hand size, wrist flare and slide, persisted; dialed in with the rig shown. */
-  handFits: Record<string, HandFit>;
+  /** Per-candidate, per-hand fits (size, flare, slide, rotation), persisted; dialed in from T-pose. Older entries hold one shared fit; normalizeFits reads both. */
+  handFits: Record<string, SideFits | HandFit>;
   /** Show the rest pose (arms out) with the grafts attached, for fitting hands. Not persisted. */
   tPose: boolean;
+  /** The hand fit dials unfolded in the picker. Persisted. */
+  handDials: boolean;
   /** Bumped to snap the camera onto a wrist (focusSide picks which). Not persisted. */
   focusWrist: number;
   focusSide: 1 | -1;
@@ -56,8 +58,9 @@ interface AuditionState {
   setPalettes: (palettes: Palette[]) => void;
   setPalette: (palette: string) => void;
   setSwapHands: (swapHands: boolean) => void;
-  setHandFit: (id: string, fit: HandFit) => void;
+  setHandFit: (id: string, side: 1 | -1, fit: HandFit) => void;
   setTPose: (tPose: boolean) => void;
+  setHandDials: (handDials: boolean) => void;
   requestFocusWrist: (side: 1 | -1) => void;
 }
 
@@ -76,6 +79,7 @@ export const useAuditionStore = create<AuditionState>()(
       swapHands: true,
       handFits: {},
       tPose: false,
+      handDials: true,
       focusWrist: 0,
       focusSide: 1,
       setCandidate: (candidate) => set({ candidate }),
@@ -88,8 +92,13 @@ export const useAuditionStore = create<AuditionState>()(
       setPalettes: (palettes) => set({ palettes }),
       setPalette: (palette) => set({ palette }),
       setSwapHands: (swapHands) => set({ swapHands }),
-      setHandFit: (id, fit) => set((s) => ({ handFits: { ...s.handFits, [id]: fit } })),
+      setHandFit: (id, side, fit) =>
+        set((s) => {
+          const cur = normalizeFits(s.handFits[id]);
+          return { handFits: { ...s.handFits, [id]: side === 1 ? { ...cur, left: fit } : { ...cur, right: fit } } };
+        }),
       setTPose: (tPose) => set({ tPose }),
+      setHandDials: (handDials) => set({ handDials }),
       requestFocusWrist: (side) => set((s) => ({ focusWrist: s.focusWrist + 1, focusSide: side })),
     }),
     {
@@ -104,6 +113,7 @@ export const useAuditionStore = create<AuditionState>()(
         palette: s.palette,
         swapHands: s.swapHands,
         handFits: s.handFits,
+        handDials: s.handDials,
       }),
       // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,

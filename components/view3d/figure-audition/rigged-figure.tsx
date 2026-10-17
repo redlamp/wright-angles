@@ -39,7 +39,7 @@ import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, restHands, type SideRig } from "./rig-arms";
-import { applySkin, DEFAULT_HAND_FIT, fitWrist, flattenMitten, graftScale, normalizeFit, setGraftLook, type HandFit, type HandSources } from "./hand-graft";
+import { applySkin, DEFAULT_SIDE_FITS, fitWrist, flattenMitten, graftScale, normalizeFits, setGraftLook, sideFit, type HandSources, type SideFits } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
@@ -338,7 +338,7 @@ function poseRig(
   t: number,
   held: HeldGrip | null,
   eye: EyeOffset,
-  handFit: HandFit,
+  handFits: SideFits,
   tPose: boolean,
   targetsOut: Vector3[],
   gripsOut: Vector3[],
@@ -387,7 +387,7 @@ function poseRig(
   const lift = lockEyes(rig.outer, rig.head, rig.eyeLocal, eyeContract);
 
   if (tPose) {
-    restHands(rig.sides, heightCm, k, rig.tuning.handScale, handFit, targetsOut, gripsOut);
+    restHands(rig.sides, heightCm, k, rig.tuning.handScale, handFits, targetsOut, gripsOut);
     marksOut[0].set(0, eyeContract, 0);
     worldPos(rig.head, marksOut[1]);
     return lift;
@@ -403,7 +403,7 @@ function poseRig(
 
   for (const side of [1, -1] as const) {
     const g = rig.sides[side].graft;
-    if (g) g.scale = graftScale(g, heightCm, k, rig.tuning.handScale, handFit);
+    if (g) g.scale = graftScale(g, heightCm, k, rig.tuning.handScale, sideFit(handFits, side));
   }
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
@@ -471,14 +471,14 @@ export default function RiggedFigure({
   const [targets, grips, marks] = [useRef<Vector3[]>(pair()), useRef<Vector3[]>(pair()), useRef<Vector3[]>(pair())];
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
-  const rawFit = useAuditionStore((s) => s.handFits[candidate.id]);
-  const handFit = useMemo(() => normalizeFit(rawFit), [rawFit]);
+  const rawFits = useAuditionStore((s) => s.handFits[candidate.id]);
+  const handFits = useMemo(() => normalizeFits(rawFits), [rawFits]);
   const tPose = useAuditionStore((s) => s.tPose);
   const setHandFit = useAuditionStore((s) => s.setHandFit);
   const tPoseRef = useRef(false);
   useEffect(() => void (tPoseRef.current = tPose), [tPose]);
-  const handFitRef = useRef<HandFit>(DEFAULT_HAND_FIT);
-  useEffect(() => void (handFitRef.current = handFit), [handFit]);
+  const handFitsRef = useRef<SideFits>(DEFAULT_SIDE_FITS);
+  useEffect(() => void (handFitsRef.current = handFits), [handFits]);
   const setSeat = useAuditionStore((s) => s.setSeat);
   const seat = useRef<SeatOffset>({ dy: 0, dz: 0 });
   const published = useRef<SeatOffset>({ dy: NaN, dz: NaN });
@@ -565,7 +565,7 @@ export default function RiggedFigure({
       const travel = pose.rootY + EYE_LOCAL * pose.scale - (target.rootY + EYE_LOCAL * target.scale);
       h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitRef.current, tPoseRef.current, targets.current, grips.current, marks.current);
+    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitsRef.current, tPoseRef.current, targets.current, grips.current, marks.current);
     if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, tPoseRef.current ? "standing" : scenario, seat.current)) {
       const s = seat.current;
       if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {
@@ -589,7 +589,7 @@ export default function RiggedFigure({
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       <primitive object={rig.grafts} />
       <WristFocus sides={rig.sides} />
-      {tPose ? <HandGizmos sides={rig.sides} fit={handFit} onChange={(f) => setHandFit(candidate.id, f)} /> : null}
+      {tPose ? <HandGizmos sides={rig.sides} fits={handFits} onChange={(side, f) => setHandFit(candidate.id, side, f)} /> : null}
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} grafts={rig.grafts} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>
