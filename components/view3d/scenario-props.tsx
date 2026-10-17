@@ -9,6 +9,7 @@ import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
 import { FirefliesProp, KenneyProp, materialsOf, type PropTint } from "./furniture-models";
+import { MOUSE_X } from "./figure-audition/figure-hands";
 
 /** Matches the viewer figure's pose tween so furniture moves in sync. */
 const TWEEN_S = 0.5;
@@ -171,8 +172,8 @@ function Desk({ mats, inputType }: { mats: MatSet; inputType: InputType }) {
 /**
  * Fireflies keyboard (44 cm, full size) and mouse at real size. The
  * keyboard centers 3 cm left of the figure so WASD lands under the left
- * hand (x 13) and the mouse sits under the right (x -24) with a couple of
- * centimeters between them, as on a real desk.
+ * hand (x 13); the mouse sits under the right hand, a hand's width clear
+ * of the keyboard's right edge (MOUSE_X, shared with the hand plan).
  */
 function Peripherals({ top, show }: { top: number; show: boolean }) {
   return (
@@ -180,7 +181,7 @@ function Peripherals({ top, show }: { top: number; show: boolean }) {
       {/* As exported: space bar toward -z (the user); the mouse's buttons
           face -z too, so it turns around to point away. */}
       <FirefliesProp name="keyboard" position={[3, top, 40]} />
-      <FirefliesProp name="mouse" position={[-24, top, 37]} rotation={[0, Math.PI, 0]} />
+      <FirefliesProp name="mouse" position={[MOUSE_X, top, 37]} rotation={[0, Math.PI, 0]} />
     </group>
   );
 }

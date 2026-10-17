@@ -71,7 +71,12 @@ function surfaceY(scenario: Scenario): number {
  * Wrist height above a surface the fingers rest on: the wrist joint
  * sits a hand's thickness up, and the fingers slope down from there.
  */
-const WRIST_ABOVE_SURFACE = 5;
+const WRIST_ABOVE_SURFACE = 2;
+/** Near edge of the keyboard (center z 40, 19 cm deep) and of the mouse (center z 37, 12 cm long); see scenario-props Peripherals. */
+const KEYBOARD_NEAR_Z = 30;
+const MOUSE_NEAR_Z = 31;
+/** Mouse center x, a hand's width clear of the keyboard's right edge (x -19). */
+export const MOUSE_X = -32;
 
 /** Mirror a plan's x components for the other hand. */
 const mirror = (p: HandPlan): HandPlan => ({
@@ -130,23 +135,25 @@ export function planHands(
   held: HeldGrip | null,
 ): HandsPlan {
   if (input === "keyboard") {
+    // Wrists rest on the desk just short of the keyboard and mouse (their
+    // near edges: keyboard center z 40 and 19 deep, mouse center z 37 and
+    // 12 long), the heel of the hand on the surface, the hand tilted up a
+    // little so it lies on top of the keys and the mouse body; a light
+    // curl drops the fingertips onto them. On the couch the keyboard is
+    // on the lap, so the wrists sit a hand's width closer.
     const y = surfaceY(scenario) + WRIST_ABOVE_SURFACE * s;
-    const z = scenario === "couch" ? 26 * s : 40 * s;
-    // Left hand on WASD, a little left of center; right hand out on the
-    // mouse, cupped over it. Fingers slope gently down to the keys with
-    // a light curl, so fingertips rest on the surface instead of
-    // driving through it.
+    const desk = scenario !== "couch";
     const left: HandPlan = {
-      target: { x: 13 * s, y, z },
+      target: { x: 13 * s, y, z: (desk ? KEYBOARD_NEAR_Z : 18) * s },
       pole: ELBOW,
-      fingers: { x: -0.1, y: -0.25, z: 1 },
+      fingers: { x: -0.1, y: 0.12, z: 1 },
       palm: { x: 0, y: -1, z: 0.25 },
       curl: { fingers: 25, thumb: 10 },
     };
     const right: HandPlan = {
-      target: { x: -24 * s, y: y + 2 * s, z: z - 3 * s },
+      target: { x: MOUSE_X * s, y: y + 0.5 * s, z: (desk ? MOUSE_NEAR_Z : 18) * s },
       pole: ELBOW,
-      fingers: { x: 0.05, y: -0.3, z: 1 },
+      fingers: { x: 0.05, y: 0.1, z: 1 },
       palm: { x: 0, y: -1, z: 0.25 },
       curl: { fingers: 35, thumb: 15 },
     };
