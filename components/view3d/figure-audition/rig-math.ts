@@ -137,3 +137,18 @@ export function chainOf(root: Bone | null): Bone[] {
   });
   return out;
 }
+
+/**
+ * Eye lock: move `outer` so the eye point (`eyeLocal` in the head bone's
+ * frame) lands exactly on (0, eyeY, 0). Returns the vertical shift.
+ */
+export function lockEyes(outer: Object3D, head: Object3D, eyeLocal: Vector3, eyeY: number): number {
+  outer.updateMatrixWorld(true);
+  head.localToWorld(_a.copy(eyeLocal));
+  const lift = eyeY - _a.y;
+  outer.position.x -= _a.x;
+  outer.position.y += lift;
+  outer.position.z -= _a.z;
+  outer.updateMatrixWorld(true);
+  return lift;
+}

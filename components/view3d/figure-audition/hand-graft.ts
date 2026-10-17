@@ -62,13 +62,35 @@ export interface HandGraft {
 /** Height the MPFB hand was exported at. */
 export const GRAFT_AUTHORED_CM = 175;
 
-/** Per-model hand adjustments, dialed in by eye: size multiplier, wrist flare multiplier, slide along the arm (cm, negative toward the elbow). */
+/**
+ * Per-model hand adjustments, dialed in by eye. size multiplies the whole
+ * hand; flareX and flareY multiply the wrist's width (thumb direction)
+ * and thickness (palm direction); slideX, slideY and slideZ move the hand
+ * across the wrist, along the palm normal and along the arm (cm, slideZ
+ * negative toward the elbow).
+ */
 export interface HandFit {
   size: number;
-  flare: number;
-  slide: number;
+  flareX: number;
+  flareY: number;
+  slideX: number;
+  slideY: number;
+  slideZ: number;
 }
-export const DEFAULT_HAND_FIT: HandFit = { size: 1, flare: 1, slide: 0 };
+export const DEFAULT_HAND_FIT: HandFit = { size: 1, flareX: 1, flareY: 1, slideX: 0, slideY: 0, slideZ: 0 };
+
+/** Accepts fits saved under the earlier shape (one flare, one slide). */
+export function normalizeFit(raw: Partial<HandFit> & { flare?: number; slide?: number } | undefined): HandFit {
+  if (!raw) return DEFAULT_HAND_FIT;
+  return {
+    size: raw.size ?? 1,
+    flareX: raw.flareX ?? raw.flare ?? 1,
+    flareY: raw.flareY ?? raw.flare ?? 1,
+    slideX: raw.slideX ?? 0,
+    slideY: raw.slideY ?? 0,
+    slideZ: raw.slideZ ?? raw.slide ?? 0,
+  };
+}
 
 /** The loaded hand assets, one scene per side. */
 export interface HandSources {
@@ -171,13 +193,17 @@ export function placeGraft(g: HandGraft, hand: Bone) {
   g.armature.quaternion.copy(_q).multiply(g.rootRestQ.clone().invert());
   g.armature.scale.setScalar(g.scale);
   if (g.stub && g.flare) {
-    // Radial only: the stub bone points back along the arm (local Y).
-    const f = Math.min(2.5, Math.max(0.6, ((g.flare.figureUnits * g.k) / (g.flare.assetCm * g.scale)) * g.fit.flare));
-    g.stub.scale.set(f, 1, f);
+    // Radial only: the stub bone points back along the arm (local Y); its
+    // local X is the wrist's width (thumb direction) and local Z its thickness.
+    const f = (g.flare.figureUnits * g.k) / (g.flare.assetCm * g.scale);
+    const clamp = (v: number) => Math.min(3, Math.max(0.5, v));
+    g.stub.scale.set(clamp(f * g.fit.flareX), 1, clamp(f * g.fit.flareY));
   }
   hand.getWorldPosition(_a);
-  // Slide along the figure's finger direction (the hand frame's x after alignment).
-  if (g.fit.slide) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(_q), g.fit.slide);
+  // Slide in the aligned hand frame: x along the fingers (the arm), y along the palm normal, z across the wrist.
+  if (g.fit.slideZ) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(_q), g.fit.slideZ);
+  if (g.fit.slideY) _a.addScaledVector(_c.set(0, 1, 0).applyQuaternion(_q), g.fit.slideY);
+  if (g.fit.slideX) _a.addScaledVector(_c.set(0, 0, 1).applyQuaternion(_q), g.fit.slideX);
   _b.copy(g.rootRestP).multiplyScalar(g.scale).applyQuaternion(g.armature.quaternion);
   g.armature.position.copy(_a).sub(_b);
   g.group.updateMatrixWorld(true);

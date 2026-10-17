@@ -41,6 +41,8 @@ interface AuditionState {
   swapHands: boolean;
   /** Per-candidate hand size, wrist flare and slide, persisted; dialed in with the rig shown. */
   handFits: Record<string, HandFit>;
+  /** Show the rest pose (arms out) with the grafts attached, for fitting hands. Not persisted. */
+  tPose: boolean;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -52,6 +54,7 @@ interface AuditionState {
   setPalette: (palette: string) => void;
   setSwapHands: (swapHands: boolean) => void;
   setHandFit: (id: string, fit: HandFit) => void;
+  setTPose: (tPose: boolean) => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -68,6 +71,7 @@ export const useAuditionStore = create<AuditionState>()(
       palette: "",
       swapHands: true,
       handFits: {},
+      tPose: false,
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
@@ -79,6 +83,7 @@ export const useAuditionStore = create<AuditionState>()(
       setPalette: (palette) => set({ palette }),
       setSwapHands: (swapHands) => set({ swapHands }),
       setHandFit: (id, fit) => set((s) => ({ handFits: { ...s.handFits, [id]: fit } })),
+      setTPose: (tPose) => set({ tPose }),
     }),
     {
       name: "wright-angles:figure-audition",

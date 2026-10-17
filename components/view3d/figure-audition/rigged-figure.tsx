@@ -32,25 +32,26 @@ import {
   makePose,
   type Pose,
 } from "../viewer-figure";
-import type { Candidate, RigTuning, SideBones } from "./candidates";
+import { candidateSwitched, naturalHeightCm, type Candidate, type RigTuning, type SideBones } from "./candidates";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, type FigureLook } from "./audition-store";
 import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import { outfitById } from "./figure-outfits";
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
-import { fitHand, gripPoint, poseArm, type SideRig } from "./rig-arms";
-import { applySkin, DEFAULT_HAND_FIT, fitWrist, flattenMitten, graftScale, setGraftLook, type HandFit, type HandSources } from "./hand-graft";
+import { fitHand, gripPoint, poseArm, restHands, type SideRig } from "./rig-arms";
+import { applySkin, DEFAULT_HAND_FIT, fitWrist, flattenMitten, graftScale, normalizeFit, setGraftLook, type HandFit, type HandSources } from "./hand-graft";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
   findBone,
   isUnder,
   legDir,
+  lockEyes,
   pitchWorld,
   setWorldQuat,
   squash,
-  worldPos,
   type Segment,
+  worldPos,
 } from "./rig-math";
 import ControllerProp from "./controller-prop";
 
@@ -58,10 +59,6 @@ import ControllerProp from "./controller-prop";
 const AUTHORED_CM = 175;
 /** Eye contract in capsule root-local cm (see viewer-figure). */
 const EYE_LOCAL = 69;
-/** The candidate shown last, across remounts: a switch resets the height. */
-let lastCandidateId: string | null = null;
-/** A model's own height when its units are cm (wide test: a child is under 120; the store clamps); meters fall back to the authored height. */
-const naturalHeightCm = (rig: Rig) => (rig.height >= 50 && rig.height <= 250 ? Math.round(rig.height) : AUTHORED_CM);
 /**
  * Eye line as a fraction of stature, the same ratio the viewer store's
  * eyeHeightCm uses for the standing eye point, so every model's eyes
@@ -120,10 +117,7 @@ const _dir = new Vector3();
 
 /** Skinned vertex reads use boneMatrices, which only a render refreshes. */
 function updateSkeletons(rig: Rig) {
-  for (const { mesh } of rig.meshes) {
-    const sk = mesh as SkinnedMesh;
-    if (sk.isSkinnedMesh) sk.skeleton.update();
-  }
+  for (const { mesh } of rig.meshes) if ((mesh as SkinnedMesh).isSkinnedMesh) (mesh as SkinnedMesh).skeleton.update();
 }
 
 
@@ -344,6 +338,7 @@ function poseRig(
   held: HeldGrip | null,
   eye: EyeOffset,
   handFit: HandFit,
+  tPose: boolean,
   targetsOut: Vector3[],
   gripsOut: Vector3[],
   marksOut: Vector3[],
@@ -371,12 +366,13 @@ function poseRig(
         );
 
   // Posture tweens with the body so the torso travels between stances.
-  const posture = lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
+  // T-pose: the rest pose with the grafts on, for fitting hands; the eye lock still applies.
+  const posture = tPose ? POSTURE.standing : lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
   if (rig.pelvis) pitchWorld(rig.pelvis, posture.pelvis);
   const chain = rig.spine.length ? rig.spine : rig.head.parent && (rig.head.parent as Bone).isBone ? [rig.head.parent as Bone] : [];
   for (const b of chain) pitchWorld(b, posture.spine / chain.length);
   let headDeg = posture.head;
-  if (hands.lookAtHands > 0) {
+  if (!tPose && hands.lookAtHands > 0) {
     const handY = (hands.left.target.y + hands.right.target.y) / 2;
     const handZ = Math.max(1, (hands.left.target.z + hands.right.target.z) / 2);
     const down = MathUtils.radToDeg(Math.atan2(eyeContract - handY, handZ));
@@ -384,18 +380,17 @@ function poseRig(
   }
   pitchWorld(rig.head, headDeg);
 
-  // Eye lock. The device distances are measured from the eye point, so
-  // the posed eyes go exactly there, in height and depth, and the body
-  // hangs from them: feet and seat land where the proportions put them.
-  rig.outer.updateMatrixWorld(true);
-  // The per-model nudge is in world cm; the rest point is in model units.
+  // Eye lock: the posed eyes go exactly to the eye point and the body hangs
+  // from them. The per-model nudge is world cm; the rest point model units.
   rig.eyeLocal.copy(rig.eyeRest).add(_b.set(0, eye.up / k, eye.fwd / k)).applyMatrix4(rig.headRestInv);
-  rig.head.localToWorld(_a.copy(rig.eyeLocal));
-  const lift = eyeContract - _a.y;
-  rig.outer.position.x -= _a.x;
-  rig.outer.position.y += lift;
-  rig.outer.position.z -= _a.z;
-  rig.outer.updateMatrixWorld(true);
+  const lift = lockEyes(rig.outer, rig.head, rig.eyeLocal, eyeContract);
+
+  if (tPose) {
+    restHands(rig.sides, heightCm, k, rig.tuning.handScale, handFit, targetsOut, gripsOut);
+    marksOut[0].set(0, eyeContract, 0);
+    worldPos(rig.head, marksOut[1]);
+    return lift;
+  }
 
   for (const side of [1, -1] as const) {
     const s = rig.sides[side];
@@ -469,15 +464,18 @@ export default function RiggedFigure({
   // seen at the size it was built at rather than stretched to the last.
   const setHeightCm = useViewerStore((s) => s.setHeightCm);
   useEffect(() => {
-    if (lastCandidateId !== null && lastCandidateId !== candidate.id) setHeightCm(naturalHeightCm(rig));
-    lastCandidateId = candidate.id;
+    if (candidateSwitched(candidate.id)) setHeightCm(naturalHeightCm(rig.height, AUTHORED_CM));
   }, [candidate.id, rig, setHeightCm]);
   const targets = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const grips = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const marks = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
-  const handFit = useAuditionStore((s) => s.handFits[candidate.id]) ?? DEFAULT_HAND_FIT;
+  const rawFit = useAuditionStore((s) => s.handFits[candidate.id]);
+  const handFit = useMemo(() => normalizeFit(rawFit), [rawFit]);
+  const tPose = useAuditionStore((s) => s.tPose);
+  const tPoseRef = useRef(false);
+  useEffect(() => void (tPoseRef.current = tPose), [tPose]);
   const handFitRef = useRef<HandFit>(DEFAULT_HAND_FIT);
   useEffect(() => void (handFitRef.current = handFit), [handFit]);
   const setSeat = useAuditionStore((s) => s.setSeat);
@@ -568,8 +566,8 @@ export default function RiggedFigure({
       const travel = pose.rootY + EYE_LOCAL * pose.scale - (target.rootY + EYE_LOCAL * target.scale);
       h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitRef.current, targets.current, grips.current, marks.current);
-    if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, scenario, seat.current)) {
+    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, handFitRef.current, tPoseRef.current, targets.current, grips.current, marks.current);
+    if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, tPoseRef.current ? "standing" : scenario, seat.current)) {
       const s = seat.current;
       if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {
         published.current = { dy: s.dy, dz: s.dz };

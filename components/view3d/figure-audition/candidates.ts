@@ -206,3 +206,15 @@ export async function loadLocalManifest(): Promise<{ candidates: Candidate[]; pa
     return none;
   }
 }
+
+/** A model's own height when its units are cm (wide test: a child is under 120; the store clamps); meters fall back to `authored`. */
+export const naturalHeightCm = (modelHeight: number, authored: number) =>
+  modelHeight >= 50 && modelHeight <= 250 ? Math.round(modelHeight) : authored;
+
+let lastCandidateId: string | null = null;
+/** True when the shown candidate changed since the last call (never on the first), across remounts. */
+export function candidateSwitched(id: string): boolean {
+  const switched = lastCandidateId !== null && lastCandidateId !== id;
+  lastCandidateId = id;
+  return switched;
+}

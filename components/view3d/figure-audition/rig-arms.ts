@@ -2,7 +2,7 @@ import { Quaternion, Vector3, type Bone, type Object3D } from "three";
 import { solveTwoBone } from "@/lib/limb-ik";
 import type { HandPlan } from "./figure-hands";
 import { aim, chainOf, rollToward, rotateWorld, squash, tipWorld, worldPos, type Segment } from "./rig-math";
-import { buildGraft, placeGraft, type HandGraft, type HandSources } from "./hand-graft";
+import { buildGraft, graftScale, placeGraft, type HandFit, type HandGraft, type HandSources } from "./hand-graft";
 
 export { chainOf };
 
@@ -213,5 +213,31 @@ export function fitHand(
       s.thumbChain = g.thumbChain;
       grafts.add(g.group);
     }
+  }
+}
+
+/**
+ * T-pose: leave the arms in their rest pose and only seat the grafted
+ * hands on them (scaled for the figure), reporting grip points and wrist
+ * targets for the overlay.
+ */
+export function restHands(
+  sides: Record<1 | -1, SideRig>,
+  heightCm: number,
+  k: number,
+  handScale: number,
+  fit: HandFit,
+  targetsOut: Vector3[],
+  gripsOut: Vector3[],
+) {
+  for (const side of [1, -1] as const) {
+    const s = sides[side];
+    const i = side === 1 ? 0 : 1;
+    if (s.graft) {
+      s.graft.scale = graftScale(s.graft, heightCm, k, handScale, fit);
+      placeGraft(s.graft, s.hand);
+    }
+    gripPoint(s, gripsOut[i]);
+    targetsOut[i].copy(gripsOut[i]);
   }
 }
