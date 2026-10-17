@@ -18,6 +18,13 @@ import { useGLTF } from "@react-three/drei";
 
 const base = () => process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export const propUrl = (name: string) => `${base()}/props/kenney/${name}.glb`;
+/**
+ * Pieces split out of Fireflies Assets' "Lowpoly Electric Device" set
+ * (CC-BY-4.0, public/props/fireflies/CREDITS.md): gamepad, keyboard,
+ * mouse, phone, tablet. Exported at real size in cm with the origin at
+ * the bottom center, and they keep their palette texture.
+ */
+export const firefliesUrl = (name: string) => `${base()}/props/fireflies/${name}.glb`;
 
 /** Every material under an object, deduplicated. */
 export function materialsOf(root: Object3D): Material[] {
@@ -39,9 +46,31 @@ export interface PropTint {
 }
 
 /**
- * A Kenney piece, cloned per use with its own materials so the furniture
+ * A glTF scene cloned per use with its own materials, so the furniture
  * crossfade can set opacity without touching the shared loader cache.
  * No Draco/Meshopt: drei would otherwise wire a remote decoder path.
+ */
+export function useOwnScene(url: string): Group {
+  const gltf = useGLTF(url, false, false);
+  return useMemo(() => {
+    const s = gltf.scene.clone(true) as Group;
+    s.traverse((o) => {
+      const m = o as Mesh;
+      if (!m.isMesh) return;
+      const own = (Array.isArray(m.material) ? m.material : [m.material]).map((x) => {
+        const c = x.clone() as MeshStandardMaterial;
+        c.transparent = true;
+        return c;
+      });
+      m.material = own.length === 1 ? own[0] : own;
+    });
+    return s;
+  }, [gltf.scene]);
+}
+
+/**
+ * A Kenney piece recolored to the scene palette. The kit is untextured,
+ * so the material color is the whole look.
  */
 export function KenneyProp({
   name,
@@ -56,21 +85,7 @@ export function KenneyProp({
   rotationY?: number;
   tint: PropTint;
 }) {
-  const gltf = useGLTF(propUrl(name), false, false);
-  const scene = useMemo(() => {
-    const s = gltf.scene.clone(true) as Group;
-    s.traverse((o) => {
-      const m = o as Mesh;
-      if (!m.isMesh) return;
-      const own = (Array.isArray(m.material) ? m.material : [m.material]).map((x) => {
-        const c = x.clone() as MeshStandardMaterial;
-        c.transparent = true;
-        return c;
-      });
-      m.material = own.length === 1 ? own[0] : own;
-    });
-    return s;
-  }, [gltf.scene]);
+  const scene = useOwnScene(propUrl(name));
   useEffect(() => {
     for (const m of materialsOf(scene)) {
       const sm = m as MeshStandardMaterial;
@@ -81,4 +96,30 @@ export function KenneyProp({
   }, [scene, tint]);
   const sc: [number, number, number] = typeof scale === "number" ? [scale, scale, scale] : scale;
   return <primitive object={scene} scale={sc} position={position} rotation={[0, rotationY, 0]} />;
+}
+
+/**
+ * A Fireflies piece at real size (cm), keeping its palette texture.
+ * Matte, like everything else in the scene.
+ */
+export function FirefliesProp({
+  name,
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+  scale = 1,
+}: {
+  name: string;
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  scale?: number;
+}) {
+  const scene = useOwnScene(firefliesUrl(name));
+  useEffect(() => {
+    for (const m of materialsOf(scene)) {
+      const sm = m as MeshStandardMaterial;
+      sm.roughness = 0.85;
+      sm.metalness = 0;
+    }
+  }, [scene]);
+  return <primitive object={scene} position={position} rotation={rotation} scale={scale} />;
 }

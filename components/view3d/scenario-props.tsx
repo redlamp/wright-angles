@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { Color, MathUtils, MeshBasicMaterial, type Group } from "three";
+import { MathUtils, MeshBasicMaterial, type Group } from "three";
 import { useFrame } from "@react-three/fiber";
 import { tweenStep } from "@/lib/motion";
 import { useReducedMotion } from "@/components/use-reduced-motion";
 import type { InputType, Scenario } from "@/stores/viewer-store";
 import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
-import { KenneyProp, materialsOf, type PropTint } from "./furniture-models";
+import { FirefliesProp, KenneyProp, materialsOf, type PropTint } from "./furniture-models";
 
 /** Matches the viewer figure's pose tween so furniture moves in sync. */
 const TWEEN_S = 0.5;
@@ -140,7 +140,7 @@ function DeskChair({ tint }: { tint: PropTint }) {
  * panels. (A Kenney desk with a drawer pedestal was tried 2026-10-17 and
  * rejected: backwards, legs clipping.)
  */
-function Desk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; tint: PropTint }) {
+function Desk({ mats, inputType }: { mats: MatSet; inputType: InputType }) {
   return (
     <group>
       <mesh material={mats.furniture} position={[0, DESK_TOP - 2, DESK_NEAR_Z + DESK_D / 2]}>
@@ -157,7 +157,7 @@ function Desk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; t
           </mesh>
         )),
       )}
-      <Peripherals top={DESK_TOP} show={inputType === "keyboard"} tint={tint} />
+      <Peripherals top={DESK_TOP} show={inputType === "keyboard"} />
     </group>
   );
 }
@@ -168,34 +168,29 @@ function Desk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; t
  * Kenney keyboard 0.282 x 0.118 with its origin at a corner; mouse
  * 0.05 x 0.085, origin at its front center.
  */
-function Peripherals({ top, show, tint }: { top: number; show: boolean; tint: PropTint }) {
-  const k = 130;
-  // Lighter than the desk they sit on, or they vanish into it.
-  const lifted = useMemo<PropTint>(() => {
-    const c = new Color(tint.furniture).lerp(new Color("#ffffff"), 0.35);
-    const hex = `#${c.getHexString()}`;
-    return { furniture: hex, soft: hex };
-  }, [tint.furniture]);
+/**
+ * Fireflies keyboard (44 cm, full size) and mouse at real size. The
+ * keyboard centers 3 cm left of the figure so WASD lands under the left
+ * hand (x 13) and the mouse sits under the right (x -24) with a couple of
+ * centimeters between them, as on a real desk.
+ */
+function Peripherals({ top, show }: { top: number; show: boolean }) {
   return (
     <group visible={show}>
-      <KenneyProp
-        name="computerKeyboard"
-        scale={k}
-        position={[3 + 0.141 * k, top, 40 - 0.059 * k]}
-        rotationY={Math.PI}
-        tint={lifted}
-      />
-      <KenneyProp name="computerMouse" scale={k} position={[-24, top, 37 + 0.0425 * k]} tint={lifted} />
+      {/* As exported: space bar toward -z (the user); the mouse's buttons
+          face -z too, so it turns around to point away. */}
+      <FirefliesProp name="keyboard" position={[3, top, 40]} />
+      <FirefliesProp name="mouse" position={[-24, top, 37]} rotation={[0, Math.PI, 0]} />
     </group>
   );
 }
 
 /** Standing desk: tall top at STAND_DESK_TOP, no chair. */
-function StandingDesk({ mats, inputType, tint }: { mats: MatSet; inputType: InputType; tint: PropTint }) {
+function StandingDesk({ mats, inputType }: { mats: MatSet; inputType: InputType }) {
   const top = STAND_DESK_TOP;
   return (
     <group>
-      <Peripherals top={top} show={inputType === "keyboard"} tint={tint} />
+      <Peripherals top={top} show={inputType === "keyboard"} />
       <mesh material={mats.furniture} position={[0, top - 2, 58]}>
         <boxGeometry args={[130, 4, 62]} />
       </mesh>
@@ -291,13 +286,13 @@ export default function ScenarioProps({
     <>
       <group ref={deskRef} userData={ORBIT_BASE}>
         <DeskChair tint={tint} />
-        <Desk mats={DESK_MATS} inputType={inputType} tint={tint} />
+        <Desk mats={DESK_MATS} inputType={inputType} />
       </group>
       <group ref={couchRef} userData={ORBIT_BASE}>
         <Couch tint={tint} />
       </group>
       <group ref={standRef} userData={ORBIT_BASE}>
-        <StandingDesk mats={STAND_MATS} inputType={inputType} tint={tint} />
+        <StandingDesk mats={STAND_MATS} inputType={inputType} />
       </group>
     </>
   );
