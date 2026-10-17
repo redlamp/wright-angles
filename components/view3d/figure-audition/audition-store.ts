@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Candidate } from "./candidates";
+import type { SeatOffset } from "./figure-seat";
 
 export type FigureLook = "own" | "gray" | "outfit";
 
@@ -28,12 +29,15 @@ interface AuditionState {
   showRig: boolean;
   /** Per-candidate eye point nudges, persisted; dialed in with the rig shown. */
   eyeOffsets: Record<string, EyeOffset>;
+  /** Where the seated rig's seat is, so the chair and sofa can follow; null for the capsule. */
+  seat: SeatOffset | null;
   local: Candidate[];
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
   setShowRig: (showRig: boolean) => void;
   setEyeOffset: (id: string, offset: EyeOffset) => void;
+  setSeat: (seat: SeatOffset | null) => void;
   setLocal: (local: Candidate[]) => void;
 }
 
@@ -45,12 +49,14 @@ export const useAuditionStore = create<AuditionState>()(
       outfit: "casual",
       showRig: false,
       eyeOffsets: {},
+      seat: null,
       local: [],
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
       setShowRig: (showRig) => set({ showRig }),
       setEyeOffset: (id, offset) => set((s) => ({ eyeOffsets: { ...s.eyeOffsets, [id]: offset } })),
+      setSeat: (seat) => set({ seat }),
       setLocal: (local) => set({ local }),
     }),
     {

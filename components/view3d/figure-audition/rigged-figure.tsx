@@ -37,6 +37,7 @@ import { applyOutfit, computeRegions, headSpan, type MeshRegions } from "./figur
 import RigOverlay from "./rig-overlay";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, lerpHands, lerpPosture, planHands } from "./figure-hands";
 import { chainOf, findDigits, gripPoint, poseArm, type SideRig } from "./rig-arms";
+import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
 import {
   aim,
   findBone,
@@ -88,6 +89,8 @@ interface Rig {
   headRestInv: Matrix4;
   /** Scratch: the offset eye point in the head bone's frame. */
   eyeLocal: Vector3;
+  /** Seated: thigh underside below the hip joints, model units. */
+  seatDrop: number;
   meshes: { mesh: Mesh; own: Material | Material[] }[];
   gray: MeshStandardMaterial;
   outfitMat: MeshStandardMaterial;
@@ -206,6 +209,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     eyeRest: new Vector3(),
     headRestInv: new Matrix4(),
     eyeLocal: new Vector3(),
+    seatDrop: 0,
     meshes,
     gray,
     outfitMat,
@@ -298,6 +302,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
   // the fingers and the hand mesh follow. Poses restore rotation and
   // position only, so this holds.
   for (const side of [1, -1] as const) rig.sides[side].hand.scale.setScalar(tuning.handScale);
+  rig.seatDrop = measureSeatDrop(rig);
   outer.updateMatrixWorld(true);
   updateSkeletons(rig);
   rig.regions = computeRegions(rig);
@@ -475,6 +480,14 @@ export default function RiggedFigure({
   const marks = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
+  const setSeat = useAuditionStore((s) => s.setSeat);
+  const seat = useRef<SeatOffset>({ dy: 0, dz: 0 });
+  const published = useRef<SeatOffset>({ dy: NaN, dz: NaN });
+  useEffect(() => () => setSeat(null), [setSeat]);
+  // The device grip is planned at the destination eye height; the hands
+  // must follow the live eye point through the tween, so the grip is
+  // shifted by the eye's travel each frame.
+  const heldLive = useRef<HeldGrip>({ distanceCm: 0, centerY: 0, wristY: 0, halfGripCm: 0 });
   useEffect(() => {
     eyeRef.current = eyeOffset;
   }, [eyeOffset]);
@@ -547,7 +560,19 @@ export default function RiggedFigure({
       writeReadout(state.clock.elapsedTime, `missing bones: ${rig.missing.join(", ")}`);
       return;
     }
-    const eyeDelta = poseRig(rig, pose, from, to, t, held, eyeRef.current, targets.current, grips.current, marks.current);
+    let h: HeldGrip | null = null;
+    if (held) {
+      const travel = pose.rootY + EYE_LOCAL * pose.scale - (target.rootY + EYE_LOCAL * target.scale);
+      h = Object.assign(heldLive.current, held, { centerY: held.centerY + travel, wristY: held.wristY + travel });
+    }
+    const eyeDelta = poseRig(rig, pose, from, to, t, h, eyeRef.current, targets.current, grips.current, marks.current);
+    if (seatOffset(rig, rig.seatDrop, rig.outer.scale.x, scenario, seat.current)) {
+      const s = seat.current;
+      if (Math.abs(s.dy - published.current.dy) > 0.1 || Math.abs(s.dz - published.current.dz) > 0.1 || Number.isNaN(published.current.dy)) {
+        published.current = { dy: s.dy, dz: s.dz };
+        setSeat(published.current);
+      }
+    }
     writeReadout(
       state.clock.elapsedTime,
       `eye lock lifted the body ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm · ` +

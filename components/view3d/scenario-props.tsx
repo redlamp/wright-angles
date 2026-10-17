@@ -10,6 +10,7 @@ import type { ScenePalette } from "./scene-palette";
 import { SEAT_Y, STAND_DESK_TOP } from "./viewer-figure";
 import { FirefliesProp, KenneyProp, materialsOf, type PropTint } from "./furniture-models";
 import { KEYBOARD_X, MOUSE_X } from "./figure-audition/figure-hands";
+import { useAuditionStore } from "./figure-audition/audition-store";
 
 /** Matches the viewer figure's pose tween so furniture moves in sync. */
 const TWEEN_S = 0.5;
@@ -250,6 +251,10 @@ export default function ScenarioProps({
 
   const reduced = useReducedMotion();
   const active = furnitureFor(scenario, inputType);
+  // A rigged audition figure reports where its seat is; the chair and
+  // sofa move to meet it (the desk and peripherals stay put).
+  const seat = useAuditionStore((s) => s.seat);
+  const seatShift: [number, number, number] = [0, seat?.dy ?? 0, seat?.dz ?? 0];
   const tint = useMemo<PropTint>(
     () => ({ furniture: palette.furniture, soft: palette.soft }),
     [palette.furniture, palette.soft],
@@ -286,11 +291,15 @@ export default function ScenarioProps({
     // useFrame runs before the first paint, so nothing flashes on mount.
     <>
       <group ref={deskRef} userData={ORBIT_BASE}>
-        <DeskChair tint={tint} />
+        <group position={seatShift}>
+          <DeskChair tint={tint} />
+        </group>
         <Desk mats={DESK_MATS} inputType={inputType} />
       </group>
       <group ref={couchRef} userData={ORBIT_BASE}>
-        <Couch tint={tint} />
+        <group position={seatShift}>
+          <Couch tint={tint} />
+        </group>
       </group>
       <group ref={standRef} userData={ORBIT_BASE}>
         <StandingDesk mats={STAND_MATS} inputType={inputType} />
