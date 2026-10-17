@@ -8,9 +8,8 @@ export type FigureLook = "own" | "gray" | "outfit";
 
 /**
  * Dev-only figure audition state. "current" keeps the capsule figure.
- * `anchor` picks what the candidate lines up with: its body on the
- * floor/seat (honest proportions) or its estimated eyes on the eye point
- * the camera uses (honest sight line). `look` is the material: the glTF's
+ * Candidates always hang from the eye point the camera uses (the device
+ * distances are measured from it). `look` is the material: the glTF's
  * own, the scene's figure gray, or per-bone outfit colors. `local` holds
  * the candidates read from the gitignored manifest; not persisted.
  */
@@ -18,14 +17,12 @@ interface AuditionState {
   candidate: string;
   look: FigureLook;
   outfit: string;
-  anchor: "body" | "eyes";
   /** Draw the skeleton and the hand targets over the figure. */
   showRig: boolean;
   local: Candidate[];
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
-  setAnchor: (anchor: "body" | "eyes") => void;
   setShowRig: (showRig: boolean) => void;
   setLocal: (local: Candidate[]) => void;
 }
@@ -36,13 +33,11 @@ export const useAuditionStore = create<AuditionState>()(
       candidate: "current",
       look: "own",
       outfit: "casual",
-      anchor: "body",
       showRig: false,
       local: [],
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
-      setAnchor: (anchor) => set({ anchor }),
       setShowRig: (showRig) => set({ showRig }),
       setLocal: (local) => set({ local }),
     }),
@@ -53,10 +48,9 @@ export const useAuditionStore = create<AuditionState>()(
         candidate: s.candidate,
         look: s.look,
         outfit: s.outfit,
-        anchor: s.anchor,
         showRig: s.showRig,
       }),
-      // v1 stored `gray: boolean`; the defaults cover it.
+      // v1 stored `gray: boolean`, v2 an `anchor`; the defaults cover both.
       migrate: (state) => state as AuditionState,
     },
   ),

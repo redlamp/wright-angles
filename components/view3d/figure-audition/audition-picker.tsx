@@ -17,8 +17,6 @@ export default function AuditionPicker() {
   const setLook = useAuditionStore((s) => s.setLook);
   const outfit = useAuditionStore((s) => s.outfit);
   const setOutfit = useAuditionStore((s) => s.setOutfit);
-  const anchor = useAuditionStore((s) => s.anchor);
-  const setAnchor = useAuditionStore((s) => s.setAnchor);
   const showRig = useAuditionStore((s) => s.showRig);
   const setShowRig = useAuditionStore((s) => s.setShowRig);
   const local = useAuditionStore((s) => s.local);
@@ -98,17 +96,6 @@ export default function AuditionPicker() {
                     {o.label}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-1">
-              Anchor
-              <select
-                className={selectClass}
-                value={anchor}
-                onChange={(e) => setAnchor(e.target.value as "body" | "eyes")}
-              >
-                <option value="body">feet / seat</option>
-                <option value="eyes">eyes</option>
               </select>
             </label>
             <label className="flex items-center gap-1">

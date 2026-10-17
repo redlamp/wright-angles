@@ -35,7 +35,13 @@ export function dominantBone(sk: SkinnedMesh, i: number): Bone | null {
 }
 
 /** Vertical span of the vertices the head bone drives, in the rest pose. */
-export function headSpan(rig: Pick<RegionSource, "meshes" | "head">): { min: number; max: number } | null {
+/**
+ * Vertical span of the head's vertices (chin to crown, world y) and the
+ * face's front: the largest z in the middle of that span, which is the
+ * nose and brow rather than the chin or hair.
+ */
+export function headSpan(rig: Pick<RegionSource, "meshes" | "head">): { min: number; max: number; front: number } | null {
+  const pts: { y: number; z: number }[] = [];
   let min = Infinity;
   let max = -Infinity;
   for (const { mesh } of rig.meshes) {
@@ -45,11 +51,18 @@ export function headSpan(rig: Pick<RegionSource, "meshes" | "head">): { min: num
     for (let i = 0; i < n; i++) {
       if (dominantBone(sk, i) !== rig.head) continue;
       sk.getVertexPosition(i, _v).applyMatrix4(sk.matrixWorld);
+      pts.push({ y: _v.y, z: _v.z });
       if (_v.y < min) min = _v.y;
       if (_v.y > max) max = _v.y;
     }
   }
-  return Number.isFinite(min) && max > min ? { min, max } : null;
+  if (!Number.isFinite(min) || max <= min) return null;
+  const lo = min + (max - min) * 0.35;
+  const hi = min + (max - min) * 0.75;
+  let front = -Infinity;
+  for (const p of pts) if (p.y >= lo && p.y <= hi && p.z > front) front = p.z;
+  if (!Number.isFinite(front)) for (const p of pts) if (p.z > front) front = p.z;
+  return { min, max, front };
 }
 
 /**

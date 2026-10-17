@@ -12,7 +12,6 @@ type RigProps = FigureProps & {
   candidate: Candidate;
   look: FigureLook;
   outfit: string;
-  anchor: "body" | "eyes";
   showRig: boolean;
 };
 
@@ -30,7 +29,6 @@ export default function AuditionFigure(props: FigureProps) {
   const id = useAuditionStore((s) => s.candidate);
   const look = useAuditionStore((s) => s.look);
   const outfit = useAuditionStore((s) => s.outfit);
-  const anchor = useAuditionStore((s) => s.anchor);
   const showRig = useAuditionStore((s) => s.showRig);
   const local = useAuditionStore((s) => s.local);
   const c = findCandidate(id, local);
@@ -43,7 +41,6 @@ export default function AuditionFigure(props: FigureProps) {
         candidate={c}
         look={look}
         outfit={outfit}
-        anchor={anchor}
         showRig={showRig}
       />
     </Suspense>

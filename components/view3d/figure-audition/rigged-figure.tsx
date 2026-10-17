@@ -18,7 +18,7 @@ import { useFrame } from "@react-three/fiber";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { tweenProgress, tweenStep } from "@/lib/motion";
 import { useReducedMotion } from "@/components/use-reduced-motion";
-import type { InputType, Scenario } from "@/stores/viewer-store";
+import { useViewerStore, type InputType, type Scenario } from "@/stores/viewer-store";
 import type { HeldGrip } from "@/lib/viewing-geometry";
 import type { ScenePalette } from "../scene-palette";
 import {
@@ -53,14 +53,21 @@ import ControllerProp from "./controller-prop";
 const AUTHORED_CM = 175;
 /** Eye contract in capsule root-local cm (see viewer-figure). */
 const EYE_LOCAL = 69;
-/** Capsule pelvis root sits this far above the seat plane (viewer-figure). */
-const ROOT_ABOVE_SEAT = 10;
+/** The candidate shown last, across remounts: a switch resets the height. */
+let lastCandidateId: string | null = null;
 /**
- * Eye line as a fraction of the head's own vertex span, chin to crown.
- * Eyes sit at about the middle of the skull on every body type, which
- * beats guessing from where a rig happens to put its head joint.
+ * A model's own height in cm when its units are cm (a child is well under
+ * 120, so the test is wide; the store clamps). Models in meters fall back
+ * to the authored height.
  */
-const EYE_FRACTION_OF_HEAD = 0.55;
+const naturalHeightCm = (rig: Rig) => (rig.height >= 50 && rig.height <= 250 ? Math.round(rig.height) : AUTHORED_CM);
+/**
+ * Eye line as a fraction of stature, the same ratio the viewer store's
+ * eyeHeightCm uses for the standing eye point, so every model's eyes
+ * land where the capsule's do. A model's head-span fraction can override
+ * it through tuning.eyeFraction.
+ */
+const EYE_STATURE = 0.936;
 
 
 interface Rig {
@@ -80,19 +87,22 @@ interface Rig {
   /** Seated: hip joint height above the underside of the thighs. */
   seatDrop: number;
   eyeY: number;
+  /** Eye point in the head bone's local frame (rest pose). */
+  eyeLocal: Vector3;
   meshes: { mesh: Mesh; own: Material | Material[] }[];
   gray: MeshStandardMaterial;
   outfitMat: MeshStandardMaterial;
   regions: MeshRegions[];
-  tuning: Required<RigTuning>;
+  tuning: Tuning;
   missing: string[];
   /** Readout stats: what the model costs. */
   tris: number;
   bones: number;
 }
 
-const DEFAULT_TUNING: Required<RigTuning> = {
-  eyeFraction: EYE_FRACTION_OF_HEAD,
+type Tuning = Required<Omit<RigTuning, "eyeFraction">> & Pick<RigTuning, "eyeFraction">;
+
+const DEFAULT_TUNING: Tuning = {
   palm: "auto",
   reach: 1,
   handScale: 1,
@@ -226,6 +236,7 @@ function buildRig(source: Object3D, c: Candidate): Rig {
     hipJointY: 0,
     seatDrop: 0,
     eyeY: 0,
+    eyeLocal: new Vector3(),
     meshes,
     gray,
     outfitMat,
@@ -253,10 +264,17 @@ function buildRig(source: Object3D, c: Candidate): Rig {
   rig.minY = box.min.y;
   rig.hipJointY = (worldPos(left.upperLeg, _a).y + worldPos(right.upperLeg, _b).y) / 2;
   const span = headSpan(rig);
-  const headY = worldPos(head, _a).y;
-  rig.eyeY = span
-    ? span.min + (span.max - span.min) * tuning.eyeFraction
-    : headY + (box.max.y - headY) * 0.45;
+  rig.eyeY =
+    span && tuning.eyeFraction !== undefined
+      ? span.min + (span.max - span.min) * tuning.eyeFraction
+      : box.min.y + rig.height * EYE_STATURE;
+  // The eyes sit a little behind the brow and nose: the face's front less
+  // an eighth of the head's height. Kept in the head bone's frame so the
+  // posed head reports where they are.
+  worldPos(head, _a);
+  const eyeZ = span ? span.front - (span.max - span.min) * 0.12 : _a.z;
+  rig.eyeLocal.set(_a.x, rig.eyeY, eyeZ);
+  head.worldToLocal(rig.eyeLocal);
 
   model.traverse((o) => {
     const b = o as Bone;
@@ -363,7 +381,6 @@ interface Stance {
 function poseRig(
   rig: Rig,
   p: Pose,
-  anchor: "body" | "eyes",
   from: Stance,
   to: Stance,
   t: number,
@@ -378,31 +395,11 @@ function poseRig(
   const heightCm = p.scale * AUTHORED_CM;
   const k = heightCm / rig.height;
   const eyeContract = p.rootY + EYE_LOCAL * p.scale;
-  const seated = MathUtils.clamp(-p.hipRot / (Math.PI / 2), 0, 1);
-  // Standing: soles on the floor. Seated: thigh roots where the capsule
-  // figure's hip joints are, which puts the seat under the thighs.
-  const seatPlane = p.rootY - ROOT_ABOVE_SEAT * p.scale;
-  const seatY = seatPlane + (rig.seatDrop - rig.hipJointY) * k;
-  const bodyY = MathUtils.lerp(-rig.minY * k, seatY, seated);
-  const y = anchor === "eyes" ? eyeContract - rig.eyeY * k : bodyY;
+  // First placement from the rest-pose eye line; corrected below once the
+  // torso and head are posed, so the eyes end up exactly on the contract.
   rig.outer.scale.setScalar(k);
-  rig.outer.position.set(0, y, 0);
+  rig.outer.position.set(0, eyeContract - rig.eyeY * k, 0);
   rig.outer.updateMatrixWorld(true);
-
-  // Posture tweens with the body so the torso travels between stances.
-  const posture = lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
-  if (rig.pelvis) pitchWorld(rig.pelvis, posture.pelvis);
-  const chain = rig.spine.length ? rig.spine : rig.head.parent && (rig.head.parent as Bone).isBone ? [rig.head.parent as Bone] : [];
-  for (const b of chain) pitchWorld(b, posture.spine / chain.length);
-  let headDeg = posture.head;
-
-  for (const side of [1, -1] as const) {
-    const s = rig.sides[side];
-    aim(rig.segments, s.upperLeg, s.lowerLeg, legDir(p.hipRot, _dir), k);
-    aim(rig.segments, s.lowerLeg, s.foot, legDir(p.hipRot + p.kneeRot, _dir), k);
-    // Feet stay flat whatever the shin does.
-    setWorldQuat(s.foot, s.footRest);
-  }
 
   const hands =
     t >= 1
@@ -412,22 +409,47 @@ function poseRig(
           planHands(to.scenario, to.input, p.rootY, p.scale, held),
           t,
         );
+
+  // Posture tweens with the body so the torso travels between stances.
+  const posture = lerpPosture(POSTURE[from.scenario], POSTURE[to.scenario], t);
+  if (rig.pelvis) pitchWorld(rig.pelvis, posture.pelvis);
+  const chain = rig.spine.length ? rig.spine : rig.head.parent && (rig.head.parent as Bone).isBone ? [rig.head.parent as Bone] : [];
+  for (const b of chain) pitchWorld(b, posture.spine / chain.length);
+  let headDeg = posture.head;
+  if (hands.lookAtHands > 0) {
+    const handY = (hands.left.target.y + hands.right.target.y) / 2;
+    const handZ = Math.max(1, (hands.left.target.z + hands.right.target.z) / 2);
+    const down = MathUtils.radToDeg(Math.atan2(eyeContract - handY, handZ));
+    headDeg += MathUtils.clamp(down, 0, HANDHELD_LOOK_MAX_DEG) * hands.lookAtHands;
+  }
+  pitchWorld(rig.head, headDeg);
+
+  // Eye lock. The device distances are measured from the eye point, so
+  // the posed eyes go exactly there, in height and depth, and the body
+  // hangs from them: feet and seat land where the proportions put them.
+  rig.outer.updateMatrixWorld(true);
+  rig.head.localToWorld(_a.copy(rig.eyeLocal));
+  const lift = eyeContract - _a.y;
+  rig.outer.position.x -= _a.x;
+  rig.outer.position.y += lift;
+  rig.outer.position.z -= _a.z;
+  rig.outer.updateMatrixWorld(true);
+
+  for (const side of [1, -1] as const) {
+    const s = rig.sides[side];
+    aim(rig.segments, s.upperLeg, s.lowerLeg, legDir(p.hipRot, _dir), k);
+    aim(rig.segments, s.lowerLeg, s.foot, legDir(p.hipRot + p.kneeRot, _dir), k);
+    // Feet stay flat whatever the shin does.
+    setWorldQuat(s.foot, s.footRest);
+  }
+
   poseArm(rig.segments, rig.sides[1], 1, hands.left, k, rig.tuning.reach, hands.shoulderDropDeg);
   poseArm(rig.segments, rig.sides[-1], -1, hands.right, k, rig.tuning.reach, hands.shoulderDropDeg);
   targetsOut[0].set(hands.left.target.x, hands.left.target.y, hands.left.target.z);
   targetsOut[1].set(hands.right.target.x, hands.right.target.y, hands.right.target.z);
   gripPoint(rig.sides[1], gripsOut[0]);
   gripPoint(rig.sides[-1], gripsOut[1]);
-
-  if (hands.lookAtHands > 0) {
-    const eyeWorldY = y + rig.eyeY * k;
-    const handY = (hands.left.target.y + hands.right.target.y) / 2;
-    const handZ = Math.max(1, (hands.left.target.z + hands.right.target.z) / 2);
-    const down = MathUtils.radToDeg(Math.atan2(eyeWorldY - handY, handZ));
-    headDeg += MathUtils.clamp(down, 0, HANDHELD_LOOK_MAX_DEG) * hands.lookAtHands;
-  }
-  pitchWorld(rig.head, headDeg);
-  return y + rig.eyeY * k - eyeContract;
+  return lift;
 }
 
 let lastReadout = 0;
@@ -454,7 +476,6 @@ export default function RiggedFigure({
   held = null,
   look,
   outfit,
-  anchor,
   showRig = false,
 }: {
   /** Loaded scene; cloned, never mutated. */
@@ -467,10 +488,16 @@ export default function RiggedFigure({
   held?: HeldGrip | null;
   look: FigureLook;
   outfit: string;
-  anchor: "body" | "eyes";
   showRig?: boolean;
 }) {
   const rig = useMemo(() => buildRig(source, candidate), [source, candidate]);
+  // Switching models resets the height to the model's own, so each is
+  // seen at the size it was built at rather than stretched to the last.
+  const setHeightCm = useViewerStore((s) => s.setHeightCm);
+  useEffect(() => {
+    if (lastCandidateId !== null && lastCandidateId !== candidate.id) setHeightCm(naturalHeightCm(rig));
+    lastCandidateId = candidate.id;
+  }, [candidate.id, rig, setHeightCm]);
   const targets = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   const grips = useRef<Vector3[]>([new Vector3(), new Vector3()]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
@@ -542,10 +569,10 @@ export default function RiggedFigure({
       writeReadout(state.clock.elapsedTime, `missing bones: ${rig.missing.join(", ")}`);
       return;
     }
-    const eyeDelta = poseRig(rig, pose, anchor, from, to, t, held, targets.current, grips.current);
+    const eyeDelta = poseRig(rig, pose, from, to, t, held, targets.current, grips.current);
     writeReadout(
       state.clock.elapsedTime,
-      `eyes ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm vs eye point · ` +
+      `eye lock lifted the body ${eyeDelta >= 0 ? "+" : ""}${eyeDelta.toFixed(1)} cm · ` +
         `${Math.round(rig.tris).toLocaleString()} tris · ${rig.bones} bones` +
         (rig.sides[1].thumb ? " · palm from thumb" : " · palm from tuning") +
         (controllerBlend.current > 0.5 ? ` · grips ${grips.current[0].distanceTo(grips.current[1]).toFixed(1)} cm apart` : ""),
