@@ -34,6 +34,7 @@ export default function AuditionPicker() {
   const handFit = useMemo(() => normalizeFit(rawFit), [rawFit]);
   const tPose = useAuditionStore((s) => s.tPose);
   const setTPose = useAuditionStore((s) => s.setTPose);
+  const requestFocusWrist = useAuditionStore((s) => s.requestFocusWrist);
   const setHandFit = useAuditionStore((s) => s.setHandFit);
   useEffect(() => {
     let alive = true;
@@ -332,6 +333,51 @@ export default function AuditionPicker() {
                 <button type="button" className="underline" onClick={() => setHandFit(c.id, DEFAULT_HAND_FIT)}>
                   reset
                 </button>
+              </div>
+              <div className={`flex items-center gap-2 ${swapHands ? "" : "pointer-events-none opacity-40"}`}>
+                <label className="flex items-center gap-1">
+                  rot X
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={0.5}
+                    value={handFit.rotX}
+                    onChange={(e) => setHandFit(c.id, { ...handFit, rotX: Number(e.target.value) })}
+                    className="w-14"
+                  />
+                  <span className="w-8 text-right tabular-nums">{handFit.rotX.toFixed(1)}</span>
+                </label>
+                <label className="flex items-center gap-1">
+                  Y
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={0.5}
+                    value={handFit.rotY}
+                    onChange={(e) => setHandFit(c.id, { ...handFit, rotY: Number(e.target.value) })}
+                    className="w-14"
+                  />
+                  <span className="w-8 text-right tabular-nums">{handFit.rotY.toFixed(1)}</span>
+                </label>
+                <label className="flex items-center gap-1">
+                  Z
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={0.5}
+                    value={handFit.rotZ}
+                    onChange={(e) => setHandFit(c.id, { ...handFit, rotZ: Number(e.target.value) })}
+                    className="w-14"
+                  />
+                  <span className="w-8 text-right tabular-nums">{handFit.rotZ.toFixed(1)}</span>
+                </label>
+                <button type="button" className="underline" onClick={() => requestFocusWrist()}>
+                  focus wrist
+                </button>
+                <span className="text-muted-foreground">T-pose shows a gizmo on the left hand</span>
               </div>
             </>
           ) : null}

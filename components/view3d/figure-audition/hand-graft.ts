@@ -1,6 +1,8 @@
 import {
   Color,
+  Euler,
   Group,
+  MathUtils,
   Matrix4,
   MeshStandardMaterial,
   Quaternion,
@@ -50,6 +52,9 @@ export interface HandGraft {
   k: number;
   /** Live per-model adjustments. */
   fit: HandFit;
+  /** The aligned wrist frame this frame, before the fit's slides and rotation: where a gizmo sits. */
+  anchorPos: Vector3;
+  anchorQ: Quaternion;
   /** The overlap below the wrist and what it should flare to: figure forearm end radius (model units) over the stub's own radius (cm). */
   stub: Bone | null;
   flare: { figureUnits: number; assetCm: number } | null;
@@ -76,8 +81,12 @@ export interface HandFit {
   slideX: number;
   slideY: number;
   slideZ: number;
+  /** Rotation in the aligned frame, degrees: about the fingers (roll), the palm normal (yaw) and across the wrist (pitch). */
+  rotX: number;
+  rotY: number;
+  rotZ: number;
 }
-export const DEFAULT_HAND_FIT: HandFit = { size: 1, flareX: 1, flareY: 1, slideX: 0, slideY: 0, slideZ: 0 };
+export const DEFAULT_HAND_FIT: HandFit = { size: 1, flareX: 1, flareY: 1, slideX: 0, slideY: 0, slideZ: 0, rotX: 0, rotY: 0, rotZ: 0 };
 
 /** Accepts fits saved under the earlier shape (one flare, one slide). */
 export function normalizeFit(raw: Partial<HandFit> & { flare?: number; slide?: number } | undefined): HandFit {
@@ -89,6 +98,9 @@ export function normalizeFit(raw: Partial<HandFit> & { flare?: number; slide?: n
     slideX: raw.slideX ?? 0,
     slideY: raw.slideY ?? 0,
     slideZ: raw.slideZ ?? raw.slide ?? 0,
+    rotX: raw.rotX ?? 0,
+    rotY: raw.rotY ?? 0,
+    rotZ: raw.rotZ ?? 0,
   };
 }
 
@@ -102,6 +114,8 @@ const _a = new Vector3();
 const _b = new Vector3();
 const _c = new Vector3();
 const _q = new Quaternion();
+const _qf = new Quaternion();
+const _e = new Euler();
 const _m = new Matrix4();
 
 const findBone = (root: Object3D, re: RegExp): Bone | null => {
@@ -176,6 +190,8 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
     scale: 1,
     k: 1,
     fit: DEFAULT_HAND_FIT,
+    anchorPos: new Vector3(),
+    anchorQ: new Quaternion(),
     stub: findBone(scene, /^stub/i),
     flare: null,
     length: null,
@@ -183,11 +199,24 @@ export function buildGraft(source: Object3D, side: 1 | -1, fingerDirLocal: Vecto
   };
 }
 
-/** Put the graft's wrist on the figure's hand bone, oriented like it. */
-export function placeGraft(g: HandGraft, hand: Bone) {
+/**
+ * Put the graft's wrist on the figure's hand bone, oriented like it, then
+ * apply the per-model fit. Slides and rotations are in the aligned frame
+ * (x fingers, y palm normal, z across); the across slide and the roll and
+ * yaw mirror for the right hand so one fit serves both.
+ */
+export function placeGraft(g: HandGraft, hand: Bone, side: 1 | -1 = 1) {
   // Curls are applied fresh each frame on top of the rest pose.
   for (const [b, q] of g.rest) b.quaternion.copy(q);
   hand.getWorldQuaternion(_q).multiply(g.align);
+  g.anchorQ.copy(_q);
+  hand.getWorldPosition(g.anchorPos);
+  const m = side === -1 ? -1 : 1;
+  const f = g.fit;
+  if (f.rotX || f.rotY || f.rotZ) {
+    _qf.setFromEuler(_e.set(MathUtils.degToRad(f.rotX * m), MathUtils.degToRad(f.rotY * m), MathUtils.degToRad(f.rotZ), "XYZ"));
+    _q.multiply(_qf);
+  }
   // Drive the armature so that its root bone (rest transform rootRestP,
   // rootRestQ under it) lands on the hand bone.
   g.armature.quaternion.copy(_q).multiply(g.rootRestQ.clone().invert());
@@ -199,11 +228,11 @@ export function placeGraft(g: HandGraft, hand: Bone) {
     const clamp = (v: number) => Math.min(3, Math.max(0.5, v));
     g.stub.scale.set(clamp(f * g.fit.flareX), 1, clamp(f * g.fit.flareY));
   }
-  hand.getWorldPosition(_a);
-  // Slide in the aligned hand frame: x along the fingers (the arm), y along the palm normal, z across the wrist.
-  if (g.fit.slideZ) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(_q), g.fit.slideZ);
-  if (g.fit.slideY) _a.addScaledVector(_c.set(0, 1, 0).applyQuaternion(_q), g.fit.slideY);
-  if (g.fit.slideX) _a.addScaledVector(_c.set(0, 0, 1).applyQuaternion(_q), g.fit.slideX);
+  _a.copy(g.anchorPos);
+  // Slide in the aligned hand frame (before the fit rotation): x along the fingers, y along the palm normal, z across the wrist.
+  if (f.slideZ) _a.addScaledVector(_c.set(1, 0, 0).applyQuaternion(g.anchorQ), f.slideZ);
+  if (f.slideY) _a.addScaledVector(_c.set(0, 1, 0).applyQuaternion(g.anchorQ), f.slideY);
+  if (f.slideX) _a.addScaledVector(_c.set(0, 0, 1).applyQuaternion(g.anchorQ), f.slideX * m);
   _b.copy(g.rootRestP).multiplyScalar(g.scale).applyQuaternion(g.armature.quaternion);
   g.armature.position.copy(_a).sub(_b);
   g.group.updateMatrixWorld(true);

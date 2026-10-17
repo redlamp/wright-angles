@@ -54,6 +54,7 @@ import {
   worldPos,
 } from "./rig-math";
 import ControllerProp from "./controller-prop";
+import HandGizmo, { WristFocus } from "./hand-gizmo";
 
 /** Height the capsule figure's pose numbers are authored at. */
 const AUTHORED_CM = 175;
@@ -466,14 +467,14 @@ export default function RiggedFigure({
   useEffect(() => {
     if (candidateSwitched(candidate.id)) setHeightCm(naturalHeightCm(rig.height, AUTHORED_CM));
   }, [candidate.id, rig, setHeightCm]);
-  const targets = useRef<Vector3[]>([new Vector3(), new Vector3()]);
-  const grips = useRef<Vector3[]>([new Vector3(), new Vector3()]);
-  const marks = useRef<Vector3[]>([new Vector3(), new Vector3()]);
+  const pair = () => [new Vector3(), new Vector3()];
+  const [targets, grips, marks] = [useRef<Vector3[]>(pair()), useRef<Vector3[]>(pair()), useRef<Vector3[]>(pair())];
   const eyeOffset = useAuditionStore((s) => s.eyeOffsets[candidate.id]) ?? NO_EYE_OFFSET;
   const eyeRef = useRef<EyeOffset>(NO_EYE_OFFSET);
   const rawFit = useAuditionStore((s) => s.handFits[candidate.id]);
   const handFit = useMemo(() => normalizeFit(rawFit), [rawFit]);
   const tPose = useAuditionStore((s) => s.tPose);
+  const setHandFit = useAuditionStore((s) => s.setHandFit);
   const tPoseRef = useRef(false);
   useEffect(() => void (tPoseRef.current = tPose), [tPose]);
   const handFitRef = useRef<HandFit>(DEFAULT_HAND_FIT);
@@ -489,10 +490,8 @@ export default function RiggedFigure({
   useEffect(() => void (eyeRef.current = eyeOffset), [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
-  useEffect(() => {
-    applySkin(rig.sides, rig.meshes, texture);
-    setGraftLook(rig.sides, look, palette.figure, outfitById(outfit)?.skin);
-  }, [rig, texture, look, outfit, palette]);
+  // prettier-ignore
+  useEffect(() => { applySkin(rig.sides, rig.meshes, texture); setGraftLook(rig.sides, look, palette.figure, outfitById(outfit)?.skin); }, [rig, texture, look, outfit, palette]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
   }, [rig, candidate.id]);
@@ -589,6 +588,8 @@ export default function RiggedFigure({
     <>
       <primitive object={rig.outer} userData={{ orbitPivot: "base" }} />
       <primitive object={rig.grafts} />
+      <WristFocus graft={rig.sides[1].graft} hand={rig.sides[1].hand} />
+      {tPose && rig.sides[1].graft ? <HandGizmo graft={rig.sides[1].graft} fit={handFit} onChange={(f) => setHandFit(candidate.id, f)} /> : null}
       {showRig && !rig.missing.length ? <RigOverlay root={rig.outer} grafts={rig.grafts} targets={targets} marks={marks} /> : null}
       {!rig.missing.length ? <ControllerProp grips={grips} blend={controllerBlend} /> : null}
     </>

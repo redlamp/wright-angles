@@ -138,7 +138,7 @@ export function poseArm(
     fingers();
   }
   // A grafted hand rides the posed hand bone; its fingers curl below.
-  if (s.graft) placeGraft(s.graft, s.hand);
+  if (s.graft) placeGraft(s.graft, s.hand, side);
   curlDigits(s, plan);
 }
 
@@ -235,7 +235,7 @@ export function restHands(
     const i = side === 1 ? 0 : 1;
     if (s.graft) {
       s.graft.scale = graftScale(s.graft, heightCm, k, handScale, fit);
-      placeGraft(s.graft, s.hand);
+      placeGraft(s.graft, s.hand, side);
     }
     gripPoint(s, gripsOut[i]);
     targetsOut[i].copy(gripsOut[i]);

@@ -43,6 +43,8 @@ interface AuditionState {
   handFits: Record<string, HandFit>;
   /** Show the rest pose (arms out) with the grafts attached, for fitting hands. Not persisted. */
   tPose: boolean;
+  /** Bumped to snap the camera onto the left wrist. Not persisted. */
+  focusWrist: number;
   setCandidate: (id: string) => void;
   setLook: (look: FigureLook) => void;
   setOutfit: (id: string) => void;
@@ -55,6 +57,7 @@ interface AuditionState {
   setSwapHands: (swapHands: boolean) => void;
   setHandFit: (id: string, fit: HandFit) => void;
   setTPose: (tPose: boolean) => void;
+  requestFocusWrist: () => void;
 }
 
 export const useAuditionStore = create<AuditionState>()(
@@ -72,6 +75,7 @@ export const useAuditionStore = create<AuditionState>()(
       swapHands: true,
       handFits: {},
       tPose: false,
+      focusWrist: 0,
       setCandidate: (candidate) => set({ candidate }),
       setLook: (look) => set({ look }),
       setOutfit: (outfit) => set({ outfit }),
@@ -84,6 +88,7 @@ export const useAuditionStore = create<AuditionState>()(
       setSwapHands: (swapHands) => set({ swapHands }),
       setHandFit: (id, fit) => set((s) => ({ handFits: { ...s.handFits, [id]: fit } })),
       setTPose: (tPose) => set({ tPose }),
+      requestFocusWrist: () => set((s) => ({ focusWrist: s.focusWrist + 1 })),
     }),
     {
       name: "wright-angles:figure-audition",
