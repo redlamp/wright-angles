@@ -40,7 +40,7 @@ const FIGURE_MAT = new MeshStandardMaterial({
 });
 
 /** Seconds for the transition fade (quicker than the camera flight). */
-const FADE_S = 0.25;
+export const FADE_S = 0.25;
 
 /**
  * Camera-to-head distance under which the figure hides. The 2D↔3D
@@ -49,7 +49,7 @@ const FADE_S = 0.25;
  * moment the camera clears the head in either direction — and also
  * hides it if the user orbits into it.
  */
-const HEAD_CLEAR_CM = 45;
+export const HEAD_CLEAR_CM = 45;
 
 /** Module-level so the react-compiler lint permits the mutation. */
 function applyFigureOpacity(root: Group | null, opacity: number) {
@@ -71,11 +71,11 @@ const SHOULDER_Y = 47;
 const UPPER = 26; // shoulder→elbow
 const FORE = 22; // elbow→wrist
 
-const TWEEN_S = 0.5;
-const easeInOutCubic = (t: number) =>
+export const TWEEN_S = 0.5;
+export const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-interface Vec3Like {
+export interface Vec3Like {
   x: number;
   y: number;
   z: number;
@@ -86,7 +86,7 @@ interface Vec3Like {
  * are world units; everything else is root-local authored cm. Wrist/pole
  * are for the right arm; x mirrors for the left.
  */
-interface Pose {
+export interface Pose {
   scale: number;
   rootY: number;
   torsoZ: number;
@@ -109,7 +109,7 @@ interface Pose {
  * above the seat plane. The scenario sets the body (legs/torso/root); the
  * input type sets the arms — every scenario × input combination is valid.
  */
-function makePose(
+export function makePose(
   scenario: Scenario,
   input: InputType,
   heightCm: number,
@@ -217,7 +217,7 @@ const lerpV = (a: Vec3Like, b: Vec3Like, t: number): Vec3Like => ({
   z: lerp(a.z, b.z, t),
 });
 
-function lerpPose(a: Pose, b: Pose, t: number): Pose {
+export function lerpPose(a: Pose, b: Pose, t: number): Pose {
   return {
     scale: lerp(a.scale, b.scale, t),
     rootY: lerp(a.rootY, b.rootY, t),
