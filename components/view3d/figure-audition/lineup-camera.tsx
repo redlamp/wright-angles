@@ -8,7 +8,7 @@ import type { Vector3 } from "three";
 export const SPACING = 90;
 export const ROW_H = 250;
 /** Height of the lineup's overlaid header, px. */
-const HEADER_PX = 76;
+const HEADER_PX = 100;
 
 type OrthoCam = {
   zoom: number;

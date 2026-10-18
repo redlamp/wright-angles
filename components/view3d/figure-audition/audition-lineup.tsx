@@ -139,6 +139,14 @@ export default function AuditionLineup({
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
         onClose();
+        return;
+      }
+      // P toggles paint mode (not while typing in a field).
+      const t = e.target as HTMLElement | null;
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA");
+      if ((e.key === "p" || e.key === "P") && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.stopImmediatePropagation();
+        useBrush.getState().set({ on: !useBrush.getState().on });
       }
     };
     window.addEventListener("keydown", onKey, true);
@@ -279,7 +287,8 @@ export default function AuditionLineup({
         className="absolute inset-0 overflow-hidden"
       >
         {host ? (
-          <Canvas eventSource={host} dpr={[1, 2]}>
+          // flat: no tone mapping, so a painted facet shows the picked color exactly (with Lighting off).
+          <Canvas eventSource={host} dpr={[1, 2]} flat>
             <OrthographicCamera
               makeDefault
               position={[0, 0, 3000]}
