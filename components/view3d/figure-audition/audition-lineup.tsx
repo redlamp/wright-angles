@@ -110,6 +110,7 @@ export default function AuditionLineup({
     input: "keyboard",
   });
   const [fit, setFit] = useState(0);
+  const [lit, setLit] = useState(true);
   const [hidden, setHidden] = useState<Set<string>>(() => {
     if (!packs) return new Set();
     const groups = new Set(local.map((c) => c.group ?? "Local"));
@@ -144,10 +145,7 @@ export default function AuditionLineup({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  const pick = (id: string) => {
-    setCandidate(id);
-    onClose();
-  };
+  const pick = (id: string) => setCandidate(id);
   const setPacks = (next: Set<string>) => {
     setHidden(next);
     setFit((n) => n + 1);
@@ -158,112 +156,128 @@ export default function AuditionLineup({
   return (
     <div
       data-chrome
-      className="fixed inset-0 z-50 flex flex-col bg-[oklch(0.16_0_0)] font-mono text-xs text-muted-foreground"
+      className="fixed inset-0 z-50 bg-[oklch(0.16_0_0)] font-mono text-xs text-muted-foreground"
     >
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2">
-        <span className="text-foreground">
-          Lineup: {count} of {local.length} figures
-        </span>
-        <PacksMenu
-          groups={rows.map(([g, items]) => [g, items.length])}
-          hidden={hidden}
-          onChange={setPacks}
-          className={selectClass}
-        />
-        <label className="flex items-center gap-1">
-          Pose
-          <select
+      <div className="absolute inset-x-0 top-0 z-10 flex flex-col gap-1.5 border-b border-border bg-[oklch(0.16_0_0)]/90 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-foreground">
+            Lineup: {count} of {local.length} figures
+          </span>
+          <PacksMenu
+            groups={rows.map(([g, items]) => [g, items.length])}
+            hidden={hidden}
+            onChange={setPacks}
             className={selectClass}
-            value={stance.scenario}
-            onChange={(e) =>
-              setStance((s) => ({
-                ...s,
-                scenario: e.target.value as Stance["scenario"],
-              }))
-            }
+          />
+          <label className="flex items-center gap-1">
+            Pose
+            <select
+              className={selectClass}
+              value={stance.scenario}
+              onChange={(e) =>
+                setStance((s) => ({
+                  ...s,
+                  scenario: e.target.value as Stance["scenario"],
+                }))
+              }
+            >
+              {SCENARIOS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            Input
+            <select
+              className={selectClass}
+              value={stance.input}
+              onChange={(e) =>
+                setStance((s) => ({
+                  ...s,
+                  input: e.target.value as Stance["input"],
+                }))
+              }
+            >
+              {INPUTS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            Camera
+            <select
+              className={selectClass}
+              value={TURNS.some((t) => t.deg === turn) ? turn : "custom"}
+              onChange={(e) => setTurn(Number(e.target.value))}
+            >
+              {TURNS.some((t) => t.deg === turn) ? null : (
+                <option value="custom">{`Dragged (${((turn % 360) + 360) % 360} deg)`}</option>
+              )}
+              {TURNS.map((t) => (
+                <option key={t.label} value={t.deg}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            Palette
+            <select
+              className={selectClass}
+              value={palette}
+              onChange={(e) => setPalette(e.target.value)}
+            >
+              <option value="">model default</option>
+              {palettes.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className={`px-2 ${selectClass}`}
+            onClick={() => setFit((n) => n + 1)}
           >
-            {SCENARIOS.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1">
-          Input
-          <select
-            className={selectClass}
-            value={stance.input}
-            onChange={(e) =>
-              setStance((s) => ({
-                ...s,
-                input: e.target.value as Stance["input"],
-              }))
-            }
+            Fit
+          </button>
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={lit}
+              onChange={(e) => setLit(e.target.checked)}
+            />
+            Lighting
+          </label>
+          <span className="ml-auto text-foreground">
+            {hover ? local.find((c) => c.id === hover)?.label : ""}
+          </span>
+          <button
+            type="button"
+            className={`px-2 ${selectClass}`}
+            onClick={onClose}
           >
-            {INPUTS.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1">
-          Camera
-          <select
-            className={selectClass}
-            value={TURNS.some((t) => t.deg === turn) ? turn : "custom"}
-            onChange={(e) => setTurn(Number(e.target.value))}
-          >
-            {TURNS.some((t) => t.deg === turn) ? null : (
-              <option value="custom">{`Dragged (${((turn % 360) + 360) % 360} deg)`}</option>
-            )}
-            {TURNS.map((t) => (
-              <option key={t.label} value={t.deg}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1">
-          Palette
-          <select
-            className={selectClass}
-            value={palette}
-            onChange={(e) => setPalette(e.target.value)}
-          >
-            <option value="">model default</option>
-            {palettes.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className={`px-2 ${selectClass}`}
-          onClick={() => setFit((n) => n + 1)}
-        >
-          Fit
-        </button>
-        <PaintBar className={selectClass} />
-        <span>
-          drag to pan · drag a figure to turn them all · scroll to zoom ·
-          Ctrl+scroll to scroll (Shift for sideways) · click a figure to use it
-        </span>
-        <span className="ml-auto text-foreground">
-          {hover ? local.find((c) => c.id === hover)?.label : ""}
-        </span>
-        <button
-          type="button"
-          className={`px-2 ${selectClass}`}
-          onClick={onClose}
-        >
-          Close (Esc)
-        </button>
+            Close (Esc)
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <PaintBar className={selectClass} />
+          <span>
+            drag to pan · drag a figure to turn them all · scroll to zoom ·
+            Ctrl+scroll to scroll (Shift sideways) · click a figure to select it
+          </span>
+        </div>
       </div>
-      <div ref={setHost} className="relative flex-1 overflow-hidden">
+      <div
+        ref={setHost}
+        data-lineup-host
+        className="absolute inset-0 overflow-hidden"
+      >
         {host ? (
           <Canvas eventSource={host} dpr={[1, 2]}>
             <OrthographicCamera
@@ -273,8 +287,15 @@ export default function AuditionLineup({
               far={10000}
             />
             <color attach="background" args={["#1e1e20"]} />
-            <hemisphereLight args={["#ffffff", "#444444", 1.6]} />
-            <directionalLight position={[300, 800, 900]} intensity={1.8} />
+            {lit ? (
+              <>
+                <hemisphereLight args={["#ffffff", "#444444", 1.6]} />
+                <directionalLight position={[300, 800, 900]} intensity={1.8} />
+              </>
+            ) : (
+              // Unlit: an even ambient at pi shows each swatch at its exact color.
+              <ambientLight intensity={Math.PI} />
+            )}
             <OrbitControls
               makeDefault
               enableRotate={false}
@@ -465,7 +486,7 @@ function LineupFigure({
       </group>
       {paletteUrl ? <Palette rig={rig} url={paletteUrl} /> : null}
       {selected || hovered ? (
-        <mesh position={[0, 0, 32]}>
+        <mesh position={[0, -8, 32]}>
           <boxGeometry args={[60, 4, 4]} />
           <meshBasicMaterial color={selected ? "#22d3ee" : "#ffffff"} />
         </mesh>

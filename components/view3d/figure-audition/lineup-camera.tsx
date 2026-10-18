@@ -7,6 +7,8 @@ import type { Vector3 } from "three";
 /** Centimeters between figures in a row, and between rows (one row per pack, stacked like shelves). */
 export const SPACING = 90;
 export const ROW_H = 250;
+/** Height of the lineup's overlaid header, px. */
+const HEADER_PX = 76;
 
 type OrthoCam = {
   zoom: number;
@@ -60,14 +62,10 @@ export function Framer({
     const w = (wd + 3) * SPACING;
     const h = n * ROW_H + 60;
     const cx = ((wd - 1) * SPACING) / 2 - SPACING / 2;
-    const cy = -((n - 1) * ROW_H) / 2 + 90;
-    aim(
-      camera as unknown as OrthoCam,
-      controls,
-      cx,
-      cy,
-      Math.min(size.width / w, size.height / h),
-    );
+    // The header overlays the top HEADER_PX of the canvas: fit below it.
+    const zoom = Math.min(size.width / w, (size.height - HEADER_PX) / h);
+    const cy = -((n - 1) * ROW_H) / 2 + 90 + HEADER_PX / 2 / zoom;
+    aim(camera as unknown as OrthoCam, controls, cx, cy, zoom);
     invalidate();
   }, [fit, controls, get]);
   return null;
@@ -82,9 +80,10 @@ export function CtrlScroll() {
   const get = useThree((s) => s.get);
   useEffect(() => {
     const el = get().gl.domElement.parentElement;
+    const host = el?.closest("[data-lineup-host]") ?? el;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
+      if (!e.ctrlKey || !host || !host.contains(e.target as Node)) return;
       e.preventDefault();
       e.stopPropagation();
       const { camera, controls, invalidate } = get();
@@ -105,8 +104,13 @@ export function CtrlScroll() {
       }
       invalidate();
     };
-    el.addEventListener("wheel", onWheel, { capture: true, passive: false });
-    return () => el.removeEventListener("wheel", onWheel, { capture: true });
+    // Window capture runs before the orbit controls (on the host) and lets preventDefault stop the browser zoom.
+    window.addEventListener("wheel", onWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () =>
+      window.removeEventListener("wheel", onWheel, { capture: true });
   }, [get]);
   return null;
 }
