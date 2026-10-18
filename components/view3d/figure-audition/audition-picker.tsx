@@ -117,11 +117,45 @@ export default function AuditionPicker() {
   }, []);
   const selectClass =
     "rounded border border-border bg-background px-1 text-foreground";
-  const [lineup, setLineup] = useState(false);
+  const [lineup, setLineupState] = useState(false);
+  // ?lineup opens the lineup on load; ?lineup=Disco,City limits it to packs whose names contain those words.
+  // Opening and closing keep the address bar in step, so a reload returns to the same place.
+  const [lineupPacks, setLineupPacks] = useState<string[] | null>(null);
+  const setLineup = (open: boolean) => {
+    setLineupState(open);
+    const url = new URL(window.location.href);
+    if (open) {
+      if (!url.searchParams.has("lineup")) url.searchParams.set("lineup", "");
+    } else url.searchParams.delete("lineup");
+    window.history.replaceState(
+      null,
+      "",
+      url
+        .toString()
+        .replace("lineup=&", "lineup&")
+        .replace(/lineup=$/, "lineup"),
+    );
+  };
+  const urlChecked = useRef(false);
+  useEffect(() => {
+    if (urlChecked.current || !local.length) return;
+    urlChecked.current = true;
+    const v = new URLSearchParams(window.location.search).get("lineup");
+    if (v === null) return;
+    const words = v
+      .split(",")
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time read of the URL once the manifest is in
+    setLineupPacks(words.length ? words : null);
+    setLineupState(true);
+  }, [local]);
 
   return (
     <>
-      {lineup ? <AuditionLineup onClose={() => setLineup(false)} /> : null}
+      {lineup ? (
+        <AuditionLineup onClose={() => setLineup(false)} packs={lineupPacks} />
+      ) : null}
       <div
         data-chrome
         className="panel-frame absolute bottom-28 left-3 z-10 flex w-fit max-w-[min(92vw,46rem)] flex-col gap-1.5 whitespace-nowrap rounded-md border border-border p-2 font-mono text-xs text-muted-foreground"

@@ -51,7 +51,14 @@ const TURNS = [
  * Fit frames everything shown. Clicking a figure selects it in the main
  * view and closes the lineup; Escape closes.
  */
-export default function AuditionLineup({ onClose }: { onClose: () => void }) {
+export default function AuditionLineup({
+  onClose,
+  packs = null,
+}: {
+  onClose: () => void;
+  /** Show only packs whose names contain one of these words (lower case); null shows all. */
+  packs?: string[] | null;
+}) {
   const local = useAuditionStore((s) => s.local);
   const candidate = useAuditionStore((s) => s.candidate);
   const setCandidate = useAuditionStore((s) => s.setCandidate);
@@ -95,7 +102,15 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
     input: "keyboard",
   });
   const [fit, setFit] = useState(0);
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    if (!packs) return new Set();
+    const groups = new Set(local.map((c) => c.group ?? "Local"));
+    return new Set(
+      [...groups].filter(
+        (g) => !packs.some((w) => g.toLowerCase().includes(w)),
+      ),
+    );
+  });
   // The canvas mounts once its container exists, so pointer events attach to a real element.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
 
