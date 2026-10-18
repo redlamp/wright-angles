@@ -143,8 +143,18 @@ export default function AuditionLineup({
       }
       // P toggles paint mode (not while typing in a field).
       const t = e.target as HTMLElement | null;
-      const typing = t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA");
-      if ((e.key === "p" || e.key === "P") && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const typing =
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "SELECT" ||
+          t.tagName === "TEXTAREA");
+      if (
+        (e.key === "p" || e.key === "P") &&
+        !typing &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
         e.stopImmediatePropagation();
         useBrush.getState().set({ on: !useBrush.getState().on });
       }
@@ -276,8 +286,9 @@ export default function AuditionLineup({
         <div className="flex flex-wrap items-center gap-3">
           <PaintBar className={selectClass} />
           <span>
-            drag to pan · drag a figure to turn them all · scroll to zoom ·
-            Ctrl+scroll to scroll (Shift sideways) · click a figure to select it
+            drag to pan · drag a figure to turn them all (Ctrl+drag while
+            painting) · scroll to zoom · Ctrl+scroll to scroll (Shift sideways)
+            · click a figure to select it
           </span>
         </div>
       </div>
@@ -466,7 +477,8 @@ function LineupFigure({
           onPointerDown={(e: ThreeEvent<PointerEvent>) => {
             if (e.button !== 0) return;
             e.stopPropagation();
-            if (painting()) {
+            if (painting() && !e.nativeEvent.ctrlKey) {
+              // Ctrl+drag turns the figures even while painting
               // Paint: hold the pan still for the stroke, color what is under the brush.
               useBrush.getState().startStroke();
               setPaused(controls, true);
@@ -481,7 +493,8 @@ function LineupFigure({
             onSpin(e.clientX, controls); // left-drag on a figure turns them all
           }}
           onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-            if (!(e.buttons & 1) || !painting()) return;
+            if (!(e.buttons & 1) || !painting() || e.nativeEvent.ctrlKey)
+              return; // Ctrl held: turning, not painting
             e.stopPropagation();
             brush(e);
           }}
