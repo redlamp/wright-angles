@@ -36,6 +36,7 @@ import { candidateSwitched, naturalHeightCm, type Candidate, type RigTuning, typ
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type EyeOffset, type FigureLook } from "./audition-store";
 import { applyOutfit, assignPalette, computeRegions, headSpan, type MeshRegions } from "./figure-regions";
 import RigOverlay from "./rig-overlay";
+import { applyPaint, isPaintable, usePaintStore } from "./figure-paint";
 import { HANDHELD_LOOK_MAX_DEG, POSTURE, frameHands, lerpPosture } from "./figure-hands";
 import { fitHand, gripPoint, poseArm, restHands, type SideRig } from "./rig-arms";
 import { measureSeatDrop, seatOffset, type SeatOffset } from "./figure-seat";
@@ -458,6 +459,8 @@ export default function RiggedFigure({
   useEffect(() => void (eyeRef.current = eyeOffset), [eyeOffset]);
   useEffect(() => setLook(rig, look, palette.figure, outfit), [rig, look, outfit, palette]);
   useEffect(() => assignPalette(rig.meshes, texture), [rig, texture]);
+  const paint = usePaintStore((s) => s.paints[candidate.id]);
+  useEffect(() => void (isPaintable(candidate) && applyPaint(rig.meshes, paint)), [rig, paint, candidate]);
   useEffect(() => {
     if (rig.missing.length) console.warn(`[figure-audition] ${candidate.id} missing bones:`, rig.missing);
   }, [rig, candidate.id]);

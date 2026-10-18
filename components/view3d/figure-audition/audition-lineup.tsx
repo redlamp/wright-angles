@@ -24,6 +24,14 @@ import { makePose } from "../viewer-figure";
 import type { Stance } from "./figure-hands";
 import { CtrlScroll, Framer, ROW_H, SPACING } from "./lineup-camera";
 import PacksMenu, { packName } from "./lineup-packs-menu";
+import PaintBar from "./lineup-paint";
+import {
+  applyPaint,
+  isPaintable,
+  paintFacet,
+  useBrush,
+  usePaintStore,
+} from "./figure-paint";
 
 const SCENARIOS: { id: Stance["scenario"]; label: string }[] = [
   { id: "standing", label: "Standing" },
@@ -239,6 +247,7 @@ export default function AuditionLineup({
         >
           Fit
         </button>
+        <PaintBar className={selectClass} />
         <span>
           drag to pan · drag a figure to turn them all · scroll to zoom ·
           Ctrl+scroll to scroll (Shift for sideways) · click a figure to use it
@@ -305,7 +314,7 @@ export default function AuditionLineup({
                         turn={turn}
                         stance={stance}
                         paletteUrl={
-                          chosen && c.texture
+                          chosen && c.texture && !isPaintable(c)
                             ? assetUrl(chosen.file)
                             : textureUrl(c)
                         }
@@ -401,6 +410,19 @@ function LineupFigure({
 }) {
   const { rig, height } = usePosed(c, stance);
   const controls = useThree((s) => s.controls) as unknown as Pausable | null;
+  const invalidate = useThree((s) => s.invalidate);
+  const paint = usePaintStore((s) => s.paints[c.id]);
+  const paintable = isPaintable(c);
+  useEffect(() => {
+    if (!paintable) return;
+    applyPaint(rig.meshes, paint);
+    invalidate();
+  }, [rig, paint, paintable, invalidate]);
+  const painting = () => paintable && useBrush.getState().on;
+  const brush = (e: ThreeEvent<PointerEvent>) => {
+    if (e.faceIndex == null) return;
+    paintFacet(c.id, rig.meshes, e.object as Mesh, e.faceIndex);
+  };
   return (
     <group position={position}>
       <group rotation-y={(turn * Math.PI) / 180}>
@@ -414,11 +436,29 @@ function LineupFigure({
           onPointerDown={(e: ThreeEvent<PointerEvent>) => {
             if (e.button !== 0) return;
             e.stopPropagation();
+            if (painting()) {
+              // Paint: hold the pan still for the stroke, color what is under the brush.
+              useBrush.getState().startStroke();
+              setPaused(controls, true);
+              window.addEventListener(
+                "pointerup",
+                () => setPaused(controls, false),
+                { once: true },
+              );
+              brush(e);
+              return;
+            }
             onSpin(e.clientX, controls); // left-drag on a figure turns them all
+          }}
+          onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+            if (!(e.buttons & 1) || !painting()) return;
+            e.stopPropagation();
+            brush(e);
           }}
           onClick={(e: ThreeEvent<MouseEvent>) => {
             if (e.delta > 4) return; // a drag, not a click
             e.stopPropagation();
+            if (painting()) return; // painting, not picking
             onPick(c.id);
           }}
         />
