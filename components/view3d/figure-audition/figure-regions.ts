@@ -1,6 +1,7 @@
 import {
   BufferAttribute,
   Color,
+  NearestFilter,
   SRGBColorSpace,
   Vector3,
   type Bone,
@@ -168,11 +169,20 @@ export function assignPalette(meshes: { own: Material | Material[] }[], texture:
     }
 }
 
-/** glTF UVs have the origin at the top left and palettes are color data. */
+/**
+ * glTF UVs have the origin at the top left and palettes are color data.
+ * Palettes are flat blocks, so they sample nearest with no mipmaps: a
+ * mipmap blends each block with its neighbors once the figure is small
+ * on screen, which darkened painted facets (the reserved white block
+ * sits beside black unused ones).
+ */
 export function preparePalette(tex: Texture | Texture[]) {
   for (const t of Array.isArray(tex) ? tex : [tex]) {
     t.flipY = false;
     t.colorSpace = SRGBColorSpace;
+    t.minFilter = NearestFilter;
+    t.magFilter = NearestFilter;
+    t.generateMipmaps = false;
     t.needsUpdate = true;
   }
 }

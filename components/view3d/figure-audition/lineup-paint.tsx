@@ -150,6 +150,7 @@ export default function PaintBar({ className }: { className: string }) {
         className={`px-1.5 ${className}`}
         disabled={!undoCount}
         onClick={undoStroke}
+        title="Undo the last stroke (Ctrl+Z)"
       >
         Undo
       </button>

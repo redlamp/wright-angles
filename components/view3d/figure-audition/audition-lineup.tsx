@@ -11,7 +11,7 @@ import { CtrlScroll, Framer, ROW_H, SPACING } from "./lineup-camera";
 import PacksMenu, { packName } from "./lineup-packs-menu";
 import PaintBar from "./lineup-paint";
 import LineupFigure, { setPaused, type Pausable } from "./lineup-figure";
-import { isPaintable, useBrush } from "./figure-paint";
+import { isPaintable, undoStroke, useBrush } from "./figure-paint";
 
 const SCENARIOS: { id: Stance["scenario"]; label: string }[] = [
   { id: "standing", label: "Standing" },
@@ -140,6 +140,19 @@ export default function AuditionLineup({
       ) {
         e.stopImmediatePropagation();
         useBrush.getState().set({ on: !useBrush.getState().on });
+      }
+      // Ctrl+Z (Cmd+Z on a Mac) undoes the last paint stroke while painting.
+      if (
+        (e.key === "z" || e.key === "Z") &&
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !typing &&
+        useBrush.getState().on
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        undoStroke();
       }
     };
     window.addEventListener("keydown", onKey, true);

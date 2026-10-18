@@ -5,9 +5,11 @@ import { persist } from "zustand/middleware";
 import {
   BufferAttribute,
   Color,
+  NearestFilter,
   type BufferGeometry,
   type Material,
   type Mesh,
+  type Texture,
 } from "three";
 import type { Candidate } from "./candidates";
 
@@ -99,7 +101,8 @@ export function applyPaint(
     (uv.array as Float32Array).set(uv0);
     (col.array as Float32Array).fill(1);
     for (const [tri, hex] of Object.entries(faces ?? {})) {
-      _c.set(hex).convertSRGBToLinear();
+      // Color.set reads a hex string as sRGB and stores linear (color management), which vertex colors want.
+      _c.set(hex);
       for (let k = 0; k < 3; k++) {
         const v = Number(tri) * 3 + k;
         if (v >= n) continue;
@@ -115,6 +118,15 @@ export function applyPaint(
       if (!m.vertexColors) {
         m.vertexColors = true;
         m.needsUpdate = true;
+      }
+      // Nearest, no mipmaps: a small figure would otherwise sample a mipmap
+      // that blends the white block with its black neighbors, darkening paint.
+      const map = (m as Material & { map?: Texture | null }).map;
+      if (map && map.minFilter !== NearestFilter) {
+        map.minFilter = NearestFilter;
+        map.magFilter = NearestFilter;
+        map.generateMipmaps = false;
+        map.needsUpdate = true;
       }
     }
   });
