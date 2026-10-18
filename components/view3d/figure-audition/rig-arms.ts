@@ -1,8 +1,7 @@
-import { Quaternion, Vector3, type Bone, type Object3D } from "three";
+import { Quaternion, Vector3, type Bone } from "three";
 import { solveTwoBone } from "@/lib/limb-ik";
 import type { HandPlan } from "./figure-hands";
 import { aim, chainOf, rollToward, rotateWorld, squash, tipWorld, worldPos, type Segment } from "./rig-math";
-import { buildGraft, graftScale, placeGraft, sideFit, type HandGraft, type HandSources, type SideFits } from "./hand-graft";
 
 export { chainOf };
 
@@ -22,11 +21,9 @@ export interface SideRig {
   finger: Bone | null;
   /** Thumb bone, if any: with the fingers it gives the palm's direction. */
   thumb: Bone | null;
-  /** Finger chains (root first) and the thumb chain, for curling: one chain for a mitten, four for a grafted hand. */
+  /** Finger chains (root first) and the thumb chain, for curling: one chain for a mitten, two for carved hands (index, three-finger block). */
   fingerChains: Bone[][];
   thumbChain: Bone[];
-  /** A five-fingered hand worn over this one, if grafted. */
-  graft: HandGraft | null;
   upperLen: number;
   foreLen: number;
   /** Foot orientation in the rest pose (world, yaw-fixed): feet stay flat. */
@@ -140,8 +137,6 @@ export function poseArm(
     rollToward(s.foreArm, _axis, _palm, _want.set(plan.palm.x, plan.palm.y, plan.palm.z), PALM_ROLL_MAX_DEG);
     fingers();
   }
-  // A grafted hand rides the posed hand bone; its fingers curl below.
-  if (s.graft) placeGraft(s.graft, s.hand);
   curlDigits(s, plan);
 }
 
@@ -171,18 +166,9 @@ export function gripPoint(s: SideRig, out: Vector3): Vector3 {
  * Measure a hand in the rest pose: its index and thumb roots, their
  * chains, and the palm normal in the hand bone's frame (fingers x thumb
  * for the left hand, thumb x fingers for the right; without a thumb the
- * tuning decides). When the model asks for it and the hand assets are
- * loaded, a five-fingered graft is built from that frame and its digits
- * take over from the model's own.
+ * tuning decides).
  */
-export function fitHand(
-  s: SideRig,
-  side: 1 | -1,
-  tuning: { palm: "auto" | "down" | "in" | "back"; graftHands: boolean },
-  hands: HandSources | null,
-  segment: (a: Bone, b: Bone) => void,
-  grafts: Object3D,
-) {
+export function fitHand(s: SideRig, side: 1 | -1, tuning: { palm: "auto" | "down" | "in" | "back" }, segment: (a: Bone, b: Bone) => void) {
   const digits = findDigits(s.hand, s.foreArm);
   s.finger = digits.finger;
   s.thumb = digits.thumb;
@@ -206,41 +192,13 @@ export function fitHand(
   }
   const invHand = s.hand.getWorldQuaternion(new Quaternion()).invert();
   s.palmLocal = palmWorld.normalize().applyQuaternion(invHand);
-  if (hands && tuning.graftHands) {
-    const g = buildGraft(side === 1 ? hands.left : hands.right, side, fingerDir.clone().applyQuaternion(invHand), s.palmLocal);
-    if (g) {
-      s.graft = g;
-      s.finger = g.finger;
-      s.thumb = g.thumb;
-      s.fingerChains = g.fingerChains;
-      s.thumbChain = g.thumbChain;
-      grafts.add(g.group);
-    }
-  }
 }
 
-/**
- * T-pose: leave the arms in their rest pose and only seat the grafted
- * hands on them (scaled for the figure), reporting grip points and wrist
- * targets for the overlay.
- */
-export function restHands(
-  sides: Record<1 | -1, SideRig>,
-  heightCm: number,
-  k: number,
-  handScale: number,
-  fits: SideFits,
-  targetsOut: Vector3[],
-  gripsOut: Vector3[],
-) {
+/** T-pose: the arms stay in their rest pose; report grip points and wrist targets for the overlay. */
+export function restHands(sides: Record<1 | -1, SideRig>, targetsOut: Vector3[], gripsOut: Vector3[]) {
   for (const side of [1, -1] as const) {
-    const s = sides[side];
     const i = side === 1 ? 0 : 1;
-    if (s.graft) {
-      s.graft.scale = graftScale(s.graft, heightCm, k, handScale, sideFit(fits, side));
-      placeGraft(s.graft, s.hand);
-    }
-    gripPoint(s, gripsOut[i]);
+    gripPoint(sides[side], gripsOut[i]);
     targetsOut[i].copy(gripsOut[i]);
   }
 }

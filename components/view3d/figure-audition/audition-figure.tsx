@@ -1,12 +1,11 @@
 "use client";
 
-import { Suspense, useDeferredValue, useMemo, type ComponentProps } from "react";
+import { Suspense, useDeferredValue, type ComponentProps } from "react";
 import { useGLTF, useTexture } from "@react-three/drei";
 import ViewerFigure from "../viewer-figure";
 import RiggedFigure from "./rigged-figure";
 import { assetUrl, candidateUrl, findCandidate, textureUrl, type Candidate } from "./candidates";
 import { preparePalette } from "./figure-regions";
-import type { HandSources } from "./hand-graft";
 import { useAuditionStore, type FigureLook } from "./audition-store";
 
 type FigureProps = ComponentProps<typeof ViewerFigure>;
@@ -19,23 +18,11 @@ type RigProps = FigureProps & {
   variant: string;
 };
 
-/** Bumped when the hand files change: the loader caches by URL and the browser by path. */
-const HAND_VERSION = 8;
-const HAND_URLS = () => [assetUrl(`hands/hand-left.glb?v=${HAND_VERSION}`), assetUrl(`hands/hand-right.glb?v=${HAND_VERSION}`)];
-
-/** The blocky three-digit hands (CC0, public/figures/audition/hands), for candidates that take them; null when switched off. */
-function useHands(): HandSources | null {
-  const swap = useAuditionStore((s) => s.swapHands);
-  const [l, r] = useGLTF(HAND_URLS(), false, false);
-  return useMemo(() => (swap ? { left: l.scene, right: r.scene } : null), [swap, l, r]);
-}
-
 /** A candidate whose glTF carries no texture reference: the manifest's palette is assigned. */
 function TexturedFigure(props: RigProps & { url: string }) {
   const gltf = useGLTF(candidateUrl(props.candidate), false, false);
   const texture = useTexture(props.url, preparePalette);
-  const hands = useHands();
-  return <RiggedFigure source={gltf.scene} texture={texture} hands={hands} {...props} />;
+  return <RiggedFigure source={gltf.scene} texture={texture} {...props} />;
 }
 
 function GltfFigure(props: RigProps) {
@@ -50,8 +37,7 @@ function GltfFigure(props: RigProps) {
 
 function PlainFigure(props: RigProps) {
   const gltf = useGLTF(candidateUrl(props.candidate), false, false);
-  const hands = useHands();
-  return <RiggedFigure source={gltf.scene} hands={hands} {...props} />;
+  return <RiggedFigure source={gltf.scene} {...props} />;
 }
 
 /**

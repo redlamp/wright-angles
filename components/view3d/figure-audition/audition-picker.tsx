@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef } from "react";
 import { CANDIDATES, findCandidate, loadLocalManifest } from "./candidates";
 import { OUTFITS } from "./figure-outfits";
 import { AUDITION_READOUT_ID, NO_EYE_OFFSET, useAuditionStore, type FigureLook } from "./audition-store";
-import HandFitTable from "./hand-fit-table";
 
 /**
  * Dev-only overlay for swapping the viewer figure (FEATURE_FIGURE_AUDITION).
@@ -28,10 +27,6 @@ export default function AuditionPicker() {
   const setPalettes = useAuditionStore((s) => s.setPalettes);
   const palette = useAuditionStore((s) => s.palette);
   const setPalette = useAuditionStore((s) => s.setPalette);
-  const swapHands = useAuditionStore((s) => s.swapHands);
-  const setSwapHands = useAuditionStore((s) => s.setSwapHands);
-  const showGhost = useAuditionStore((s) => s.showGhost);
-  const setShowGhost = useAuditionStore((s) => s.setShowGhost);
   const tPose = useAuditionStore((s) => s.tPose);
   const setTPose = useAuditionStore((s) => s.setTPose);
   const handsView = useAuditionStore((s) => s.handsView);
@@ -199,18 +194,6 @@ export default function AuditionPicker() {
                 </select>
               </label>
             ) : null}
-            {c.tuning?.graftHands ? (
-              <label className="flex items-center gap-1">
-                <input type="checkbox" checked={swapHands} onChange={(e) => setSwapHands(e.target.checked)} />
-                Replacement hands
-              </label>
-            ) : null}
-            {c.tuning?.graftHands ? (
-              <label className={`flex items-center gap-1 ${swapHands ? "" : "pointer-events-none opacity-40"}`} title="The model's own hand, see-through, to line the replacement up against">
-                <input type="checkbox" checked={showGhost} onChange={(e) => setShowGhost(e.target.checked)} />
-                Ghost hand
-              </label>
-            ) : null}
             <label className="flex items-center gap-1">
               <input type="checkbox" checked={showRig} onChange={(e) => setShowRig(e.target.checked)} />
               Show rig
@@ -261,7 +244,6 @@ export default function AuditionPicker() {
               reset
             </button>
           </div>
-          {c.tuning?.graftHands ? <HandFitTable candidateId={c.id} baked={c.tuning?.handFits} dim={!swapHands} /> : null}
           <span id={AUDITION_READOUT_ID} />
         </>
       ) : null}

@@ -8,8 +8,6 @@
  */
 
 /** Joint names per side; matched loosely (see findBone in rigged-figure). */
-import type { RawFits } from "./hand-graft";
-
 export interface SideBones {
   upperLeg: string;
   lowerLeg: string;
@@ -32,10 +30,6 @@ export interface RigTuning {
   reach?: number;
   /** Uniform scale on the hand bones, for packs with stylized oversized hands. */
   handScale?: number;
-  /** Wear the five-fingered MPFB hands over this model's own (mitten) hands. */
-  graftHands?: boolean;
-  /** Baked hand fit per side (dialed in the picker, then copied here); the picker's own value overrides it. */
-  handFits?: RawFits;
 }
 
 export interface Candidate {
