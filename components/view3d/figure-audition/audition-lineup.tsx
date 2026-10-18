@@ -1,36 +1,55 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas, type ThreeEvent } from "@react-three/fiber";
-import { Html, OrbitControls, useGLTF, useTexture } from "@react-three/drei";
-import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import {
-  Box3,
-  Vector3,
-  type Material,
-  type Mesh,
-  type MeshStandardMaterial,
-  type Texture,
-} from "three";
+  Html,
+  OrbitControls,
+  OrthographicCamera,
+  useGLTF,
+  useTexture,
+} from "@react-three/drei";
+import { MOUSE, Vector3, type Mesh, type Texture } from "three";
 import {
   assetUrl,
   candidateUrl,
+  naturalHeightCm,
   textureUrl,
   type Candidate,
 } from "./candidates";
-import { preparePalette } from "./figure-regions";
-import { useAuditionStore } from "./audition-store";
+import { assignPalette, preparePalette } from "./figure-regions";
+import { NO_EYE_OFFSET, useAuditionStore } from "./audition-store";
+import { AUTHORED_CM, buildRig, poseRig, type Rig } from "./rigged-figure";
+import { makePose } from "../viewer-figure";
+import type { Stance } from "./figure-hands";
+import { CtrlScroll, Framer, ROW_H, SPACING } from "./lineup-camera";
+import PacksMenu, { packName } from "./lineup-packs-menu";
 
-/** Centimeters between figures in a row, and between rows (one row per set). */
-const SPACING = 80;
-const ROW_GAP = 280;
+const SCENARIOS: { id: Stance["scenario"]; label: string }[] = [
+  { id: "standing", label: "Standing" },
+  { id: "desk", label: "At a desk" },
+  { id: "couch", label: "On a couch" },
+];
+const INPUTS: { id: Stance["input"]; label: string }[] = [
+  { id: "keyboard", label: "Mouse & KB" },
+  { id: "gamepad", label: "Gamepad" },
+  { id: "handheld", label: "Handheld" },
+];
+const TURNS = [
+  { label: "Front", deg: 0 },
+  { label: "Three-quarter", deg: 35 },
+  { label: "Side", deg: 90 },
+  { label: "Back", deg: 180 },
+];
 
 /**
- * Every local candidate standing at once, one row per set, for picking a
- * figure and comparing palette variants across the whole pack (dev only,
- * opened from the audition picker). The palette menu re-skins every figure
- * that takes a palette texture; clicking a figure selects it in the main
- * view and closes the lineup. Escape closes without changing anything.
+ * Every local candidate at once, one row per pack, for picking a figure and
+ * comparing palette variants across the pack (dev only, opened from the
+ * audition picker). Pose, input, camera angle and palette are menus that
+ * apply to every figure; the Packs menu chooses which rows show. The camera
+ * looks straight at the rows: drag pans, the wheel zooms toward the cursor,
+ * Fit frames everything shown. Clicking a figure selects it in the main
+ * view and closes the lineup; Escape closes.
  */
 export default function AuditionLineup({ onClose }: { onClose: () => void }) {
   const local = useAuditionStore((s) => s.local);
@@ -40,6 +59,43 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
   const palette = useAuditionStore((s) => s.palette);
   const setPalette = useAuditionStore((s) => s.setPalette);
   const [hover, setHover] = useState<string | null>(null);
+  const [turn, setTurn] = useState(0);
+  // Left-drag on a figure turns every figure: start x, start angle, and the controls paused meanwhile.
+  const spin = useRef<{
+    x0: number;
+    t0: number;
+    controls: Pausable | null;
+  } | null>(null);
+  const turnRef = useRef(0);
+  useEffect(() => {
+    turnRef.current = turn;
+  });
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      const sp = spin.current;
+      if (sp) setTurn(Math.round(sp.t0 + (e.clientX - sp.x0) * 0.6));
+    };
+    const up = () => {
+      if (spin.current) setPaused(spin.current.controls, false);
+      spin.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, []);
+  const startSpin = (x: number, controls: Pausable | null) => {
+    setPaused(controls, true);
+    spin.current = { x0: x, t0: turnRef.current, controls };
+  };
+  const [stance, setStance] = useState<Stance>({
+    scenario: "standing",
+    input: "keyboard",
+  });
+  const [fit, setFit] = useState(0);
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   // The canvas mounts once its container exists, so pointer events attach to a real element.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
 
@@ -49,8 +105,10 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
       map.set(c.group ?? "Local", [...(map.get(c.group ?? "Local") ?? []), c]);
     return [...map.entries()];
   }, [local]);
-  const widest = Math.max(1, ...rows.map(([, items]) => items.length));
+  const shown = rows.filter(([g]) => !hidden.has(g));
+  const widest = Math.max(1, ...shown.map(([, items]) => items.length));
   const chosen = palettes.find((p) => p.id === palette);
+  const count = shown.reduce((n, [, items]) => n + items.length, 0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -67,17 +125,83 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
     setCandidate(id);
     onClose();
   };
+  const setPacks = (next: Set<string>) => {
+    setHidden(next);
+    setFit((n) => n + 1);
+  };
   const selectClass =
     "rounded border border-border bg-background px-1 text-foreground";
-  const depth = (rows.length - 1) * ROW_GAP;
 
   return (
     <div
       data-chrome
       className="fixed inset-0 z-50 flex flex-col bg-[oklch(0.16_0_0)] font-mono text-xs text-muted-foreground"
     >
-      <div className="flex items-center gap-3 border-b border-border px-3 py-2">
-        <span className="text-foreground">Lineup: {local.length} figures</span>
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2">
+        <span className="text-foreground">
+          Lineup: {count} of {local.length} figures
+        </span>
+        <PacksMenu
+          groups={rows.map(([g, items]) => [g, items.length])}
+          hidden={hidden}
+          onChange={setPacks}
+          className={selectClass}
+        />
+        <label className="flex items-center gap-1">
+          Pose
+          <select
+            className={selectClass}
+            value={stance.scenario}
+            onChange={(e) =>
+              setStance((s) => ({
+                ...s,
+                scenario: e.target.value as Stance["scenario"],
+              }))
+            }
+          >
+            {SCENARIOS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
+          Input
+          <select
+            className={selectClass}
+            value={stance.input}
+            onChange={(e) =>
+              setStance((s) => ({
+                ...s,
+                input: e.target.value as Stance["input"],
+              }))
+            }
+          >
+            {INPUTS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
+          Camera
+          <select
+            className={selectClass}
+            value={TURNS.some((t) => t.deg === turn) ? turn : "custom"}
+            onChange={(e) => setTurn(Number(e.target.value))}
+          >
+            {TURNS.some((t) => t.deg === turn) ? null : (
+              <option value="custom">{`Dragged (${((turn % 360) + 360) % 360} deg)`}</option>
+            )}
+            {TURNS.map((t) => (
+              <option key={t.label} value={t.deg}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-1">
           Palette
           <select
@@ -93,9 +217,16 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          className={`px-2 ${selectClass}`}
+          onClick={() => setFit((n) => n + 1)}
+        >
+          Fit
+        </button>
         <span>
-          Up and down arrows cycle palettes · click a figure to use it · drag to
-          orbit, scroll to zoom
+          drag to pan · drag a figure to turn them all · scroll to zoom ·
+          Ctrl+scroll to scroll (Shift for sideways) · click a figure to use it
         </span>
         <span className="ml-auto text-foreground">
           {hover ? local.find((c) => c.id === hover)?.label : ""}
@@ -108,46 +239,56 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
           Close (Esc)
         </button>
       </div>
-      <div ref={setHost} className="relative flex-1">
+      <div ref={setHost} className="relative flex-1 overflow-hidden">
         {host ? (
-          <Canvas
-            eventSource={host}
-            camera={{
-              position: [0, 1050, depth + 850],
-              fov: 40,
-              near: 10,
-              far: 20000,
-            }}
-            dpr={[1, 2]}
-          >
+          <Canvas eventSource={host} dpr={[1, 2]}>
+            <OrthographicCamera
+              makeDefault
+              position={[0, 0, 3000]}
+              near={10}
+              far={10000}
+            />
             <color attach="background" args={["#1e1e20"]} />
             <hemisphereLight args={["#ffffff", "#444444", 1.6]} />
             <directionalLight position={[300, 800, 900]} intensity={1.8} />
-            <OrbitControls makeDefault target={[0, 60, depth * 0.62]} />
-            <mesh rotation-x={-Math.PI / 2} position={[0, -0.5, depth / 2]}>
-              <planeGeometry args={[widest * SPACING + 400, depth + 400]} />
-              <meshStandardMaterial color="#2a2a2e" />
-            </mesh>
-            {rows.map(([group, items], r) => {
-              const z = r * ROW_GAP;
-              const x0 = -((items.length - 1) * SPACING) / 2;
+            <OrbitControls
+              makeDefault
+              enableRotate={false}
+              screenSpacePanning
+              zoomToCursor
+              mouseButtons={{
+                LEFT: MOUSE.PAN,
+                MIDDLE: MOUSE.DOLLY,
+                RIGHT: MOUSE.PAN,
+              }}
+            />
+            <Framer fit={fit} rows={shown.length} widest={widest} />
+            <CtrlScroll />
+            {shown.map(([group, items], r) => {
+              const y = -r * ROW_H;
               return (
                 <group key={group}>
                   <Html
-                    position={[x0 - SPACING, 90, z]}
-                    center
+                    position={[-SPACING * 0.75, y + 100, 0]}
                     style={{ pointerEvents: "none" }}
                   >
-                    <div className="whitespace-nowrap rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] text-white">
-                      {group.replace("Mega-Pack: ", "")}
+                    <div className="-translate-x-full -translate-y-1/2 whitespace-nowrap rounded bg-black/60 px-1.5 py-0.5 font-mono text-[11px] text-white">
+                      {packName(group)}
                     </div>
                   </Html>
+                  <mesh
+                    position={[((items.length - 1) * SPACING) / 2, y - 1, 0]}
+                  >
+                    <boxGeometry args={[items.length * SPACING, 2, 60]} />
+                    <meshStandardMaterial color="#34343a" />
+                  </mesh>
                   {items.map((c, i) => (
                     <Suspense key={c.id} fallback={null}>
                       <LineupFigure
                         c={c}
-                        x={x0 + i * SPACING}
-                        z={z}
+                        position={[i * SPACING, y, 0]}
+                        turn={turn}
+                        stance={stance}
                         paletteUrl={
                           chosen && c.texture
                             ? assetUrl(chosen.file)
@@ -157,6 +298,7 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
                         hovered={c.id === hover}
                         onHover={setHover}
                         onPick={pick}
+                        onSpin={startSpin}
                       />
                     </Suspense>
                   ))}
@@ -170,72 +312,112 @@ export default function AuditionLineup({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** A figure's rig, built once and re-posed (at its own height) whenever the stance changes. */
+function usePosed(c: Candidate, stance: Stance): { rig: Rig; height: number } {
+  const gltf = useGLTF(candidateUrl(c), false, false);
+  const invalidate = useThree((s) => s.invalidate);
+  const built = useMemo(() => {
+    const rig = buildRig(gltf.scene, c);
+    rig.outer.traverse((m) => {
+      if ((m as Mesh).isMesh && /icosphere/i.test(m.name)) m.visible = false;
+    });
+    return { rig, height: naturalHeightCm(rig.height, AUTHORED_CM) };
+  }, [gltf, c]);
+  useEffect(() => {
+    posture(built.rig, built.height, stance);
+    invalidate();
+  }, [built, stance, invalidate]);
+  return built;
+}
+
+/** Pose a rig in a stance (the rest pose is restored first, so any stance can follow any other). */
+function posture(rig: Rig, height: number, stance: Stance) {
+  if (rig.missing.length) return;
+  // poseRig works in world space for a figure standing at the origin, so pose
+  // it detached from its lineup spot and put it back afterwards.
+  const parent = rig.outer.parent;
+  parent?.remove(rig.outer);
+  const pair = () => [new Vector3(), new Vector3()];
+  poseRig(
+    rig,
+    makePose(stance.scenario, stance.input, height, null),
+    stance,
+    stance,
+    1,
+    null,
+    NO_EYE_OFFSET,
+    "off",
+    pair(),
+    pair(),
+    pair(),
+  );
+  rig.outer.updateMatrixWorld(true);
+  parent?.add(rig.outer);
+}
+
+type Pausable = { enabled: boolean };
+/** Pause or resume the pan controls (a plain function: hook values are not mutated in components). */
+function setPaused(controls: Pausable | null, paused: boolean) {
+  if (controls) controls.enabled = !paused;
+}
+
 function LineupFigure({
   c,
-  x,
-  z,
+  position,
+  turn,
+  stance,
   paletteUrl,
   selected,
   hovered,
   onHover,
   onPick,
+  onSpin,
 }: {
   c: Candidate;
-  x: number;
-  z: number;
+  position: [number, number, number];
+  turn: number;
+  stance: Stance;
   paletteUrl: string | null;
   selected: boolean;
   hovered: boolean;
   onHover: (id: string | null) => void;
   onPick: (id: string) => void;
+  onSpin: (x: number, controls: Pausable | null) => void;
 }) {
-  const gltf = useGLTF(candidateUrl(c), false, false);
-  const { obj, height } = useMemo(() => {
-    const o = cloneSkinned(gltf.scene);
-    o.traverse((m) => {
-      const mesh = m as Mesh;
-      if (!mesh.isMesh) return;
-      mesh.frustumCulled = false;
-      mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((x: Material) => x.clone())
-        : mesh.material.clone();
-      if (/icosphere/i.test(mesh.name)) mesh.visible = false;
-    });
-    // Feet on the ground, centered on its spot; meters scale up to centimeters.
-    const box = new Box3().setFromObject(o);
-    const size = box.getSize(new Vector3());
-    const k = size.y < 10 ? 100 : 1;
-    o.scale.setScalar(k);
-    const center = box.getCenter(new Vector3());
-    o.position.set(-center.x * k, -box.min.y * k, -center.z * k);
-    return { obj: o, height: size.y * k };
-  }, [gltf]);
-
+  const { rig, height } = usePosed(c, stance);
+  const controls = useThree((s) => s.controls) as unknown as Pausable | null;
   return (
-    <group position={[x, 0, z]}>
-      <primitive
-        object={obj}
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          onHover(c.id);
-        }}
-        onPointerOut={() => onHover(null)}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          if (e.delta > 4) return; // an orbit drag, not a click
-          e.stopPropagation();
-          onPick(c.id);
-        }}
-      />
-      {paletteUrl ? <Palette obj={obj} url={paletteUrl} /> : null}
+    <group position={position}>
+      <group rotation-y={(turn * Math.PI) / 180}>
+        <primitive
+          object={rig.outer}
+          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+            e.stopPropagation();
+            onHover(c.id);
+          }}
+          onPointerOut={() => onHover(null)}
+          onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            onSpin(e.clientX, controls); // left-drag on a figure turns them all
+          }}
+          onClick={(e: ThreeEvent<MouseEvent>) => {
+            if (e.delta > 4) return; // a drag, not a click
+            e.stopPropagation();
+            onPick(c.id);
+          }}
+        />
+      </group>
+      {paletteUrl ? <Palette rig={rig} url={paletteUrl} /> : null}
       {selected || hovered ? (
-        <mesh rotation-x={-Math.PI / 2} position={[0, 0.5, 0]}>
-          <ringGeometry args={[26, 32, 40]} />
+        <mesh position={[0, 0, 32]}>
+          <boxGeometry args={[60, 4, 4]} />
           <meshBasicMaterial color={selected ? "#22d3ee" : "#ffffff"} />
         </mesh>
       ) : null}
       {selected || hovered ? (
         <Html
-          position={[0, height + 14, 0]}
+          position={[0, height + 18, 0]}
           center
           style={{ pointerEvents: "none" }}
         >
@@ -248,28 +430,9 @@ function LineupFigure({
   );
 }
 
-/** Puts one palette texture on every material of a figure (palette textures are shared, loaded once per URL). */
-function Palette({
-  obj,
-  url,
-}: {
-  obj: ReturnType<typeof cloneSkinned>;
-  url: string;
-}) {
+/** Puts one palette texture on a figure's own materials (palette textures are shared, loaded once per URL). */
+function Palette({ rig, url }: { rig: Rig; url: string }) {
   const tex = useTexture(url, preparePalette) as Texture;
-  useEffect(() => {
-    obj.traverse((m) => {
-      const mesh = m as Mesh;
-      if (!mesh.isMesh) return;
-      for (const mat of Array.isArray(mesh.material)
-        ? mesh.material
-        : [mesh.material]) {
-        const sm = mat as MeshStandardMaterial;
-        if (sm.map === tex) continue;
-        sm.map = tex;
-        sm.needsUpdate = true;
-      }
-    });
-  }, [obj, tex]);
+  useEffect(() => assignPalette(rig.meshes, tex), [rig, tex]);
   return null;
 }

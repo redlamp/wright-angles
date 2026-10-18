@@ -55,7 +55,7 @@ import ControllerProp from "./controller-prop";
 import HandsFocus from "./hands-focus";
 
 /** Height the capsule figure's pose numbers are authored at. */
-const AUTHORED_CM = 175;
+export const AUTHORED_CM = 175;
 /** Eye contract in capsule root-local cm (see viewer-figure). */
 const EYE_LOCAL = 69;
 /**
@@ -67,7 +67,7 @@ const EYE_LOCAL = 69;
 const EYE_STATURE = 0.936;
 
 
-interface Rig {
+export interface Rig {
   outer: Group;
   rest: [Bone, Quaternion, Vector3][];
   segments: Map<Bone, Segment>;
@@ -117,7 +117,7 @@ function updateSkeletons(rig: Rig) {
 }
 
 
-function buildRig(source: Object3D, c: Candidate): Rig {
+export function buildRig(source: Object3D, c: Candidate): Rig {
   const model = cloneSkinned(source);
   const yaw = new Group();
   const outer = new Group();
@@ -317,7 +317,7 @@ interface Stance {
  * and posture from the previous stance to the next by `t` (the same
  * eased tween the body uses). Returns eye delta cm.
  */
-function poseRig(
+export function poseRig(
   rig: Rig,
   p: Pose,
   from: Stance,
