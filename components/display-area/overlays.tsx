@@ -52,16 +52,18 @@ export function CropFrame({
 
 /**
  * Debug-overlays menu chip (plan topic 10): safe areas, contrast
- * badges, pixel loupe. Session-only toggles with app-wide parity.
+ * badges, acuity ladder, pixel loupe. Session-only toggles with app-wide parity.
  */
 export function OverlaysChip() {
   const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
   const setShowSafeAreas = useAnnotationStore((s) => s.setShowSafeAreas);
   const showContrast = useAnnotationStore((s) => s.showContrast);
   const setShowContrast = useAnnotationStore((s) => s.setShowContrast);
+  const showAcuity = useAnnotationStore((s) => s.showAcuity);
+  const setShowAcuity = useAnnotationStore((s) => s.setShowAcuity);
   const loupeOn = useAnnotationStore((s) => s.loupeOn);
   const setLoupeOn = useAnnotationStore((s) => s.setLoupeOn);
-  const anyOn = showSafeAreas || showContrast || loupeOn;
+  const anyOn = showSafeAreas || showContrast || showAcuity || loupeOn;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -71,7 +73,7 @@ export function OverlaysChip() {
             ? "bg-white/25 text-white"
             : "bg-black/50 text-white/60 hover:text-white",
         )}
-        title="Debug overlays: safe areas, contrast badges, pixel loupe"
+        title="Debug overlays: safe areas, contrast badges, acuity ladder, pixel loupe"
       >
         <LayersIcon className="size-3" />
         overlays
@@ -88,6 +90,12 @@ export function OverlaysChip() {
           onCheckedChange={setShowContrast}
         >
           Contrast badges on scanned text
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={showAcuity}
+          onCheckedChange={setShowAcuity}
+        >
+          Acuity ladder (arcmin, per device)
         </DropdownMenuCheckboxItem>
         <DropdownMenuCheckboxItem
           checked={loupeOn}

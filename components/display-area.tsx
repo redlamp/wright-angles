@@ -7,6 +7,7 @@ import {
   useScreenViewport,
 } from "@/components/display-area/use-screen-viewport";
 import { CropFrame, SafeAreas } from "@/components/display-area/overlays";
+import { AcuityLadder } from "@/components/display-area/acuity-ladder";
 import { PixelLoupe } from "@/components/display-area/pixel-loupe";
 import { useHostArea } from "@/components/display-area/use-host-area";
 import { exportViewPng } from "@/components/display-area/export-view";
@@ -82,6 +83,9 @@ export function DisplayArea() {
   const setDrawMode = useAnnotationStore((s) => s.setDrawMode);
   const showTextBoxes = useAnnotationStore((s) => s.showTextBoxes);
   const showSafeAreas = useAnnotationStore((s) => s.showSafeAreas);
+  const showAcuity = useAnnotationStore((s) => s.showAcuity);
+  // The legibility card's live half: shown with the card, or on demand.
+  const ladderOn = showAcuity || activeItem?.generated === "legibility";
   const loupeOn = useAnnotationStore((s) => s.loupeOn);
   const selectedBoxId = useAnnotationStore((s) => s.selectedBoxId);
   const selectBox = useAnnotationStore((s) => s.selectBox);
@@ -440,6 +444,9 @@ export function DisplayArea() {
               />
             ) : null}
             {showSafeAreas ? <SafeAreas large={w > 320} /> : null}
+            {ladderOn ? (
+              <AcuityLadder device={device} w={w} h={h} large={w > 320} />
+            ) : null}
           </div>
           {/* Suppressed on the focused device — its copy is in the
               overlay pass below, above the whole stack. */}

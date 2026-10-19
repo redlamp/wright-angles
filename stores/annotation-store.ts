@@ -44,6 +44,8 @@ interface AnnotationState {
   /** Debug overlays (plan topic 10) — session tools, global parity. */
   showSafeAreas: boolean;
   showContrast: boolean;
+  /** Live arcmin optotype + text ladder per device rect. */
+  showAcuity: boolean;
   loupeOn: boolean;
   /** 3D hover: which device (and optionally which text box) is under
    * the cursor — feeds the inspector's live details + full alpha. */
@@ -55,6 +57,7 @@ interface AnnotationState {
   setShowTextBoxes: (v: boolean) => void;
   setShowSafeAreas: (v: boolean) => void;
   setShowContrast: (v: boolean) => void;
+  setShowAcuity: (v: boolean) => void;
   setLoupeOn: (v: boolean) => void;
 }
 
@@ -65,6 +68,7 @@ export const useAnnotationStore = create<AnnotationState>()((set) => ({
   showTextBoxes: true,
   showSafeAreas: false,
   showContrast: false,
+  showAcuity: false,
   loupeOn: false,
   deviceHover: null,
   setDeviceHover: (deviceHover) => set({ deviceHover }),
@@ -75,5 +79,6 @@ export const useAnnotationStore = create<AnnotationState>()((set) => ({
   setShowTextBoxes: (showTextBoxes) => set({ showTextBoxes }),
   setShowSafeAreas: (showSafeAreas) => set({ showSafeAreas }),
   setShowContrast: (showContrast) => set({ showContrast }),
+  setShowAcuity: (showAcuity) => set({ showAcuity }),
   setLoupeOn: (loupeOn) => set({ loupeOn }),
 }));
