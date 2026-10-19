@@ -135,6 +135,14 @@ export interface MediaCrop {
   h: number;
 }
 
+/** Built-in test cards the app can draw (lib/generated-media.ts). */
+export type GeneratedKind =
+  | "smpte-bars"
+  | "grid"
+  | "gradient"
+  | "solid"
+  | "legibility";
+
 export interface MediaItem {
   id: string;
   name: string;
@@ -174,6 +182,9 @@ export interface MediaItem {
    * again; the derived measure boxes live in `boxes` as always.
    */
   scan?: { lines: KeyframeLine[]; medianPx: number };
+  /** Which built-in card drew this item; unset for imports and for
+   * cards generated before the field existed. */
+  generated?: GeneratedKind;
 }
 
 /** One text line detected on a keyframe's frame (full-image normalized). */

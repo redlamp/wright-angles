@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   contrastRatio,
   estimateTextContrast,
+  grayForContrast,
   relativeLuminance,
 } from "./contrast";
 
@@ -66,5 +67,29 @@ describe("estimateTextContrast", () => {
 
   test("too few pixels → null", () => {
     expect(estimateTextContrast(solid(0, 0, 0, 4))).toBeNull();
+  });
+});
+
+describe("grayForContrast", () => {
+  const lum = (v: number) => relativeLuminance(v, v, v);
+  test("lands at or just above the ratio on the lighter side", () => {
+    const bg = lum(32);
+    for (const ratio of [7, 4.5, 3, 2, 1.5]) {
+      const v = grayForContrast(bg, ratio)!;
+      expect(v).toBeGreaterThan(32);
+      expect(contrastRatio(lum(v), bg)).toBeGreaterThanOrEqual(ratio);
+      expect(contrastRatio(lum(v - 1), bg)).toBeLessThan(ratio);
+    }
+  });
+
+  test("falls back to the darker side on a light background", () => {
+    const bg = lum(232);
+    const v = grayForContrast(bg, 4.5)!;
+    expect(v).toBeLessThan(232);
+    expect(contrastRatio(lum(v), bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test("null when no gray reaches the ratio", () => {
+    expect(grayForContrast(lum(128), 21)).toBeNull();
   });
 });

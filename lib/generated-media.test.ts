@@ -5,7 +5,13 @@ import { GRADIENT_SEED_SCAN } from "./gradient-seed-scan";
 describe("GENERATED_KINDS", () => {
   test("lists each kind once", () => {
     const kinds = GENERATED_KINDS.map((k) => k.kind);
-    expect(kinds).toEqual(["smpte-bars", "grid", "gradient", "solid"]);
+    expect(kinds).toEqual([
+      "smpte-bars",
+      "grid",
+      "gradient",
+      "solid",
+      "legibility",
+    ]);
   });
 });
 
@@ -20,11 +26,12 @@ describe("generatedItemMeta", () => {
       height: 1080,
       referenceHeight: 1080,
       addedAt: 42,
+      generated: "grid",
     });
   });
 
   test("non-gradient cards carry no scan or boxes", () => {
-    for (const kind of ["smpte-bars", "grid", "solid"] as const) {
+    for (const kind of ["smpte-bars", "grid", "solid", "legibility"] as const) {
       const meta = generatedItemMeta(kind, "x", 1920, 1080, 0);
       expect("scan" in meta).toBe(false);
       expect("boxes" in meta).toBe(false);

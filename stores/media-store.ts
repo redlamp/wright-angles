@@ -113,8 +113,8 @@ interface MediaState {
 
 /**
  * First-run seeding flag: a never-seeded browser with an empty library
- * gets the gradient card so the app demonstrates itself. Deleting the
- * card is a choice — the flag survives, so it never resurrects on
+ * gets the gradient and legibility cards so the app demonstrates
+ * itself. Deleting a card is a choice: the flag survives, so it never resurrects on
  * reload. Wiping local data clears the flag: a wipe means "fresh
  * visitor", seed and all.
  */
@@ -191,10 +191,12 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
         hydrated: true,
         activeId: hydratedActiveId(s.activeId, remembered, items),
       }));
-      // First run: seed the gradient card as the default image.
+      // First run: seed the gradient card (the active default) and the
+      // legibility card as the two default images.
       if (items.length === 0 && !wasSeeded()) {
         markSeeded();
         await get().addGenerated("gradient");
+        await get().addGenerated("legibility");
       }
     } catch {
       // IndexedDB unavailable (private browsing edge cases) — run

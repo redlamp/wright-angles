@@ -101,3 +101,27 @@ export function estimateTextContrast(
 /** WCAG AA verdicts for the estimate. */
 export const AA_NORMAL = 4.5;
 export const AA_LARGE = 3;
+/** WCAG AAA (enhanced) floor; also the XAG high-contrast-mode floor. */
+export const AAA_NORMAL = 7;
+
+/**
+ * The 8-bit gray that sits at or just above `ratio` against a background
+ * of relative luminance `bgLum`: lighter than the background when a
+ * lighter gray can reach the ratio, darker otherwise. Returns null when
+ * neither side can (e.g. 21:1 against mid-gray). Used to draw contrast
+ * swatches that land exactly on the WCAG thresholds.
+ */
+export function grayForContrast(bgLum: number, ratio: number): number | null {
+  const lum = (v: number) => relativeLuminance(v, v, v);
+  // Lighter side: smallest gray brighter than the background that clears it.
+  for (let v = 0; v <= 255; v++) {
+    const l = lum(v);
+    if (l > bgLum && contrastRatio(l, bgLum) >= ratio) return v;
+  }
+  // Darker side: largest gray darker than the background that clears it.
+  for (let v = 255; v >= 0; v--) {
+    const l = lum(v);
+    if (l < bgLum && contrastRatio(l, bgLum) >= ratio) return v;
+  }
+  return null;
+}

@@ -1,18 +1,20 @@
 /**
- * Built-in test cards (color bars, grid, gradient, solid): the kind list,
+ * Built-in test cards (color bars, grid, gradient, solid, legibility): the kind list,
  * the canvas renderer, and the metadata a generated item is stored with.
  * drawGenerated needs a DOM; the rest is plain data.
  */
-import type { MediaItem } from "@/lib/types";
+import type { GeneratedKind, MediaItem } from "@/lib/types";
 import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
+import { drawLegibilityCard } from "@/lib/legibility-card";
 
-export type GeneratedKind = "smpte-bars" | "grid" | "gradient" | "solid";
+export type { GeneratedKind } from "@/lib/types";
 
 export const GENERATED_KINDS: { kind: GeneratedKind; label: string }[] = [
   { kind: "smpte-bars", label: "Color bars" },
   { kind: "grid", label: "Alignment grid" },
   { kind: "gradient", label: "Gradient card" },
   { kind: "solid", label: "Solid gray" },
+  { kind: "legibility", label: "Legibility card" },
 ];
 
 /** Draw a 1920×1080 test image. Pure canvas; no assets. */
@@ -79,6 +81,8 @@ export function drawGenerated(kind: GeneratedKind): HTMLCanvasElement {
       g.fillText(`${s}px — The quick brown fox jumps over the lazy dog`, 60, y);
       y += s * 1.8;
     }
+  } else if (kind === "legibility") {
+    drawLegibilityCard(g, W, H);
   } else {
     g.fillStyle = "#808080";
     g.fillRect(0, 0, W, H);
@@ -107,6 +111,7 @@ export function generatedItemMeta(
     height,
     referenceHeight: height,
     addedAt,
+    generated: kind,
   };
   if (kind === "gradient") {
     // The gradient card's draw is deterministic, so its OCR result is
