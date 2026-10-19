@@ -93,3 +93,15 @@ describe("grayForContrast", () => {
     expect(grayForContrast(lum(128), 21)).toBeNull();
   });
 });
+
+describe("grayForContrast side", () => {
+  const lum = (v: number) => relativeLuminance(v, v, v);
+  test("darker pins the side even when a lighter gray would do", () => {
+    expect(grayForContrast(lum(128), 3)).toBe(225);
+    expect(grayForContrast(lum(128), 3, "darker")).toBe(55);
+  });
+  test("lighter returns null when only a darker gray reaches it", () => {
+    expect(grayForContrast(lum(128), 4.5, "lighter")).toBeNull();
+    expect(grayForContrast(lum(128), 4.5, "darker")).toBe(23);
+  });
+});

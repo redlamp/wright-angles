@@ -48,6 +48,17 @@ describe("optotypeChartLayout", () => {
     }
   });
 
+  test("rows sit where the Figma Reference Image frame puts them", () => {
+    const [sn, te] = panels;
+    expect([sn.x, sn.y, sn.w, sn.h]).toEqual([992, 215, 392, 747]);
+    expect([te.x, te.y]).toEqual([1400, 215]);
+    expect(sn.rows.map((r) => [r.x, r.y])).toEqual([
+      [1082, 294], [1108, 454], [1086, 582], [1082, 678], [1083, 750],
+      [1120, 806], [1138, 846], [1157, 880], [1175, 909], [1194, 933],
+    ]);
+    expect(te.rows.map((r) => r.x)).toEqual(sn.rows.map((r) => r.x + 408));
+  });
+
   test("tumbling E rows use all four directions", () => {
     const dirs = new Set(
       panels[1].rows.flatMap((r) => r.glyphs as number[]),

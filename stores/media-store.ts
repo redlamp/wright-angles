@@ -21,6 +21,7 @@ import {
   generatedItemMeta,
   type GeneratedKind,
 } from "@/lib/generated-media";
+import { loadCardFonts } from "@/lib/legibility-card";
 import {
   addItemBox,
   clearItemDetection,
@@ -300,6 +301,9 @@ export const useMediaStore = create<MediaState>()((set, get) => ({
   },
 
   addGenerated: async (kind) => {
+    // The legibility card is drawn in Barlow; load the faces first so
+    // the first-run seed doesn't bake in a fallback font.
+    if (kind === "legibility") await loadCardFonts();
     const canvas = drawGenerated(kind);
     const blob = await new Promise<Blob | null>((r) =>
       canvas.toBlob(r, "image/png"),

@@ -46,8 +46,8 @@ export interface ChartPanel {
   rows: OptotypeRow[];
 }
 
-const LABEL_COL = 52;
-const TITLE_H = 54;
+const LABEL_COL = 64;
+const TITLE_H = 79;
 
 function panelRows(chart: ChartKind, px0: number, py0: number, pw: number) {
   const rows: OptotypeRow[] = [];
@@ -70,14 +70,15 @@ function panelRows(chart: ChartKind, px0: number, py0: number, pw: number) {
   return rows;
 }
 
-/** Both chart panels for a `W` × `H` card, side by side on its right. */
+/** Both chart panels for a `W` × `H` card, side by side on its right
+ * (positions from the Figma Reference Image frame at 1080p). */
 export function optotypeChartLayout(W: number, H: number): ChartPanel[] {
   const s = H / 1080;
-  const top = Math.round(H * 0.12);
-  const right = Math.round(W * 0.95);
+  const top = Math.round(215 * s);
+  const right = Math.round(W - 128 * s);
   const pw = Math.round(392 * s);
-  const ph = Math.round(H * 0.95) - top - Math.round(24 * s);
-  const gap = Math.round(22 * s);
+  const ph = Math.round(747 * s);
+  const gap = Math.round(16 * s);
   const ex = right - pw;
   const sx = ex - gap - pw;
   return [
@@ -202,18 +203,19 @@ function drawGlyph(g: Ctx, chart: ChartKind, glyph: string | number, x: number, 
 
 /** Black-on-white chart panels, the clinical presentation. */
 export function drawOptotypeCharts(g: Ctx, W: number, H: number) {
+  const family = "Barlow, sans-serif";
   for (const p of optotypeChartLayout(W, H)) {
     g.fillStyle = "#f4f4f4";
-    g.fillRect(p.x, p.y, p.w, p.h);
-    g.fillStyle = "#111";
-    g.font = "600 22px sans-serif";
-    g.fillText(p.title, p.x + 16, p.y + 34);
+    g.beginPath();
+    g.roundRect(p.x, p.y, p.w, p.h, 4);
+    g.fill();
+    g.fillStyle = "#333";
+    g.font = `600 26px ${family}`;
+    g.fillText(p.title, p.x + 16, p.y + 38);
     for (const r of p.rows) {
-      g.fillStyle = "#777";
-      g.font = "500 14px sans-serif";
-      g.textBaseline = "middle";
-      g.fillText(`${r.px}px`, p.x + 10, r.y + r.px / 2);
-      g.textBaseline = "alphabetic";
+      g.fillStyle = "#333";
+      g.font = `500 14px ${family}`;
+      g.fillText(`${r.px}px`, p.x + 16, r.y + r.px / 2 + 7);
       g.fillStyle = "#000";
       g.strokeStyle = "#000";
       r.glyphs.forEach((glyph, j) =>
