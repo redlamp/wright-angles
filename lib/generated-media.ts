@@ -6,6 +6,7 @@
 import type { GeneratedKind, MediaItem } from "@/lib/types";
 import { GRADIENT_SEED_SCAN } from "@/lib/gradient-seed-scan";
 import { drawLegibilityCard } from "@/lib/legibility-card";
+import { optotypeBoxes } from "@/lib/optotype-chart";
 
 export type { GeneratedKind } from "@/lib/types";
 
@@ -126,6 +127,11 @@ export function generatedItemMeta(
       label: line.text,
       ...line.box,
     }));
+  }
+  if (kind === "legibility") {
+    // One box per eye-chart row, from the same layout the draw uses,
+    // so each row's arc minutes read out per device.
+    meta.boxes = optotypeBoxes(width, height);
   }
   return meta;
 }

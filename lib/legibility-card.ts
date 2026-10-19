@@ -1,11 +1,9 @@
 /**
- * The static half of the legibility test card: everything that is
- * relative to the SCREEN rather than the viewer (safe-area frames,
- * contrast swatches, confusable glyphs, pixel-pitch patches). The
- * viewer-relative half, optotypes and text sized in arc minutes, can't
- * be baked into pixels; it draws live per device from
- * components/display-area/acuity-ladder.tsx into the space this card
- * leaves free on its right.
+ * The legibility test card: safe-area frames, contrast swatches,
+ * confusable glyphs and pixel-pitch patches on the left, Snellen and
+ * tumbling E charts on the right (lib/optotype-chart.ts). Everything is
+ * baked into the image; the per-device reading comes from the charts'
+ * pinned measure boxes, not from anything drawn live.
  *
  * Needs a canvas context; no other DOM.
  */
@@ -17,6 +15,7 @@ import {
   grayForContrast,
   relativeLuminance,
 } from "@/lib/contrast";
+import { drawOptotypeCharts } from "@/lib/optotype-chart";
 
 const FONT = "sans-serif";
 
@@ -31,13 +30,6 @@ export const CONTRAST_SWATCHES: { ratio: number; label: string }[] = [
 
 /** Glyph pairs that collapse first as text shrinks. */
 export const CONFUSABLES = "Il1| O0o rn m cl d 8B 5S 2Z gq ,.";
-
-/**
- * Where the live acuity ladder sits, as fractions of the screen. The
- * card draws a placeholder here and the overlay anchors to the same
- * box, so on a 16:9 panel the two line up.
- */
-export const LADDER_BOX = { left: 0.53, top: 0.12, right: 0.05, bottom: 0.07 };
 
 const hex = (v: number) => `rgb(${v},${v},${v})`;
 
@@ -140,22 +132,6 @@ function drawPixelPatches(g: CanvasRenderingContext2D, x0: number, y0: number) {
   });
 }
 
-function drawLadderPlaceholder(g: CanvasRenderingContext2D, W: number, H: number) {
-  const x = W * LADDER_BOX.left;
-  const y = H * LADDER_BOX.top;
-  const w = W * (1 - LADDER_BOX.left - LADDER_BOX.right);
-  const h = H * (1 - LADDER_BOX.top - LADDER_BOX.bottom);
-  g.fillStyle = "#1f1f1f";
-  g.fillRect(x, y, w, h);
-  g.fillStyle = "#5c5c5c";
-  g.font = `500 20px ${FONT}`;
-  g.textAlign = "center";
-  g.fillText("Acuity ladder draws here, live per device", x + w / 2, y + h / 2);
-  g.font = `500 16px ${FONT}`;
-  g.fillText("(sized in arc minutes for each viewer's distance)", x + w / 2, y + h / 2 + 28);
-  g.textAlign = "start";
-}
-
 export function drawLegibilityCard(
   g: CanvasRenderingContext2D,
   W: number,
@@ -170,9 +146,9 @@ export function drawLegibilityCard(
   g.fillText("Legibility card", x0, 128);
   g.fillStyle = "#9a9a9a";
   g.font = `500 20px ${FONT}`;
-  g.fillText(`${W} × ${H} · screen-relative checks; arc-minute rows live at right`, x0, 160);
+  g.fillText(`${W} × ${H} · eye-chart rows are measure boxes: their arc minutes show per device`, x0, 160);
   drawContrast(g, x0, 222);
   drawGlyphs(g, x0, 560);
   drawPixelPatches(g, x0, 842);
-  drawLadderPlaceholder(g, W, H);
+  drawOptotypeCharts(g, W, H);
 }

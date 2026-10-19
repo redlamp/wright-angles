@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { GENERATED_KINDS, generatedItemMeta } from "./generated-media";
 import { GRADIENT_SEED_SCAN } from "./gradient-seed-scan";
+import { optotypeBoxes } from "./optotype-chart";
 
 describe("GENERATED_KINDS", () => {
   test("lists each kind once", () => {
@@ -31,7 +32,7 @@ describe("generatedItemMeta", () => {
   });
 
   test("non-gradient cards carry no scan or boxes", () => {
-    for (const kind of ["smpte-bars", "grid", "solid", "legibility"] as const) {
+    for (const kind of ["smpte-bars", "grid", "solid"] as const) {
       const meta = generatedItemMeta(kind, "x", 1920, 1080, 0);
       expect("scan" in meta).toBe(false);
       expect("boxes" in meta).toBe(false);
@@ -56,5 +57,12 @@ describe("generatedItemMeta", () => {
         ...line.box,
       });
     });
+  });
+
+  test("legibility card carries one box per eye-chart row and no scan", () => {
+    const meta = generatedItemMeta("legibility", "l", 1920, 1080, 0);
+    expect(meta.name).toBe("Legibility card (generated)");
+    expect("scan" in meta).toBe(false);
+    expect(meta.boxes).toEqual(optotypeBoxes(1920, 1080));
   });
 });
