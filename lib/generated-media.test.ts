@@ -1,11 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { GENERATED_KINDS, generatedItemMeta } from "./generated-media";
 import { GRADIENT_SEED_SCAN } from "./gradient-seed-scan";
+import { optotypeBoxes } from "./optotype-chart";
 
 describe("GENERATED_KINDS", () => {
   test("lists each kind once", () => {
     const kinds = GENERATED_KINDS.map((k) => k.kind);
-    expect(kinds).toEqual(["smpte-bars", "grid", "gradient", "solid"]);
+    expect(kinds).toEqual([
+      "smpte-bars",
+      "grid",
+      "gradient",
+      "solid",
+      "legibility",
+    ]);
   });
 });
 
@@ -20,6 +27,7 @@ describe("generatedItemMeta", () => {
       height: 1080,
       referenceHeight: 1080,
       addedAt: 42,
+      generated: "grid",
     });
   });
 
@@ -49,5 +57,12 @@ describe("generatedItemMeta", () => {
         ...line.box,
       });
     });
+  });
+
+  test("legibility card carries one box per eye-chart row and no scan", () => {
+    const meta = generatedItemMeta("legibility", "l", 1920, 1080, 0);
+    expect(meta.name).toBe("Legibility card (generated)");
+    expect("scan" in meta).toBe(false);
+    expect(meta.boxes).toEqual(optotypeBoxes(1920, 1080));
   });
 });
