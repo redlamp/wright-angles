@@ -19,14 +19,11 @@ see `wiki/notes/decision-arcminute-rosetta-stone.md`.
 - `AGENTS.md` files hold the agent instructions (here and `wiki/`); each
   `CLAUDE.md` is only an `@AGENTS.md` import. Edit `AGENTS.md`.
 - `docs/PRD.md`: product spec, source of truth for scope.
-- `wiki/`: Obsidian vault: project state, decisions, rationale, daily log.
-  Conventions in `wiki/AGENTS.md`. Start at `wiki/index.md`.
+- `wiki/`: project state, decisions, rationale, daily log. Start at
+  `wiki/index.md`.
 - `lib/display-math.ts`: the angular-size math. Its tests are pinned to
   Taylor's Disco Elysium font-sizing sheet; do not "fix" the math without
   reading `wiki/research/arc-minute-spreadsheet.md`.
-
-If a request conflicts with the PRD or a `decision-*.md` note, surface the
-conflict before coding.
 
 ## Commands
 
@@ -60,28 +57,6 @@ conflict before coding.
 
 ## Git
 
-- Branches: `main` ← `dev` ← `feature-<name>` / `fix-<name>` (hyphen, no
-  slash); merge `--no-ff` into dev. The merged `feature/*` branches predate
-  this convention.
-- `main` is the GitHub Pages deploy source; promote dev → main only on
-  Taylor's explicit go-ahead.
-- Commit by concept, not by prompt. Author email: `taylor@redlamp.org`.
-- **Never start work from `main`.** `dev` is the base for everything.
-  `origin/HEAD` here is `origin/main`, and isolated agent worktrees are
-  cut from `origin/HEAD`, NOT from the branch that is checked out. So a
-  worktree agent silently starts on `main` and drags main's release
-  merges into `dev` when its branch is merged back. Any agent working in
-  a worktree must, as its first action:
-
-  ```sh
-  git fetch origin && git reset --hard origin/dev   # confirm the base
-  git log --oneline -1                              # verify before editing
-  ```
-
-  Whoever merges the branch back verifies with `git log --oneline
-  origin/dev..<branch>`: it must list only that branch's own commits;
-  a release merge commit appearing there is the tell that it's main-based.
-- **Refactors run in a worktree, never in this tree.** Taylor keeps
-  `bun run dev` pointed at the working tree; a multi-file refactor is
-  inconsistent between its first edit and its last, so hot reload serves
-  him a broken app. Additive or single-file work in place is fine.
+- `origin/HEAD` here is `origin/main`, so agent worktrees start from `main`.
+  Reset a new worktree to `origin/dev` before editing
+  (`~/.claude/memory/tools/claude-code-worktree-branches-from-origin-head.md`).
