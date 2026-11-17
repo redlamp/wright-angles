@@ -22,8 +22,6 @@ gitignored; `.vault-nickname` names the vault in Obsidian's switcher.
   Constraints carried forward. Link from `mocs/decisions.md`.
 - Daily notes: `daily/YYYY-MM-DD.md`, date H1, `##` per work stream.
 - Test plans: `test-plans/test-plan-YYYY-MM-DD-topic.md`.
-- Prose: American English, no em dashes (the global rule in
-  `~/.claude/CLAUDE.md`; wiki notes are where most generated prose lands).
 
 ## Linking and tags
 
