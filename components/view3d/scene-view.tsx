@@ -32,6 +32,9 @@ import { eyeHeightCm, useViewerStore } from "@/stores/viewer-store";
 import { useSceneTheme } from "@/components/use-theme";
 import DeviceRect, { type ContentBox } from "./device-rect";
 import ViewerFigure from "./viewer-figure";
+import AuditionFigure from "./figure-audition/audition-figure";
+import AuditionPicker from "./figure-audition/audition-picker";
+import { FEATURE_FIGURE_AUDITION } from "@/lib/flags";
 import ScenarioProps from "./scenario-props";
 import CameraRig, { type CameraPose } from "./camera-rig";
 import PivotOrbit from "./pivot-orbit";
@@ -47,6 +50,9 @@ import {
 import { computeLabelPlacements, headOnFovDeg } from "./scene-layout";
 import { EyeTween, FpsProbe } from "./scene-frame";
 import { useReducedMotion } from "@/components/use-reduced-motion";
+
+/** Dev-only: the audition can swap in a rigged candidate figure. */
+const Figure = FEATURE_FIGURE_AUDITION ? AuditionFigure : ViewerFigure;
 
 /** True when `target` is the first visible mesh along `ray` in its scene. */
 function isNearestHit(target: Object3D, ray: Ray, camera: Camera): boolean {
@@ -471,7 +477,7 @@ export default function SceneView({
         <directionalLight position={[-140, 220, -90]} intensity={1.3} />
         {/* The figure fades itself on camera proximity to the head, so
             it appears the moment the flight clears the headspace. */}
-        <ViewerFigure
+        <Figure
           scenario={scenario}
           inputType={inputType}
           heightCm={heightCm}
@@ -577,6 +583,7 @@ export default function SceneView({
         ) : null}
       </Canvas>
       <SceneHud onExport={exportPng} />
+      {FEATURE_FIGURE_AUDITION ? <AuditionPicker /> : null}
     </div>
   );
 }

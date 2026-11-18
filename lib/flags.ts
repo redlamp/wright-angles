@@ -21,3 +21,10 @@ export const FEATURE_PINNED_DEVICES = false;
  * (Taylor); the drag divider itself stays.
  */
 export const FEATURE_COLLAPSE_FIRST_COLUMN = false;
+
+/**
+ * Replacement-humanoid audition: a picker over the 3D scene that swaps
+ * the capsule figure for a bundled rigged glTF candidate. Dev server
+ * only (2026-10-14); never ships until Taylor picks a figure.
+ */
+export const FEATURE_FIGURE_AUDITION = process.env.NODE_ENV === "development";

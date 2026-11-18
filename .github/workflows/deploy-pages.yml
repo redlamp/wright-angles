@@ -4,16 +4,16 @@
 #   /wright-angles/preview  a work branch, for checking work before it merges
 # Every run rebuilds all three from branch heads, so any run redeploys
 # main unchanged and a newer run cancelling an older one loses nothing.
-# The preview is the pushed branch when a work branch (claude/*,
-# feature-*, fix-*) triggers the run; otherwise it is the head of the
-# most recently updated open PR into dev, so a dev or main push keeps the
-# preview instead of wiping it. Work-branch runs need those patterns
-# allowed on the github-pages environment (Settings → Environments).
+# The preview is the head of the most recently updated open PR into dev.
+# Only dev and main pushes run this: the github-pages environment allows
+# only those two branches, so a work-branch push would be refused at the
+# deploy step (seen 2026-10-14 and 2026-10-17). Work branches stay off
+# Pages until they are merged.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, dev, "claude/**", "feature-*", "fix-*"]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
